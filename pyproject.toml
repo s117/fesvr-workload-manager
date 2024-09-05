@@ -1,0 +1,45 @@
+[tool.poetry]
+name = "fesvr-workload-manager"
+version = "0.0.1"
+description = "RISCV workload manager for simulating with Anycore infrastructure."
+authors = ["Jiayang Li <jli95@ncsu.edu>"]
+license = "Other/Proprietary License"
+repository = "https://github.com/s117/fesvr-workload-manager.git"
+readme = "README.md"
+keywords = ["riscv", "fesvr", "simenv", "anycore"]
+classifiers = [
+    "Operating System :: POSIX :: Linux",
+    "Development Status :: 3 - Alpha",
+]
+packages = [
+    { include = "fwm"}
+]
+
+[tool.poetry.scripts]
+fwm = "fwm.cli.fwm:cli"
+
+[tool.poetry.dependencies]
+python = "^3.9"
+colorama = "^0.4.6"
+click = "^8.1.7"
+peewee = "^3.17.6"
+types-peewee = "^3.17.6.20240813"
+types-colorama = "^0.4.15.20240311"
+pydantic = "^2.9.0"
+
+
+[tool.poetry.group.dev.dependencies]
+tox = "*"
+pytest = "^7.4"
+pytest-sugar = "*"
+pytest-cov = "*"
+pyfakefs = "^5.6.0"
+black = "*"
+mypy = "*"
+ruff = "*"
+isort = "*"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

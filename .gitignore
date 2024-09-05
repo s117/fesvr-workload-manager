@@ -1,0 +1,6 @@
+.vscode
+.idea
+.tox
+.coverage
+dist
+*.pyc
