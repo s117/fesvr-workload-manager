@@ -38,3 +38,7 @@ class Digest:
     @classmethod
     def is_valid_hexdigest(cls, algo: str, h: str) -> bool:
         return len(h) == cls.get_digest_size_bytes(algo) * 2 and all(_ in string.hexdigits for _ in h)
+
+    @staticmethod
+    def is_valid_algo(algo: str) -> bool:
+        return algo in hashlib.algorithms_available

@@ -49,3 +49,12 @@ def test_is_valid_sha256():
     assert Digest.is_valid_hexdigest("sha256", "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
     assert not Digest.is_valid_hexdigest("sha256", "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
     assert not Digest.is_valid_hexdigest("sha256", "Pe3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b85")
+
+
+def test_is_valid_algo():
+    from fwm.utils.digest import Digest
+    assert Digest.is_valid_algo("sha256")
+    assert Digest.is_valid_algo("md5")
+    assert Digest.is_valid_algo("sha512")
+    assert not Digest.is_valid_algo("bad-value")
+    assert not Digest.is_valid_algo("")
