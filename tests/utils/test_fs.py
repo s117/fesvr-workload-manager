@@ -1,48 +1,6 @@
 import pathlib
-import shutil
 
 import pytest
-
-
-def test_sha256(fs):
-    from fwm.utils.fs import sha256_file
-    path = pathlib.Path("/test_sha256")
-    testfile = (path / "testfile.txt")
-    with pytest.raises(FileNotFoundError):
-        sha256_file(str(testfile), False)
-
-    path.mkdir()
-    testfile.touch()
-    assert sha256_file(str(testfile), use_cache=False) == \
-           "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-
-    with open(str(testfile), "wb") as f:
-        f.write(b"sample")
-    assert sha256_file(str(testfile), use_cache=True) == \
-           "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-    assert sha256_file(str(testfile), use_cache=False) == \
-           "af2bdbe1aa9b6ec1e2ade1d694f41fc71a831d0268e9891562113d8a62add1bf"
-    assert sha256_file(str(testfile), use_cache=True) == \
-           "af2bdbe1aa9b6ec1e2ade1d694f41fc71a831d0268e9891562113d8a62add1bf"
-
-    testfile.unlink()
-    assert sha256_file(str(testfile), use_cache=True) == \
-           "af2bdbe1aa9b6ec1e2ade1d694f41fc71a831d0268e9891562113d8a62add1bf"
-    with pytest.raises(FileNotFoundError):
-        sha256_file(str(testfile), False)
-    assert sha256_file(str(testfile), use_cache=True) == \
-           "af2bdbe1aa9b6ec1e2ade1d694f41fc71a831d0268e9891562113d8a62add1bf"
-
-    shutil.rmtree(str(path))
-
-
-def test_is_valid_sha256(fs):
-    from fwm.utils.fs import is_valid_sha256
-    assert not is_valid_sha256("")
-    assert not is_valid_sha256("1")
-    assert is_valid_sha256("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
-    assert not is_valid_sha256("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
-    assert not is_valid_sha256("Pe3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b85")
 
 
 def test_remove_path(fs):

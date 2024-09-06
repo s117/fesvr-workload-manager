@@ -1,31 +1,6 @@
-import hashlib
 import os
 import shutil
-import string
 from typing import Union, Tuple
-
-__sha256_cache = {}  # type: dict[str, str]
-
-
-def sha256_file(fpath: str, use_cache: bool = True) -> str:
-    global __sha256_cache
-    if use_cache and fpath in __sha256_cache:
-        return __sha256_cache[fpath]
-
-    h = hashlib.sha256()
-    b = bytearray(128 * 1024)
-    mv = memoryview(b)
-    with open(fpath, 'rb', buffering=0) as f:
-        for n in iter(lambda: f.readinto(mv), 0):
-            h.update(mv[:n])
-    sha256_hash = h.hexdigest()
-
-    __sha256_cache[fpath] = sha256_hash
-    return sha256_hash
-
-
-def is_valid_sha256(h: str) -> bool:
-    return len(h) == 64 and all(_ in string.hexdigits for _ in h)
 
 
 def remove_path(p: str) -> None:
