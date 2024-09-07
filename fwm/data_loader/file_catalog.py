@@ -17,7 +17,7 @@ class FileItem(pydantic.BaseModel):
     # Note: this is not the allocated disk space, which is a variable of the actual size and file system.
     actual_size: Annotated[int, Ge(0)]
 
-    # digest of the file.
+    # Digest of the file.
     digest: str
 
 
@@ -27,13 +27,13 @@ class DirItem(pydantic.BaseModel):
 
 
 class FileCatalog(pydantic.BaseModel):
-    # When is the catalog created
+    # When is the catalog created.
     creation_time: datetime
 
-    # Digest algorithm used in this catalog
+    # Digest algorithm used in this catalog.
     digest_algo: str
 
-    # List of files and their digests
+    # List of files and their digests.
     files: List[FileItem]
 
     # List of dirs
