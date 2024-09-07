@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import Annotated, List
 
 import pydantic
-from annotated_types import Gt
+from annotated_types import Ge
 from pydantic import model_validator
 
 from fwm.utils.digest import Digest
@@ -15,7 +15,7 @@ class FileItem(pydantic.BaseModel):
 
     # The actual size of the files in bytes.
     # Note: this is not the allocated disk space, which is a variable of the actual size and file system.
-    actual_size: Annotated[int, Gt(0)]
+    actual_size: Annotated[int, Ge(0)]
 
     # digest of the file.
     digest: str
