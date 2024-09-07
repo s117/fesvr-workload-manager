@@ -2,7 +2,7 @@ import json
 import random
 import string
 from datetime import datetime
-from typing import Dict, Union, Optional, List
+from typing import Dict, Union, Optional, List, Tuple
 
 import pytest
 from pydantic import ValidationError
@@ -16,9 +16,8 @@ def gen_random_name(len_range: range) -> str:
     return "".join([random.choice(string.ascii_letters + string.digits) for _ in range(length)])
 
 
-def gen_random_root() -> str:
-    r = ["", "./", "/"]
-    return random.choice(r)
+def gen_random_root(root_list: Tuple = ("", "./", "/")) -> str:
+    return random.choice(root_list)
 
 
 def gen_random_file_entry(
@@ -32,6 +31,13 @@ def gen_random_file_entry(
     }
 
 
+def gen_random_link_entry(max_path_level: int = 5) -> Dict[str, Union[str, int]]:
+    return {
+        "path": gen_random_root() + "/".join([gen_random_name(range(3, 16)) for _ in range(max_path_level)]),
+        "dest": gen_random_root(("", "/")) + "/".join([gen_random_name(range(3, 16)) for _ in range(max_path_level)]),
+    }
+
+
 def gen_random_dir_entry(max_path_level: int = 5) -> Dict[str, str]:
     return {"path": gen_random_root() + "/".join([gen_random_name(range(3, 16)) for _ in range(max_path_level)]), }
 
@@ -39,6 +45,7 @@ def gen_random_dir_entry(max_path_level: int = 5) -> Dict[str, str]:
 def gen_random_file_catalog(
         algo: Optional[str] = None,
         max_file_entry: int = 10,
+        max_link_entry: int = 10,
         max_dir_entry: int = 5) -> Dict[str, Union[str, List[Dict]]]:
     hash_len = {
         "md5": 128 >> 3,
@@ -47,11 +54,13 @@ def gen_random_file_catalog(
     }
     hash_algo = algo if algo else random.choice(list(hash_len.keys()))
     num_file_entry = random.randint(1, max_file_entry)
+    num_link_entry = random.randint(1, max_link_entry)
     num_dir_entry = random.randint(1, max_dir_entry)
     return {
         "creation_time": datetime.now().astimezone().isoformat(),
         "digest_algo": hash_algo,
         "files": [gen_random_file_entry(digest_size_bytes=hash_len[hash_algo]) for _ in range(num_file_entry)],
+        "links": [gen_random_link_entry() for _ in range(num_link_entry)],
         "dirs": [gen_random_dir_entry() for _ in range(num_dir_entry)]
     }
 
@@ -93,6 +102,7 @@ def test_file_catalog_missing_fields():
         "creation_time": 'missing',
         "digest_algo": 'missing',
         "files": 'missing',
+        "links": 'missing',
         "dirs": 'missing'
     }
     with pytest.raises(ValidationError) as ex:

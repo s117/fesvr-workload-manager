@@ -21,6 +21,14 @@ class FileItem(pydantic.BaseModel):
     digest: str
 
 
+class LinkItem(pydantic.BaseModel):
+    # Link path.
+    path: str
+
+    # Link Destination.
+    dest: str
+
+
 class DirItem(pydantic.BaseModel):
     # Dir path.
     path: str
@@ -35,6 +43,9 @@ class FileCatalog(pydantic.BaseModel):
 
     # List of files and their digests.
     files: List[FileItem]
+
+    # List of links and their destination.
+    links: List[LinkItem]
 
     # List of dirs
     dirs: List[DirItem]
