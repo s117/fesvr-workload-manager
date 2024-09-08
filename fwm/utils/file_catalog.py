@@ -17,8 +17,8 @@ def create_catalog(digest_algo: str, tree_root: str) -> FileCatalog:
         raise NotADirectoryError(tree_root)
 
     files: List[Dict[str, Union[str, int]]] = []
-    links: List[Dict[str, str]] = []
-    dirs: List[Dict[str, str]] = []
+    links: List[Dict[str, Union[str, int]]] = []
+    dirs: List[Dict[str, Union[str, int]]] = []
 
     def handle_link(link_full):
         symlink_resolved_dest = link_full.resolve(strict=False)
@@ -28,6 +28,7 @@ def create_catalog(digest_algo: str, tree_root: str) -> FileCatalog:
             link_dest = symlink_resolved_dest
         links.append({
             "path": str(link_full.relative_to(root)),
+            "perm": link_full.stat(follow_symlinks=False).st_mode & 0o777,
             "dest": str(link_dest),
         })
 
@@ -43,9 +44,11 @@ def create_catalog(digest_algo: str, tree_root: str) -> FileCatalog:
             if f_full.is_symlink():
                 handle_link(f_full)
             elif f_full.is_file():
+                file_stat = f_full.stat()
                 files.append({
                     "path": str(f_full.relative_to(root)),
-                    "actual_size": f_full.stat().st_size,
+                    "perm": file_stat.st_mode & 0o777,
+                    "actual_size": file_stat.st_size,
                     "digest": Digest.digest_file(digest_algo, str(f_full))
                 })
             else:
@@ -59,7 +62,8 @@ def create_catalog(digest_algo: str, tree_root: str) -> FileCatalog:
                 handle_link(d_full)
             else:
                 dirs.append({
-                    "path": str(d_full.relative_to(root))
+                    "path": str(d_full.relative_to(root)),
+                    "perm": d_full.stat().st_mode & 0o777,
                 })
 
     catalog = FileCatalog(

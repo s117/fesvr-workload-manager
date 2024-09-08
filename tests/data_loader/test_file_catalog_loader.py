@@ -20,12 +20,18 @@ def gen_random_root(root_list: Tuple = ("", "./", "/")) -> str:
     return random.choice(root_list)
 
 
+def gen_random_mode(mode_set: int = 0o000, mode_mask: int = 0o777) -> int:
+    mode_rand = random.randint(0o000, 0o777)
+    return mode_rand | mode_set & mode_mask
+
+
 def gen_random_file_entry(
         max_path_level: int = 5,
         max_file_size: int = 4096 * 1024,
         digest_size_bytes: int = 32) -> Dict[str, Union[str, int]]:
     return {
         "path": gen_random_root() + "/".join([gen_random_name(range(3, 16)) for _ in range(max_path_level)]),
+        "perm": gen_random_mode(),
         "actual_size": random.randint(0, max_file_size),
         "digest": hex(random.getrandbits(digest_size_bytes * 8))[2:].zfill(digest_size_bytes * 2).upper(),
     }
@@ -34,12 +40,16 @@ def gen_random_file_entry(
 def gen_random_link_entry(max_path_level: int = 5) -> Dict[str, Union[str, int]]:
     return {
         "path": gen_random_root() + "/".join([gen_random_name(range(3, 16)) for _ in range(max_path_level)]),
+        "perm": gen_random_mode(),
         "dest": gen_random_root(("", "/")) + "/".join([gen_random_name(range(3, 16)) for _ in range(max_path_level)]),
     }
 
 
-def gen_random_dir_entry(max_path_level: int = 5) -> Dict[str, str]:
-    return {"path": gen_random_root() + "/".join([gen_random_name(range(3, 16)) for _ in range(max_path_level)]), }
+def gen_random_dir_entry(max_path_level: int = 5) -> Dict[str, Union[str, int]]:
+    return {
+        "path": gen_random_root() + "/".join([gen_random_name(range(3, 16)) for _ in range(max_path_level)]),
+        "perm": gen_random_mode(),
+    }
 
 
 def gen_random_file_catalog(

@@ -144,11 +144,13 @@ def test_create_catalog(setup_test_tree):
         "files": [
             {
                 "path": "test_file1",
+                "perm": expected_file1.stat().st_mode & 0o777,
                 "actual_size": expected_file1.stat().st_size,
                 "digest": digest_path("sha256", str(expected_file1)),
             },
             {
                 "path": "test_dir1/test_file2",
+                "perm": expected_file2.stat().st_mode & 0o777,
                 "actual_size": expected_file2.stat().st_size,
                 "digest": digest_path("sha256", str(expected_file2)),
             }
@@ -156,51 +158,64 @@ def test_create_catalog(setup_test_tree):
         "links": [
             {
                 "path": "test_link1",
+                "perm": 0o777,
                 "dest": "test_file1"
             },
             {
                 "path": "test_link2",
+                "perm": 0o777,
                 "dest": "test_dir1"
             },
             {
                 "path": "test_dir2/test_link3",
+                "perm": 0o777,
                 "dest": "test_dir1/test_file2"
             },
             {
                 "path": "test_dir2/test_link6",
+                "perm": 0o777,
                 "dest": "dangling-target"
             },
             {
                 "path": "test_dir2/test_link7",
+                "perm": 0o777,
                 "dest": "/dangling-target"
             },
             {
                 "path": "test_dir2/test_link8",
+                "perm": 0o777,
                 "dest": "/usr"
             },
             {
                 "path": "test_dir2/test_link9",
+                "perm": 0o777,
                 "dest": "/bin"
             },
             {
                 "path": "test_dir2/test_link4",
+                "perm": 0o777,
                 "dest": "test_dir1"
             },
             {
                 "path": "test_dir2/test_link5",
+                "perm": 0o777,
                 "dest": "test_dir1"
             }
         ],
         "dirs": [
             {
-                "path": "test_dir1"
+                "path": "test_dir1",
+                "perm": 0o755
             },
             {
-                "path": "test_dir2"
+                "path": "test_dir2",
+                "perm": 0o755
             },
             {
-                "path": "test_dir2/test_dir3"
+                "path": "test_dir2/test_dir3",
+                "perm": 0o755
             }
         ]
     }
+    # print(catalog.model_dump_json(indent=2))
     assert catalog.model_dump() == expect_data_catalog

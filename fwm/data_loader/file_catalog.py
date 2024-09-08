@@ -13,6 +13,9 @@ class FileItem(pydantic.BaseModel):
     # File path.
     path: str
 
+    # File permission.
+    perm: int
+
     # The actual size of the files in bytes.
     # Note: this is not the allocated disk space, which is a variable of the actual size and file system.
     actual_size: Annotated[int, Ge(0)]
@@ -25,6 +28,9 @@ class LinkItem(pydantic.BaseModel):
     # Link path.
     path: str
 
+    # Link permission.
+    perm: int
+
     # Link Destination.
     dest: str
 
@@ -32,6 +38,9 @@ class LinkItem(pydantic.BaseModel):
 class DirItem(pydantic.BaseModel):
     # Dir path.
     path: str
+
+    # Dir permission.
+    perm: int
 
 
 class FileCatalog(pydantic.BaseModel):
