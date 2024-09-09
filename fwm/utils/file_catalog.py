@@ -1,9 +1,9 @@
 import os
 import pathlib
 from datetime import datetime
-from typing import Union, Dict, List
+from typing import Union, Dict, Tuple, List, Optional
 
-from fwm.data_loader.file_catalog import FileCatalog
+from fwm.data_loader.file_catalog import FileCatalog, FileItem, LinkItem, DirItem
 from fwm.utils.digest import Digest
 
 
@@ -74,3 +74,84 @@ def create_catalog(digest_algo: str, tree_root: str) -> FileCatalog:
         dirs=dirs,  # type: ignore
     )
     return catalog
+
+
+FailedDetail = Tuple[str, str]  # path, reason
+FailedList = List[FailedDetail]
+
+
+def verify_catalog(catalog: FileCatalog, tree_root: str, use_digest_cache=False) -> \
+        Tuple[FailedList, FailedList, FailedList]:
+    catalog_root = pathlib.Path(tree_root).resolve()
+    digest_algo = catalog.digest_algo
+
+    def validate_file(file_item: FileItem) -> Optional[FailedDetail]:
+        file_path = catalog_root / file_item.path
+        if not file_path.exists():
+            return file_item.path, "file missing"
+        if file_path.is_symlink() or not file_path.is_file():
+            return file_item.path, "not a file"
+
+        file_stat = file_path.stat()
+        file_mode = file_stat.st_mode & 0o777
+        if not file_item.perm == file_mode:
+            return file_item.path, f"file mode mismatch (expect={file_item.perm:03o}, actual={file_mode:03o})"
+        if not file_item.actual_size == file_stat.st_size:
+            return file_item.path, f"file size mismatch (expect={file_item.actual_size}B, actual={file_stat.st_size}B)"
+        # check digest
+        file_digest = Digest.digest_file(digest_algo, str(file_path), use_digest_cache)
+        if not file_item.digest == file_digest:
+            return file_item.path, f"file {digest_algo.upper()} mismatch (expect={file_item.digest}, actual={file_digest})"
+
+        return None
+
+    def validate_link(link_item: LinkItem) -> Optional[FailedDetail]:
+        link_path = catalog_root / link_item.path
+        if not link_path.exists(follow_symlinks=False):
+            return link_item.path, "link missing"
+        if not link_path.is_symlink():
+            return link_item.path, "not a link"
+
+        link_stat = link_path.stat(follow_symlinks=False)
+        link_mode = link_stat.st_mode & 0o777
+        if not link_item.perm == link_mode:
+            return link_item.path, f"link mode mismatch (expect={link_item.perm:03o}, actual={link_mode:03o})"
+        # check link dest
+        link_resolved = link_path.resolve()
+        if catalog_root in link_resolved.parents:
+            link_dest = link_resolved.relative_to(catalog_root)
+        else:
+            link_dest = link_resolved
+        if not link_item.dest == str(link_dest):
+            return link_item.path, f"link destination mismatch (expect=[{link_item.dest}], actual=[{str(link_dest)}])"
+
+        return None
+
+    def validate_dir(dir_item: DirItem) -> Optional[FailedDetail]:
+        dir_path = catalog_root / dir_item.path
+        if not dir_path.exists():
+            return dir_item.path, "directory missing"
+        if dir_path.is_symlink() or not dir_path.is_dir():
+            return dir_item.path, "not a directory"
+
+        dir_stat = dir_path.stat()
+        dir_mode = dir_stat.st_mode & 0o777
+        if not dir_item.perm == dir_mode:
+            return dir_item.path, f"directory mode mismatch (expect={dir_item.perm:03o}, actual={dir_mode:03o})"
+
+        return None
+
+    file_problems: FailedList = sorted(
+        [x for x in map(validate_file, catalog.files) if x is not None],
+        key=lambda _: _[0]
+    )
+    link_problems: FailedList = sorted(
+        [x for x in map(validate_link, catalog.links) if x is not None],
+        key=lambda _: _[0]
+    )
+    dir_problems: FailedList = sorted(
+        [x for x in map(validate_dir, catalog.dirs) if x is not None],
+        key=lambda _: _[0]
+    )
+
+    return file_problems, link_problems, dir_problems
