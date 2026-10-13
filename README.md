@@ -1,0 +1,134 @@
+# fwm: the FESVR Workload Manager
+
+fwm manages RISC-V simulation workloads for the custom spike in `riscv-isa-sim`, and replaces riscv-simenv.
+
+That spike's front-end server (FESVR) can **record** the device traffic of a run: every proxied system call, with the memory it read and wrote. It can then **replay** that recording without the original environment, and create and load **checkpoints** on top of a replay (see `riscv-isa-sim/docs/fesvr-checkpoint-and-traffic-replay.md`). fwm keeps the pieces of that workflow in a repository and generates the Makefiles that run them:
+
+```
+sysroot ──(entry point)──> record ──> trace ──> replay + create checkpoints ──> load a checkpoint
+```
+
+## How it differs from riscv-simenv
+
+- **The sysroot is needed once.** Only the recording run executes system calls on the host. A replay, or a run from a checkpoint, needs only the trace (which keeps a copy of the boot ELF as `boot.elf`), the checkpoint and the same `-m`/`-p`. There is no simenv to spawn and verify before every run.
+- **A replay prints nothing and writes no file.** Console output and output files exist only in the recording run. A replay checks that the program computes the same data, byte for byte, and stops at the first difference.
+- **Restore cost doesn't grow with the syscall history.** Loading a checkpoint seeks in the recording instead of re-executing it.
+- **Traces and checkpoints are portable.** They replay and load on any little-endian host (x86-64 or ARM64 Linux, macOS). Recording must be done on Linux.
+
+## Concepts
+
+| Term | Meaning |
+| --- | --- |
+| **sysroot** | A directory tree the program sees as `/`, imported read-only into the repository with a catalog (every file's permissions and SHA-256). |
+| **workload** | A name grouping the entry points that run the same program. |
+| **entry point** | How to launch a workload in a sysroot: the command, working directory, boot ELF (usually pk), stdin file, memory size and processor count. A workload can have entry points on several sysroots, and a sysroot can serve several workloads. |
+| **trace** | A recording (`+dev-traffic-record`) of a run of an entry point, identified by a UUID. It is *complete* if the program exited, or *truncated* if the run was stopped first (e.g. by `-e`). |
+| **checkpoint** | A snapshot taken while replaying a trace. It loads only with that trace. A SimPoint checkpoint carries its weight. |
+
+## Install
+
+```
+uv sync                # in this repository: creates .venv with fwm
+uv run fwm --help
+# or install the command: uv tool install .
+```
+
+## Quick start
+
+```
+export FWM_REPO_PATH=~/fwm-repo                      # or pass --repo-path to every command
+export FWM_SIM_CMD=/path/to/spike                    # default: spike on PATH
+
+fwm repo init $FWM_REPO_PATH
+fwm repo add sysroot ./sysroots/gapbs-road road.sg
+fwm repo add entry road.sg bfs bfs-road-n64 bfs-road-n64.json
+```
+
+`bfs-road-n64.json` holds the launch fields of the entry point. In paths, `/` is the sysroot's root and `.` the working directory:
+
+```json
+{ "command": "bfs -f road.sg -n64", "working_directory": "/app",
+  "envs": null, "stdin_file": null, "boot_elf": "/boot/pk", "mem_mb": 2048, "nprocs": 1 }
+```
+
+- `envs` must be `null` or `{}`: FESVR passes no environment to the program.
+- `nprocs` must be 1: checkpoints can be created for a single HART only.
+- `boot_elf` and `stdin_file` must be regular files of the sysroot, not symlinks.
+
+Record a run, and import the recording as a trace:
+
+```
+fwm mkgen record bfs-road-n64 -o run1 && make -C run1 run
+fwm repo add trace bfs-road-n64 run1/trace --final-state run1/final-state.json    # prints the trace UUID
+```
+
+Replay it, and create checkpoints from a description file of `<name>: <instruction count>` lines:
+
+```
+fwm mkgen replay bfs-road-n64 -o run2 && make -C run2 run                         # final-state.json: same instret
+fwm mkgen replay bfs-road-n64 --create-checkpoints ckpts.txt -o run3 && make -C run3 run
+for f in run3/checkpoints/*; do fwm repo add checkpoint bfs-road-n64 $f; done
+```
+
+Load a checkpoint and simulate one interval:
+
+```
+fwm mkgen load bfs-road-n64.3.0.25 -o run4
+make -C run4 run SIM_FLAGS_EXTRA=-e100000000     # make reports "Error 1": spike exits 1 when -e stops it
+make -C run4 run SIM=/path/to/721sim SIM_FLAGS_EXTRA=-e100000000
+```
+
+## Commands
+
+| Command | Purpose |
+| --- | --- |
+| `fwm repo init <path>` | Create a repository. |
+| `fwm repo add sysroot <dir> <name>` | Import a sysroot. |
+| `fwm repo add entry <sysroot> <workload> <name> <entry_point.json>` | Add an entry point. |
+| `fwm repo add trace <entry> <recording-dir> [--final-state f.json]` | Import a recording; prints its UUID. |
+| `fwm repo add checkpoint <trace> <file> [--name N] [--simpoint-weight W]` | Import a checkpoint; prints `<uuid>:<name>`. |
+| `fwm repo remove {sysroot\|entry\|trace\|checkpoint} <id> [--recursive]` | Remove, with what depends on it when `--recursive`. |
+| `fwm repo verify [{sysroot\|trace\|checkpoint} <id>]` | Check the repository content against its catalogs. |
+| `fwm list [workloads\|sysroots\|entries\|traces\|checkpoints] [filter] [--json]` | List. |
+| `fwm show {workload\|sysroot\|entry\|trace\|checkpoint} <id> [--json]` | Show the details. |
+| `fwm spawn [--force] <sysroot> <dest>` | Make a working copy of a sysroot (the record Makefile does it). |
+| `fwm mkgen {record <entry> \| replay <trace> [--create-checkpoints f] \| load <ckpt>} [-o dir]` | Generate a run directory's Makefile. |
+
+How to name things:
+- **A trace** is its UUID (a unique prefix is enough), or the name of an entry point that has one trace.
+- **A checkpoint** is `<trace>:<name>`, or just its name when no other trace has a checkpoint of that name.
+- **A checkpoint's SimPoint weight** is decoded from a name following the riscv-simenv convention `<entry>.<simpoint index>.<weight>`, e.g. `bfs-road-n64.3.0.25`, unless `--simpoint-weight` is given.
+
+Exit status: 0 success, 1 unexpected error, 2 usage error, 3 not found, 4 failed check.
+
+## Generated Makefiles
+
+Every Makefile has a single target, `run`. It first removes that run's previous outputs, so it can be run again. Override variables on the make command line:
+
+| Variable | Use |
+| --- | --- |
+| `SIM` | The simulator (default: `FWM_SIM_CMD` when generated, else `spike`). |
+| `SIM_FLAGS_EXTRA` | spike options such as `-e<n>` or `-s<interval>`. They come before the FESVR options. |
+| `FESVR_FLAGS_EXTRA` | FESVR options such as `+verbose`. |
+| `BOOT_ELF_FLAGS_EXTRA`, `APP_CMD_EXTRA` | (record only) Options of the boot ELF (pk), and extra program arguments. |
+
+spike's exit status:
+- **Without `-e`:** the program's exit status, or 0 after creating the last checkpoint.
+- **With `-e<n>`:** 1 when the run was stopped after `n` instructions, and 0 when the program ended first. In the stopped case, `final-state.json` is left empty, because spike writes it only when the program ends.
+
+## Development
+
+```
+uv run pytest            # unit tests
+uv run mypy fwm tests
+uv run ruff check fwm tests
+```
+
+The end-to-end test needs a spike built from `riscv-isa-sim` and a small workload:
+
+```
+FWM_TEST_SPIKE=/path/to/spike FWM_TEST_SYSROOT=/path/to/sysroot FWM_TEST_ENTRY_POINT=/path/to/entry_point.json \
+FWM_TEST_SPIKE_SRC=/path/to/riscv-isa-sim uv run pytest tests/integration
+```
+
+The bootstrap pipeline's interface to fwm is described in [docs/fwm-bootstrap-interface.md](docs/fwm-bootstrap-interface.md).
