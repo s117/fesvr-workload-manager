@@ -21,15 +21,12 @@ def create_catalog(digest_algo: str, tree_root: str) -> FileCatalog:
     dirs: List[Dict[str, Union[str, int]]] = []
 
     def handle_link(link_full):
-        symlink_resolved_dest = link_full.resolve(strict=False)
-        if root in symlink_resolved_dest.parents:
-            link_dest = symlink_resolved_dest.relative_to(root)
-        else:
-            link_dest = symlink_resolved_dest
+        # Record the link's own text, not where the host resolves it: inside a sysroot an absolute link refers to the
+        # target root, and following it (or a chain of links) on the host would make the catalog host-dependent.
         links.append({
             "path": str(link_full.relative_to(root)),
             "perm": link_full.stat(follow_symlinks=False).st_mode & 0o777,
-            "dest": str(link_dest),
+            "dest": os.readlink(link_full),
         })
 
     for dirpath, dirnames, filenames in os.walk(root, topdown=True, followlinks=False):
@@ -117,13 +114,9 @@ def verify_catalog(catalog: FileCatalog, tree_root: str, use_digest_cache=False)
         if not link_item.perm == link_mode:
             return link_item.path, f"link mode mismatch (expect={link_item.perm:03o}, actual={link_mode:03o})"
         # check link dest
-        link_resolved = link_path.resolve()
-        if catalog_root in link_resolved.parents:
-            link_dest = link_resolved.relative_to(catalog_root)
-        else:
-            link_dest = link_resolved
-        if not link_item.dest == str(link_dest):
-            return link_item.path, f"link destination mismatch (expect=[{link_item.dest}], actual=[{str(link_dest)}])"
+        link_dest = os.readlink(link_path)
+        if not link_item.dest == link_dest:
+            return link_item.path, f"link destination mismatch (expect=[{link_item.dest}], actual=[{link_dest}])"
 
         return None
 
@@ -155,3 +148,13 @@ def verify_catalog(catalog: FileCatalog, tree_root: str, use_digest_cache=False)
     )
 
     return file_problems, link_problems, dir_problems
+
+
+def find_absolute_links(catalog: FileCatalog) -> List[LinkItem]:
+    """
+    Find the links whose destination is an absolute path.
+
+    FESVR's +chroot only prefixes the target's path strings, so when the host kernel follows an absolute link inside a
+    sysroot, it resolves it from the host's root, not the sysroot's.
+    """
+    return [link for link in catalog.links if os.path.isabs(link.dest)]

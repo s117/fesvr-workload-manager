@@ -1,5 +1,6 @@
 import datetime
 import hashlib
+import os
 import pathlib
 import random
 from typing import Tuple, List, Any, Dict, Union
@@ -7,7 +8,7 @@ from typing import Tuple, List, Any, Dict, Union
 import pytest
 
 from fwm.data_loader.file_catalog import FileCatalog
-from fwm.utils.file_catalog import create_catalog, verify_catalog
+from fwm.utils.file_catalog import create_catalog, verify_catalog, find_absolute_links
 
 random.seed(100)
 
@@ -62,11 +63,11 @@ def setup_test_tree(fs) -> Tuple[str, Dict[str, Any]]:
             "digest": digest_path("sha256", test_tree_root / path),
         })
 
-    def add_link(path, resolve_to):
+    def add_link(path, link_text):
         links.append({
             "path": str(path),
             "perm": (test_tree_root / path).stat(follow_symlinks=False).st_mode & 0o777,
-            "dest": resolve_to
+            "dest": link_text
         })
 
     test_tree_root = pathlib.Path("/catalog_test/root")
@@ -107,7 +108,7 @@ def setup_test_tree(fs) -> Tuple[str, Dict[str, Any]]:
     # absolute link to file
     test_link1 = test_tree_root / "test_link1"
     test_link1.symlink_to(test_file1)
-    add_link(test_link1.relative_to(test_tree_root), "test_file1")
+    add_link(test_link1.relative_to(test_tree_root), "/catalog_test/root/test_file1")
 
     # relative link to dir
     test_link2 = test_tree_root / "test_link2"
@@ -117,12 +118,12 @@ def setup_test_tree(fs) -> Tuple[str, Dict[str, Any]]:
     # relative link to file
     test_link3 = test_dir2 / "test_link3"
     test_link3.symlink_to("../test_dir1/test_file2")
-    add_link(test_link3.relative_to(test_tree_root), "test_dir1/test_file2")
+    add_link(test_link3.relative_to(test_tree_root), "../test_dir1/test_file2")
 
     # relative dangling link
     test_link6 = test_dir2 / "test_link6"
     test_link6.symlink_to("../dangling-target")
-    add_link(test_link6.relative_to(test_tree_root), "dangling-target")
+    add_link(test_link6.relative_to(test_tree_root), "../dangling-target")
 
     # absolute dangling link
     test_link7 = test_dir2 / "test_link7"
@@ -132,7 +133,7 @@ def setup_test_tree(fs) -> Tuple[str, Dict[str, Any]]:
     # relative link to out-of-tree target
     test_link8 = test_dir2 / "test_link8"
     test_link8.symlink_to("../../../usr")
-    add_link(test_link8.relative_to(test_tree_root), "/usr")
+    add_link(test_link8.relative_to(test_tree_root), "../../../usr")
 
     # absolute link to out-of-tree target
     test_link9 = test_dir2 / "test_link9"
@@ -142,12 +143,12 @@ def setup_test_tree(fs) -> Tuple[str, Dict[str, Any]]:
     # relative link to link
     test_link4 = test_dir2 / "test_link4"
     test_link4.symlink_to("../test_link2")
-    add_link(test_link4.relative_to(test_tree_root), "test_dir1")
+    add_link(test_link4.relative_to(test_tree_root), "../test_link2")
 
     # absolute link to link
     test_link5 = test_dir2 / "test_link5"
     test_link5.symlink_to(test_link2)
-    add_link(test_link5.relative_to(test_tree_root), "test_dir1")
+    add_link(test_link5.relative_to(test_tree_root), "/catalog_test/root/test_link2")
 
     return str(test_tree_root), expect_data_catalog
 
@@ -298,6 +299,8 @@ def test_verify_catalog_link_not_a_link(setup_test_tree):
     assert link_problems == [(test_target, "not a link")]
 
 
+@pytest.mark.skipif(os.chmod not in os.supports_follow_symlinks,
+                    reason="the mode of a symlink cannot be changed on this system (e.g. Linux)")
 def test_verify_catalog_link_mode_mismatch(setup_test_tree):
     root, expect_data_catalog = setup_test_tree
     catalog_to_verify = FileCatalog(**expect_data_catalog)
@@ -477,7 +480,53 @@ def test_verify_catalog_mixed_failure(setup_test_tree):
     assert file_problems[0][0] == "test_dir2/test_file2"
     assert file_problems[0][1].startswith(f"file {catalog_to_verify.digest_algo.upper()} mismatch")
     assert rand_digest in file_problems[0][1]
-    for problem in link_problems:
-        assert problem[1].startswith('link destination mismatch')
-        assert "test_dir1" in problem[1]
-        assert "test_dir2/test_file2" in problem[1]
+    # links are checked by their own text, so the links through test_dir1 are not blamed for its replacement
+    assert link_problems == []
+
+
+def test_create_catalog_abs_link_independent_of_host(fs):
+    # A sysroot link to an absolute path means the target's root. Whatever that path is on the host (here, a link to
+    # somewhere else), the catalog records the link's own text.
+    fs.create_dir("/host/usr/lib")
+    fs.create_file("/host/usr/lib/libm.so.6")
+    fs.create_symlink("/lib", "/host/usr/lib")
+
+    root = pathlib.Path("/sysroot")
+    fs.create_dir(root / "lib")
+    fs.create_file(root / "lib/libm.so.6")
+    (root / "lib/libm.so").symlink_to("/lib/libm.so.6")
+
+    catalog = create_catalog("sha256", str(root))
+    assert [(link.path, link.dest) for link in catalog.links] == [("lib/libm.so", "/lib/libm.so.6")]
+
+    # replacing the host's /lib doesn't affect the verification of the sysroot
+    pathlib.Path("/lib").unlink()
+    fs.create_dir("/lib")
+    assert verify_catalog(catalog, str(root)) == ([], [], [])
+
+
+def test_verify_catalog_link_chain_blames_changed_link(fs):
+    root = pathlib.Path("/sysroot")
+    fs.create_dir(root)
+    fs.create_file(root / "c")
+    fs.create_file(root / "d")
+    (root / "b").symlink_to("c")
+    (root / "a").symlink_to("b")
+    catalog = create_catalog("sha256", str(root))
+
+    (root / "b").unlink()
+    (root / "b").symlink_to("d")
+    file_problems, link_problems, dir_problems = verify_catalog(catalog, str(root))
+    assert file_problems == []
+    assert dir_problems == []
+    assert len(link_problems) == 1
+    assert link_problems[0][0] == "b"
+    assert link_problems[0][1].startswith("link destination mismatch")
+
+
+def test_find_absolute_links(setup_test_tree):
+    root, _ = setup_test_tree
+    catalog = create_catalog("sha256", root)
+    assert sorted(link.path for link in find_absolute_links(catalog)) == [
+        "test_dir2/test_link5", "test_dir2/test_link7", "test_dir2/test_link9", "test_link1",
+    ]
