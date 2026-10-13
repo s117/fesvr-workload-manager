@@ -1,5 +1,6 @@
 import click
 
+from fwm.cli.completion import complete_by_kind
 from fwm.cli.fwm import open_repo
 from fwm.cli.output import echo_json, echo_view
 from fwm.database.schema import Workload
@@ -13,7 +14,7 @@ from fwm.repo.trace import resolve_trace
 
 @click.command()
 @click.argument("kind", type=click.Choice(["workload", "sysroot", "entry", "trace", "checkpoint"]))
-@click.argument("id")
+@click.argument("id", shell_complete=complete_by_kind)
 @click.option("--json", "as_json", is_flag=True, help="Print JSON, for scripts.")
 @click.pass_context
 def show(ctx, kind, id, as_json):

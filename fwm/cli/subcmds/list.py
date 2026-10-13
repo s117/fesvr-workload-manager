@@ -1,5 +1,6 @@
 import click
 
+from fwm.cli.completion import complete_list_filter, complete_sysroot, complete_trace, complete_workload
 from fwm.cli.fwm import open_repo
 from fwm.cli.output import echo_json, echo_table
 from fwm.repo import query
@@ -9,10 +10,10 @@ from fwm.repo.trace import resolve_trace
 @click.command("list")
 @click.argument("kind", type=click.Choice(["workloads", "sysroots", "entries", "traces", "checkpoints"]),
                 default="entries", required=False)
-@click.argument("name_filter", metavar="FILTER", required=False)
-@click.option("--workload", help="Only the entry points of this workload.")
-@click.option("--sysroot", help="Only the entry points in this sysroot.")
-@click.option("--trace", "trace_ref", help="Only the checkpoints of this trace.")
+@click.argument("name_filter", metavar="FILTER", required=False, shell_complete=complete_list_filter)
+@click.option("--workload", shell_complete=complete_workload, help="Only the entry points of this workload.")
+@click.option("--sysroot", shell_complete=complete_sysroot, help="Only the entry points in this sysroot.")
+@click.option("--trace", "trace_ref", shell_complete=complete_trace, help="Only the checkpoints of this trace.")
 @click.option("--json", "as_json", is_flag=True, help="Print JSON, for scripts.")
 @click.pass_context
 def list_cmd(ctx, kind, name_filter, workload, sysroot, trace_ref, as_json):

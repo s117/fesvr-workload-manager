@@ -2,6 +2,7 @@ import os
 
 import click
 
+from fwm.cli.completion import complete_by_kind, complete_entry, complete_sysroot, complete_trace, complete_workload
 from fwm.cli.fwm import open_repo
 from fwm.database.schema import Sysroot, DecoupledTrace, DecoupledCheckpoint
 from fwm.repo import remove as rm
@@ -53,8 +54,8 @@ def add_sysroot_cmd(ctx, directory, sysroot_name, description):
 
 
 @add.command("entry")
-@click.argument("sysroot_name")
-@click.argument("workload_name")
+@click.argument("sysroot_name", shell_complete=complete_sysroot)
+@click.argument("workload_name", shell_complete=complete_workload)
 @click.argument("entry_point_name")
 @click.argument("entry_point_json", type=click.Path(exists=True, dir_okay=False))
 @click.option("--description", "-d", help="A description of the entry point.")
@@ -74,7 +75,7 @@ def add_entry_cmd(ctx, sysroot_name, workload_name, entry_point_name, entry_poin
 
 
 @add.command("trace")
-@click.argument("entry")
+@click.argument("entry", shell_complete=complete_entry)
 @click.argument("recording_dir", type=click.Path(exists=True, file_okay=False))
 @click.option("--final-state", type=click.Path(exists=True, dir_okay=False),
               help="The +final-state-dump of the recording run: the instret of each HART.")
@@ -90,7 +91,7 @@ def add_trace_cmd(ctx, entry, recording_dir, final_state, description):
 
 
 @add.command("checkpoint")
-@click.argument("trace")
+@click.argument("trace", shell_complete=complete_trace)
 @click.argument("file", type=click.Path(exists=True, dir_okay=False))
 @click.option("--name", help="The checkpoint's name. Defaults to the file name.")
 @click.option("--simpoint-weight", type=float,
@@ -110,7 +111,7 @@ def add_checkpoint_cmd(ctx, trace, file, name, simpoint_weight, description):
 
 @repo.command("remove")
 @click.argument("kind", type=click.Choice(["sysroot", "entry", "trace", "checkpoint"]))
-@click.argument("id")
+@click.argument("id", shell_complete=complete_by_kind)
 @click.option("--recursive", "-r", is_flag=True, help="Also remove what depends on it.")
 @click.pass_context
 def remove_cmd(ctx, kind, id, recursive):
@@ -133,7 +134,7 @@ def remove_cmd(ctx, kind, id, recursive):
 
 @repo.command("verify")
 @click.argument("kind", type=click.Choice(["sysroot", "trace", "checkpoint"]), required=False)
-@click.argument("id", required=False)
+@click.argument("id", required=False, shell_complete=complete_by_kind)
 @click.pass_context
 def verify_cmd(ctx, kind, id):
     """

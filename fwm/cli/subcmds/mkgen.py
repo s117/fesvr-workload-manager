@@ -2,6 +2,7 @@ import os
 
 import click
 
+from fwm.cli.completion import complete_checkpoint, complete_entry, complete_trace
 from fwm.cli.fwm import open_repo
 from fwm.mkgen.makefile import generate_record, generate_replay, generate_load
 from fwm.utils.log import Logger
@@ -28,7 +29,7 @@ def mkgen():
 
 
 @mkgen.command()
-@click.argument("entry")
+@click.argument("entry", shell_complete=complete_entry)
 @_out_dir_option
 @click.pass_context
 def record(ctx, entry, out_dir):
@@ -41,7 +42,7 @@ def record(ctx, entry, out_dir):
 
 
 @mkgen.command()
-@click.argument("trace")
+@click.argument("trace", shell_complete=complete_trace)
 @click.option("--create-checkpoints", "ckpt_desc", type=click.Path(exists=True, dir_okay=False),
               help='Create the checkpoints of this description file: lines of "<name>: <instruction count>".')
 @_out_dir_option
@@ -56,7 +57,7 @@ def replay(ctx, trace, ckpt_desc, out_dir):
 
 
 @mkgen.command()
-@click.argument("checkpoint")
+@click.argument("checkpoint", shell_complete=complete_checkpoint)
 @_out_dir_option
 @click.pass_context
 def load(ctx, checkpoint, out_dir):
