@@ -18,7 +18,7 @@ from tests.fesvr_files import (
     write_recording, write_checkpoint, Command, exit_command, recording_sha256, CheckpointHart as CkptHart,
     encode_hart_state, default_hart_state_entries
 )
-from tests.repo.conftest import mode
+from tests.conftest import mode
 
 COMMANDS = [Command(), Command(), exit_command(0)]
 
