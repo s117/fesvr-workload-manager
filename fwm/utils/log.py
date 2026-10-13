@@ -34,18 +34,13 @@ class Logger:
     def get_logger(cls) -> logging.Logger:
         if cls.__logger is not None:
             return cls.__logger
-        logger = logging.getLogger()
+        # fwm's own logger, so that the debug logs of the libraries (e.g. peewee's queries) stay off
+        logger = logging.getLogger("fwm")
         logger.setLevel(logging.DEBUG)
 
-        stdout_stream = logging.StreamHandler(stream=sys.stdout)
-        stdout_stream.setLevel(logging.DEBUG)
-        stdout_stream.addFilter(lambda record: record.levelno <= logging.INFO)
-        stdout_stream.setFormatter(cls.ColorFormatter())
-        logger.addHandler(stdout_stream)
-
+        # every message goes to stderr: stdout carries the commands' output (e.g. --json), which scripts parse
         stderr_stream = logging.StreamHandler(stream=sys.stderr)
         stderr_stream.setLevel(logging.DEBUG)
-        stderr_stream.addFilter(lambda record: record.levelno > logging.INFO)
         stderr_stream.setFormatter(cls.ColorFormatter())
         logger.addHandler(stderr_stream)
 
