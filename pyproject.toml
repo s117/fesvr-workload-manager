@@ -47,3 +47,7 @@ build-backend = "uv_build"
 [tool.uv.build-backend]
 module-name = "fwm"
 module-root = ""
+
+[tool.mypy]
+# tests import helpers as tests.<module>, so map files to modules from the project root
+explicit_package_bases = true
