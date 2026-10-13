@@ -43,13 +43,14 @@ def open_repo(ctx: click.Context) -> Repo:
 
 
 def _register_commands() -> None:
+    from fwm.cli.subcmds.completion import completion
     from fwm.cli.subcmds.list import list_cmd
     from fwm.cli.subcmds.mkgen import mkgen
     from fwm.cli.subcmds.repo import repo
     from fwm.cli.subcmds.show import show
     from fwm.cli.subcmds.spawn import spawn
 
-    for command in (repo, list_cmd, show, spawn, mkgen):
+    for command in (repo, list_cmd, show, spawn, mkgen, completion):
         cli.add_command(command)
 
 

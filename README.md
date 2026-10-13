@@ -33,6 +33,22 @@ uv run fwm --help
 # or install the command: uv tool install .
 ```
 
+## Shell completion
+
+fwm completes its commands and options on Tab, like riscv-simenv. It also completes the names in the repository: sysroots, workloads, entry points, traces and checkpoints. The names come from the repository given by `--repo-path` or `FWM_REPO_PATH`; without one, nothing is offered. Enable it in your shell's startup file:
+
+```
+eval "$(fwm completion zsh)"            # ~/.zshrc
+eval "$(fwm completion bash)"           # ~/.bashrc
+fwm completion fish | source            # ~/.config/fish/config.fish
+```
+
+- **`fwm` must be on `PATH`**, e.g. with `uv tool install .`, or with this repository's `.venv/bin` on `PATH`. `uv run fwm` alone is not enough: the shell calls `fwm` to complete.
+- **Faster shell start-up:** `eval` runs fwm each time a shell starts. To avoid that, write the script once to a file and source it, e.g. for zsh `fwm completion zsh > ~/.zfunc/_fwm` with `~/.zfunc` in `fpath` before `compinit`. Write it again after updating fwm.
+- **Checkpoints** are completed by name when the name is unique, and otherwise as `<trace UUID>:<name>`. Typing a trace prefix and `:` narrows the list to that trace's checkpoints.
+  - bash splits words at `:`, so it can't complete that form. zsh and fish can.
+  - zsh and fish also show a short description with each name.
+
 ## Quick start
 
 ```
@@ -93,6 +109,7 @@ make -C run4 run SIM=/path/to/721sim SIM_FLAGS_EXTRA=-e100000000
 | `fwm show {workload\|sysroot\|entry\|trace\|checkpoint} <id> [--json]` | Show the details. |
 | `fwm spawn [--force] <sysroot> <dest>` | Make a working copy of a sysroot (the record Makefile does it). |
 | `fwm mkgen {record <entry> \| replay <trace> [--create-checkpoints f] \| load <ckpt>} [-o dir]` | Generate a run directory's Makefile. |
+| `fwm completion {bash\|zsh\|fish}` | Print the shell completion script. |
 
 How to name things:
 - **A trace** is its UUID (a unique prefix is enough), or the name of an entry point that has one trace.
