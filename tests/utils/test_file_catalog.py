@@ -530,3 +530,15 @@ def test_find_absolute_links(setup_test_tree):
     assert sorted(link.path for link in find_absolute_links(catalog)) == [
         "test_dir2/test_link5", "test_dir2/test_link7", "test_dir2/test_link9", "test_link1",
     ]
+
+
+def test_verify_catalog_perm_mask(setup_test_tree):
+    root, expect_data_catalog = setup_test_tree
+    catalog_to_verify = FileCatalog(**expect_data_catalog)
+    test_target_path = pathlib.Path(root) / "test_dir2/test_file2"
+    test_target_path.chmod(test_target_path.stat().st_mode & 0o555)
+
+    # the write bits are ignored with the mask, and compared without it
+    assert verify_catalog(catalog_to_verify, root, perm_mask=0o555) == ([], [], [])
+    file_problems, _, _ = verify_catalog(catalog_to_verify, root)
+    assert [p[0] for p in file_problems] == ["test_dir2/test_file2"]

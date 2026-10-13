@@ -1,5 +1,8 @@
 import os
 import shutil
+import stat
+import subprocess
+import sys
 from typing import Union, Tuple
 
 
@@ -55,3 +58,66 @@ def human_readable_size(size_bytes: int) -> str:
         assert isinstance(hsize[0], float)
         str_size = "%.1f %s" % hsize
     return str_size
+
+
+def copy_tree(src: str, dst: str) -> None:
+    """
+    Copy a directory tree, preserving symlinks as links and the permission bits. dst must not exist.
+
+    On Linux, GNU cp copies with reflinks where the file system supports them, which makes copying a large tree cheap.
+    """
+    if os.path.lexists(dst):
+        raise FileExistsError(dst)
+    if sys.platform.startswith("linux") and shutil.which("cp"):
+        result = subprocess.run(["cp", "-a", "--reflink=auto", "--", src, dst], capture_output=True, text=True)
+        if result.returncode != 0:
+            raise OSError(f"failed to copy {src} to {dst}: {result.stderr.strip()}")
+    else:
+        shutil.copytree(src, dst, symlinks=True)
+
+
+def set_tree_writable(path: str) -> None:
+    """
+    Give the owner full access to every directory of a tree, so that its entries can be created, renamed or removed,
+    and the tree itself can be moved. Files and links are left as they are.
+    """
+    def make_writable(d: str) -> None:
+        os.chmod(d, stat.S_IMODE(os.lstat(d).st_mode) | stat.S_IRWXU)
+
+    make_writable(path)
+    for dirpath, dirnames, _ in os.walk(path, followlinks=False):
+        for d in dirnames:
+            full = os.path.join(dirpath, d)
+            if not os.path.islink(full):
+                make_writable(full)
+
+
+def set_tree_readonly(path: str) -> None:
+    """
+    Remove the write permission bits from every file and directory of a tree (links are left as they are).
+    """
+    def make_readonly(p: str) -> None:
+        os.chmod(p, stat.S_IMODE(os.lstat(p).st_mode) & ~0o222)
+
+    if os.path.isfile(path) and not os.path.islink(path):
+        make_readonly(path)
+        return
+    for dirpath, dirnames, filenames in os.walk(path, topdown=False, followlinks=False):
+        for name in filenames + dirnames:
+            full = os.path.join(dirpath, name)
+            if not os.path.islink(full):
+                make_readonly(full)
+    make_readonly(path)
+
+
+def remove_tree(path: str) -> None:
+    """
+    Remove a file or a directory tree, including the read-only directories in it. A missing path is ignored.
+    """
+    if not os.path.lexists(path):
+        return
+    if os.path.islink(path) or not os.path.isdir(path):
+        os.remove(path)
+        return
+    set_tree_writable(path)
+    shutil.rmtree(path)

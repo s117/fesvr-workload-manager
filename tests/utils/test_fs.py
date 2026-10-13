@@ -74,3 +74,71 @@ def test_get_path_size(fs):
         f2.write(b"B" * file2_size)
     assert get_path_size(str(file2)) == file2_size
     assert get_path_size(str(path)) == file1_size + file2_size
+
+
+def make_tree(root: pathlib.Path) -> None:
+    (root / "sub").mkdir(parents=True)
+    (root / "sub" / "file").write_text("data")
+    (root / "top").write_text("top")
+    (root / "link").symlink_to("/abs/target")
+    (root / "sub" / "file").chmod(0o640)
+    (root / "sub").chmod(0o550)
+    root.chmod(0o555)
+
+
+def test_copy_tree(tmp_path):
+    from fwm.utils.fs import copy_tree
+
+    src = tmp_path / "src"
+    make_tree(src)
+    dst = tmp_path / "dst"
+    copy_tree(str(src), str(dst))
+    assert (dst / "sub" / "file").read_text() == "data"
+    assert (dst / "sub" / "file").stat().st_mode & 0o777 == 0o640
+    assert (dst / "sub").stat().st_mode & 0o777 == 0o550
+    assert dst.stat().st_mode & 0o777 == 0o555
+    assert (dst / "link").is_symlink()
+    assert str((dst / "link").readlink()) == "/abs/target"
+
+    with pytest.raises(FileExistsError):
+        copy_tree(str(src), str(dst))
+
+
+def test_set_tree_readonly_and_writable(tmp_path):
+    from fwm.utils.fs import set_tree_readonly, set_tree_writable
+
+    root = tmp_path / "root"
+    make_tree(root)
+    root.chmod(0o755)
+    (root / "sub").chmod(0o750)
+    set_tree_readonly(str(root))
+    assert (root / "sub" / "file").stat().st_mode & 0o777 == 0o440
+    assert (root / "top").stat().st_mode & 0o777 == 0o444
+    assert (root / "sub").stat().st_mode & 0o777 == 0o550
+    assert root.stat().st_mode & 0o777 == 0o555
+
+    set_tree_writable(str(root))
+    assert (root / "sub").stat().st_mode & 0o777 == 0o750
+    assert root.stat().st_mode & 0o777 == 0o755
+    assert (root / "sub" / "file").stat().st_mode & 0o777 == 0o440  # files are left as they are
+
+
+def test_set_file_readonly(tmp_path):
+    from fwm.utils.fs import set_tree_readonly
+
+    path = tmp_path / "file"
+    path.write_text("x")
+    path.chmod(0o664)
+    set_tree_readonly(str(path))
+    assert path.stat().st_mode & 0o777 == 0o444
+
+
+def test_remove_tree_readonly(tmp_path):
+    from fwm.utils.fs import remove_tree, set_tree_readonly
+
+    root = tmp_path / "root"
+    make_tree(root)
+    set_tree_readonly(str(root))
+    remove_tree(str(root))
+    assert not root.exists()
+    remove_tree(str(root))  # a missing path is ignored

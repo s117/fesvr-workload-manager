@@ -77,8 +77,14 @@ FailedDetail = Tuple[str, str]  # path, reason
 FailedList = List[FailedDetail]
 
 
-def verify_catalog(catalog: FileCatalog, tree_root: str, use_digest_cache=False) -> \
+def verify_catalog(catalog: FileCatalog, tree_root: str, use_digest_cache=False, perm_mask: int = 0o777) -> \
         Tuple[FailedList, FailedList, FailedList]:
+    """
+    Verify a tree against its catalog.
+
+    :param perm_mask: The permission bits to compare, e.g. 0o555 to ignore the write bits of a tree made read-only.
+    :return: The problems found with files, links and directories: lists of (path, reason).
+    """
     catalog_root = pathlib.Path(tree_root).resolve()
     digest_algo = catalog.digest_algo
 
@@ -91,7 +97,7 @@ def verify_catalog(catalog: FileCatalog, tree_root: str, use_digest_cache=False)
 
         file_stat = file_path.stat()
         file_mode = file_stat.st_mode & 0o777
-        if not file_item.perm == file_mode:
+        if not file_item.perm & perm_mask == file_mode & perm_mask:
             return file_item.path, f"file mode mismatch (expect={file_item.perm:03o}, actual={file_mode:03o})"
         if not file_item.actual_size == file_stat.st_size:
             return file_item.path, f"file size mismatch (expect={file_item.actual_size}B, actual={file_stat.st_size}B)"
@@ -111,7 +117,7 @@ def verify_catalog(catalog: FileCatalog, tree_root: str, use_digest_cache=False)
 
         link_stat = link_path.stat(follow_symlinks=False)
         link_mode = link_stat.st_mode & 0o777
-        if not link_item.perm == link_mode:
+        if not link_item.perm & perm_mask == link_mode & perm_mask:
             return link_item.path, f"link mode mismatch (expect={link_item.perm:03o}, actual={link_mode:03o})"
         # check link dest
         link_dest = os.readlink(link_path)
@@ -129,7 +135,7 @@ def verify_catalog(catalog: FileCatalog, tree_root: str, use_digest_cache=False)
 
         dir_stat = dir_path.stat()
         dir_mode = dir_stat.st_mode & 0o777
-        if not dir_item.perm == dir_mode:
+        if not dir_item.perm & perm_mask == dir_mode & perm_mask:
             return dir_item.path, f"directory mode mismatch (expect={dir_item.perm:03o}, actual={dir_mode:03o})"
 
         return None
