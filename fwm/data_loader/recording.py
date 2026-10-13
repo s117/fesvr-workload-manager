@@ -238,7 +238,8 @@ def read_recording(recording_dir: str) -> Recording:
         harts.append(HartRecording(hart_id=hart_id, recording_sha256=recorded_sha256, num_commands=num_commands,
                                    last_exit_code=last_exit_code))
 
-    # sys_exit sets the FESVR exit code to (code << 1 | 1), which is never 0, and the run stops right after that command.
+    # sys_exit sets the FESVR exit code to (code << 1 | 1), which is never 0, and the run stops right after that
+    # command. A run stopped earlier (e.g. by -e) leaves 0 in every last command.
     exit_codes = [h.last_exit_code for h in harts if h.last_exit_code != 0]
     exit_status = exit_codes[0] >> 1 if exit_codes else None
     return Recording(target_spec=target_spec, harts=harts, exit_status=exit_status)
