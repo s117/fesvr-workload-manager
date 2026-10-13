@@ -20,7 +20,7 @@ def echo_table(rows: List[View], columns: Sequence[Tuple[str, str]]) -> None:
         if value is None:
             return "-"
         if isinstance(value, list):
-            return ",".join(str(v) for v in value) if value else "-"
+            return ",".join(cell(v) for v in value) if value else "-"
         return str(value)
 
     table = [[heading for _, heading in columns]] + [[cell(row[key]) for key, _ in columns] for row in rows]
