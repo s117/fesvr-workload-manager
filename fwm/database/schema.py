@@ -1,3 +1,5 @@
+from typing import TYPE_CHECKING
+
 import peewee as pw
 
 from fwm.database.custom_field import TimestampTzField
@@ -92,6 +94,9 @@ class Workload(BaseModel):
     # Creation time.
     creation_time = TimestampTzField(default=now_tz)
 
+    if TYPE_CHECKING:
+        entries: pw.ModelSelect["NativeEntry"]  # backref of NativeEntry.workload
+
 
 class Sysroot(BaseModel):
     """
@@ -109,6 +114,9 @@ class Sysroot(BaseModel):
 
     # Creation time.
     creation_time = TimestampTzField(default=now_tz)
+
+    if TYPE_CHECKING:
+        entries: pw.ModelSelect["NativeEntry"]  # backref of NativeEntry.sysroot
 
 
 class NativeEntry(BaseModel):
@@ -148,6 +156,9 @@ class NativeEntry(BaseModel):
     # Creation time.
     creation_time = TimestampTzField(default=now_tz)
 
+    if TYPE_CHECKING:
+        traces: pw.ModelSelect["DecoupledTrace"]  # backref of DecoupledTrace.native_entry
+
 
 class DecoupledTrace(BaseModel):
     """
@@ -179,6 +190,10 @@ class DecoupledTrace(BaseModel):
 
     # Creation time.
     creation_time = TimestampTzField(default=now_tz)
+
+    if TYPE_CHECKING:
+        harts: pw.ModelSelect["TraceHart"]  # backref of TraceHart.trace
+        checkpoints: pw.ModelSelect["DecoupledCheckpoint"]  # backref of DecoupledCheckpoint.trace
 
 
 class TraceHart(BaseModel):
@@ -231,6 +246,9 @@ class DecoupledCheckpoint(BaseModel):
 
     # Creation time.
     creation_time = TimestampTzField(default=now_tz)
+
+    if TYPE_CHECKING:
+        harts: pw.ModelSelect["CheckpointHart"]  # backref of CheckpointHart.checkpoint
 
     class Meta:
         indexes = ((('trace', 'name'), True),)

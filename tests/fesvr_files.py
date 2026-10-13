@@ -53,7 +53,7 @@ def encode_packets(commands: Sequence[Command]) -> Tuple[bytes, List[int]]:
     return bytes(data), offsets
 
 
-def write_recording(rec_dir: str, mem_mb: int = 256, harts: Optional[Sequence[Sequence[Command]]] = None,
+def write_recording(rec_dir: str, mem_mb: int = 1, harts: Optional[Sequence[Sequence[Command]]] = None,
                     boot_elf: bytes = DEFAULT_BOOT_ELF, compress: bool = True) -> None:
     """
     Write a recording folder. By default, one HART whose program runs two commands and exits with status 0.
