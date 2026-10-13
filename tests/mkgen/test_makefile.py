@@ -49,7 +49,7 @@ def test_record(repo, entry, tmp_path):
     commands = make_dry_run(run)
     assert f"rm -rf {run}/trace {run}/final-state.json {run}/console.stdout {run}/console.stderr" in commands
     assert f"--repo-path {repo.path} spawn --force sr {run}/sysroot" in commands
-    sim_line = [line for line in commands.splitlines() if "+chroot=" in line][0]
+    sim_line = next(line for line in commands.splitlines() if "+chroot=" in line)
     assert sim_line.startswith(f"cd {run} && spike -m1 -p1 ")
     for part in (f"+chroot={run}/sysroot", "+target-cwd=/app", f"+dev-traffic-record={run}/trace",
                  f"+final-state-dump={run}/final-state.json", f"+std-dump={run}/console",
@@ -108,7 +108,7 @@ def test_replay(repo, trace, tmp_path):
     generate_replay(repo, "e", str(run))
     commands = make_dry_run(run)
     assert f"rm -f {run}/final-state.json" in commands
-    sim_line = [line for line in commands.splitlines() if "+dev-traffic-replay=" in line][0]
+    sim_line = next(line for line in commands.splitlines() if "+dev-traffic-replay=" in line)
     # no program argument in replay mode
     assert sim_line.strip() == (f"cd {run} && spike -m1 -p1 +dev-traffic-replay={repo.trace_dir(trace.uuid)} "
                                 f"+final-state-dump={run}/final-state.json")

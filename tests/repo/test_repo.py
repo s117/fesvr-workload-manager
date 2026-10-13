@@ -52,7 +52,8 @@ def test_add_sysroot(repo, sysroot_src):
     sysroot = add_sysroot(repo, str(sysroot_src), "sr", description="test")
     assert sysroot.description == "test"
     stored = repo.sysroot_dir("sr")
-    assert (open(os.path.join(stored, "app", "input.txt")).read()) == "1\n2\n"
+    with open(os.path.join(stored, "app", "input.txt")) as f:
+        assert f.read() == "1\n2\n"
     # the copy is read-only, the catalog keeps the original permissions
     assert mode(os.path.join(stored, "app", "data")) == 0o500
     assert mode(os.path.join(stored, "app", "prog.rv64")) == 0o550

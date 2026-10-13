@@ -117,7 +117,8 @@ def test_digest_independent_of_compression(tmp_path):
     memory = zlib.decompress(data[header_size:])
     with open(path_b, "wb") as f:
         f.write(data[:header_size] + zlib.compress(memory, 1))
-    assert open(path_a, "rb").read() != open(path_b, "rb").read()
+    with open(path_a, "rb") as a, open(path_b, "rb") as b:
+        assert a.read() != b.read()
     assert checkpoint_content_sha256(path_a) == checkpoint_content_sha256(path_b)
 
 

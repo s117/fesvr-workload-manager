@@ -69,7 +69,8 @@ def copy_tree(src: str, dst: str) -> None:
     if os.path.lexists(dst):
         raise FileExistsError(dst)
     if sys.platform.startswith("linux") and shutil.which("cp"):
-        result = subprocess.run(["cp", "-a", "--reflink=auto", "--", src, dst], capture_output=True, text=True)
+        result = subprocess.run(["cp", "-a", "--reflink=auto", "--", src, dst], capture_output=True, text=True,
+                                check=False)
         if result.returncode != 0:
             raise OSError(f"failed to copy {src} to {dst}: {result.stderr.strip()}")
     else:

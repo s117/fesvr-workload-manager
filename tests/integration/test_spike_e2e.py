@@ -40,7 +40,8 @@ def fwm(env, *args) -> str:
 
 
 def make(run_dir, *args) -> int:
-    return subprocess.run(["make", "-s", "-C", str(run_dir), "run", *args], capture_output=True).returncode
+    return subprocess.run(["make", "-s", "-C", str(run_dir), "run", *args], capture_output=True,
+                          check=False).returncode
 
 
 def instret(run_dir) -> int:

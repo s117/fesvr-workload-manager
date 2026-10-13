@@ -92,7 +92,7 @@ def test_list_and_show(run, populated):
     assert json.loads(out)["entries"] == ["e"]
     code, out, _ = run("show", "trace", "e", "--json")
     assert json.loads(out)["uuid"] == trace_uuid
-    code, out, _ = run("show", "checkpoint", f"e:e.2.0.40", "--json")
+    code, out, _ = run("show", "checkpoint", "e:e.2.0.40", "--json")
     assert json.loads(out)["path"].endswith(os.path.join(trace_uuid, "e.2.0.40"))
 
 
@@ -107,9 +107,9 @@ def test_list_tables(run, populated):
 
 def test_list_filters(run, populated, write_entry_point):
     run("repo", "add", "entry", "sr", "other-wl", "other", write_entry_point())
-    code, out, _ = run("list", "entries", "--workload", "wl", "--json")
+    _, out, _ = run("list", "entries", "--workload", "wl", "--json")
     assert [e["name"] for e in json.loads(out)] == ["e"]
-    code, out, _ = run("list", "entries", "oth", "--json")
+    _, out, _ = run("list", "entries", "oth", "--json")
     assert [e["name"] for e in json.loads(out)] == ["other"]
     assert run("list", "traces", "--workload", "wl")[0] == 2
 
