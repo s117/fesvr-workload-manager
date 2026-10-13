@@ -255,6 +255,16 @@ def test_add_trace_final_state_mismatch(repo, entry, tmp_path):
         add_trace(repo, "e", str(rec), final_state=write_final_state(tmp_path, 1, 2))
 
 
+def test_add_trace_empty_final_state(repo, entry, tmp_path):
+    # spike leaves +final-state-dump empty when -e stops the run
+    rec = tmp_path / "rec"
+    write_recording(str(rec), harts=[[Command()]])
+    final_state = tmp_path / "final-state.json"
+    final_state.write_text("")
+    with pytest.raises(FwmValidationError, match="is empty"):
+        add_trace(repo, "e", str(rec), final_state=str(final_state))
+
+
 def test_resolve_trace(repo, entry, tmp_path, monkeypatch):
     uuids = iter([uuid.UUID("12345678-0000-0000-0000-000000000001"), uuid.UUID("12345678-0000-0000-0000-000000000002")])
     monkeypatch.setattr("fwm.repo.trace.uuid", SimpleNamespace(uuid4=lambda: next(uuids)))

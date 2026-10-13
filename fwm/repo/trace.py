@@ -85,6 +85,10 @@ def add_trace(repo: Repo, entry_name: str, recording_dir: str, final_state: Opti
 
     instrets: Optional[List[int]] = None
     if final_state is not None:
+        if os.path.isfile(final_state) and os.path.getsize(final_state) == 0:
+            raise FwmValidationError(
+                f"the final state {final_state} is empty: spike writes it only when the program ends, not when -e "
+                f"stops the run. Import a truncated recording without --final-state.")
         try:
             instrets = read_final_state(final_state)
         except (OSError, json.JSONDecodeError, pydantic.ValidationError) as e:
