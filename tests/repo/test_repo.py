@@ -14,6 +14,7 @@ from fwm.repo.errors import AlreadyExistsError, FwmValidationError, NotFoundErro
 from fwm.repo.repo import Repo
 from fwm.repo.sysroot import add_sysroot, verify_sysroot, spawn_sysroot
 from fwm.repo.trace import add_trace, resolve_trace, verify_trace
+from tests.data_loader.test_sim_version import SPIKE_VERSION
 from tests.fesvr_files import (
     write_recording, write_checkpoint, Command, exit_command, recording_sha256, CheckpointHart as CkptHart,
     encode_hart_state, default_hart_state_entries
@@ -407,6 +408,11 @@ def test_add_checkpoint_duplicate(repo, trace, tmp_path):
     other = make_checkpoint(tmp_path / "other", "c", count=2000)
     with pytest.raises(AlreadyExistsError, match="different content"):
         add_checkpoint(repo, "e", other, exist_ok=True)
+
+
+def test_add_checkpoint_sim_version(repo, trace, tmp_path):
+    ckpt = add_checkpoint(repo, "e", make_checkpoint(tmp_path, "c"), sim_version=SPIKE_VERSION)
+    assert DecoupledCheckpoint.get_by_id(ckpt.id).sim_version == SPIKE_VERSION
 
 
 def test_resolve_checkpoint(repo, entry, trace, tmp_path):

@@ -4,6 +4,8 @@ import os
 from click.testing import CliRunner
 
 from fwm.cli.fwm import cli
+from tests.data_loader.test_sim_version import SPIKE_VERSION
+from tests.fesvr_files import write_recording, Command, exit_command
 
 
 def test_no_repo(tmp_path, monkeypatch):
@@ -160,3 +162,32 @@ def test_read_only_repo(run, populated, tmp_path, write_entry_point):
     finally:
         for p in readonly:
             p.chmod(p.stat().st_mode | 0o200)
+
+
+def test_sim_version(run, populated, tmp_path):
+    version = tmp_path / "sim-version.txt"
+    version.write_text(SPIKE_VERSION)
+    rec = tmp_path / "rec2"
+    write_recording(str(rec), harts=[[Command(payload=0x3000), exit_command(0)]])
+    code, out, _ = run("repo", "add", "trace", "e", str(rec), "--sim-version", str(version))
+    assert code == 0
+    trace_uuid = out.strip()
+
+    code, out, _ = run("show", "trace", trace_uuid, "--json")
+    view = json.loads(out)
+    assert view["sim_version"]["raw"] == SPIKE_VERSION
+    assert view["sim_version"]["builds"]["spike"]["Commit"] == "0d7a85c80db593a638d33cb655d866b174d69bde"
+    assert view["fwm_version"]
+    code, out, _ = run("show", "trace", trace_uuid)
+    assert "spike: heads/anycore-gcc_16.1.0-llvm_22.1.8-0-g0d7a85c (0d7a85c80db5)" in out
+    assert "FESVR (libfesvr): heads/anycore-gcc_16.1.0-llvm_22.1.8-0-g4fce14b (4fce14b1b852)" in out
+
+    # a trace imported without one
+    assert json.loads(run("show", "trace", populated, "--json")[1])["sim_version"] is None
+
+    version.write_text("not a version\n")
+    rec3 = tmp_path / "rec3"
+    write_recording(str(rec3), harts=[[Command(payload=0x4000), exit_command(0)]])
+    code, out, err = run("repo", "add", "trace", "e", str(rec3), "--sim-version", str(version))
+    assert (code, out) == (4, "")
+    assert "invalid --sim-version" in err

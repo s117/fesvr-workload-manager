@@ -29,11 +29,27 @@ def echo_table(rows: List[View], columns: Sequence[Tuple[str, str]]) -> None:
         click.echo("  ".join(c.ljust(w) for c, w in zip(r, widths)).rstrip())
 
 
+def summarize_sim_version(view: View) -> View:
+    """A view with its `spike --version` output shortened to each component's version and commit, for reading."""
+    sim_version = view.get("sim_version")
+    if not sim_version:
+        return view
+    builds = sim_version["builds"]
+    if builds is None:
+        summary: Any = sim_version["raw"].strip()
+    else:
+        summary = {title: f"{fields['Version']} ({fields['Commit'][:12]})" for title, fields in builds.items()}
+    return {**view, "sim_version": summary}
+
+
 def echo_view(view: View, indent: int = 0) -> None:
     """Print a view as indented "key: value" lines."""
     pad = " " * indent
     for key, value in view.items():
-        if isinstance(value, list) and value and isinstance(value[0], dict):
+        if isinstance(value, dict):
+            click.echo(f"{pad}{key}:")
+            echo_view(value, indent + 2)
+        elif isinstance(value, list) and value and isinstance(value[0], dict):
             click.echo(f"{pad}{key}:")
             for item in value:
                 click.echo(f"{pad}  -")

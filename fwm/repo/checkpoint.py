@@ -76,7 +76,7 @@ def _existing_checkpoint(ckpt: DecoupledCheckpoint, content_sha256: Optional[str
 
 def add_checkpoint(repo: Repo, trace_ref: str, file: str, name: Optional[str] = None,
                    simpoint_weight: Optional[float] = None, description: Optional[str] = None,
-                   exist_ok: bool = False) -> DecoupledCheckpoint:
+                   exist_ok: bool = False, sim_version: Optional[str] = None) -> DecoupledCheckpoint:
     """
     Import a checkpoint created from a trace. It is checked against the trace, so that it is known to load with it.
 
@@ -84,6 +84,7 @@ def add_checkpoint(repo: Repo, trace_ref: str, file: str, name: Optional[str] = 
     :param simpoint_weight: Its SimPoint weight, by default decoded from its name when it follows the riscv-simenv
                             convention {entry}.{simpoint_index}.{weight}.
     :param exist_ok: If the trace has a checkpoint of this name with the same content, return it instead of failing.
+    :param sim_version: The `spike --version` output of the simulator that created it, for provenance.
     :raise AlreadyExistsError: The trace has a checkpoint of this name.
     """
     trace: DecoupledTrace = resolve_trace(trace_ref)
@@ -107,12 +108,12 @@ def add_checkpoint(repo: Repo, trace_ref: str, file: str, name: Optional[str] = 
     with repo.staging() as staged:
         os.mkdir(staged)
         shutil.copy2(file, os.path.join(staged, name))
-        return _import_checkpoint(repo, trace, file, name, staged, simpoint_weight, description, exist_ok)
+        return _import_checkpoint(repo, trace, file, name, staged, simpoint_weight, description, exist_ok, sim_version)
 
 
 def _import_checkpoint(repo: Repo, trace: DecoupledTrace, file: str, name: str, staged: str,
                        simpoint_weight: Optional[float], description: Optional[str],
-                       exist_ok: bool) -> DecoupledCheckpoint:
+                       exist_ok: bool, sim_version: Optional[str]) -> DecoupledCheckpoint:
     # check the copy that is stored, not the source
     staged_file = os.path.join(staged, name)
     try:
@@ -150,7 +151,8 @@ def _import_checkpoint(repo: Repo, trace: DecoupledTrace, file: str, name: str, 
             return _existing_checkpoint(existing, content_sha256, file, exist_ok)
         ckpt = DecoupledCheckpoint.create(
             trace=trace, name=name, file_catalog=save_catalog(catalog), format_version=header.format_version,
-            content_sha256=content_sha256, simpoint_weight=simpoint_weight, description=description)
+            content_sha256=content_sha256, simpoint_weight=simpoint_weight, sim_version=sim_version,
+            description=description)
         for hart, csr_count in zip(header.harts, csr_counts):
             CheckpointHart.create(checkpoint=ckpt, hart_id=hart.hart_id, recording_sha256=hart.recording_sha256,
                                   cmd_index=hart.cmd_index, hart_state_version=hart.state_version,

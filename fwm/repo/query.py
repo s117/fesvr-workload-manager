@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional
 
 import peewee as pw
 
+from fwm.data_loader.sim_version import parse_sim_version, SimVersionError
 from fwm.database.schema import (
     Workload, Sysroot, NativeEntry, DecoupledTrace, DecoupledCheckpoint, CatalogFile, CatalogLink, CatalogDir
 )
@@ -18,6 +19,17 @@ View = Dict[str, Any]
 
 def _time(t: Optional[datetime]) -> Optional[str]:
     return t.isoformat(timespec="seconds") if t is not None else None
+
+
+def sim_version_view(text: Optional[str]) -> Optional[View]:
+    """The `spike --version` output kept for provenance: its build information, by component, and its raw text."""
+    if text is None:
+        return None
+    try:
+        builds: Any = parse_sim_version(text)
+    except SimVersionError:
+        builds = None
+    return {"builds": builds, "raw": text}
 
 
 def workload_view(workload: Workload) -> View:
@@ -75,6 +87,8 @@ def trace_view(repo: Repo, trace: DecoupledTrace) -> View:
         "boot_elf_sha256": trace.boot_elf_sha256,
         "exit_status": trace.exit_status,
         "complete": trace.exit_status is not None,
+        "sim_version": sim_version_view(trace.sim_version),
+        "fwm_version": trace.fwm_version,
         "harts": [{
             "hart_id": h.hart_id,
             "recording_sha256": h.recording_sha256,
@@ -96,6 +110,8 @@ def checkpoint_view(repo: Repo, ckpt: DecoupledCheckpoint) -> View:
         "format_version": ckpt.format_version,
         "content_sha256": ckpt.content_sha256,
         "simpoint_weight": ckpt.simpoint_weight,
+        "sim_version": sim_version_view(ckpt.sim_version),
+        "fwm_version": ckpt.fwm_version,
         "harts": [{
             "hart_id": h.hart_id,
             "recording_sha256": h.recording_sha256,

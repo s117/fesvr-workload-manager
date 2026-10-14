@@ -4,6 +4,7 @@ import click
 
 from fwm.cli.completion import complete_by_kind, complete_entry, complete_sysroot, complete_trace, complete_workload
 from fwm.cli.fwm import open_repo
+from fwm.data_loader.sim_version import read_sim_version, SimVersionError
 from fwm.database.schema import Sysroot, DecoupledTrace, DecoupledCheckpoint
 from fwm.repo import remove as rm
 from fwm.repo.checkpoint import add_checkpoint, resolve_checkpoint, verify_checkpoint
@@ -38,6 +39,20 @@ def add():
     """
     Add a sysroot, an entry point, a trace or a checkpoint.
     """
+
+
+_sim_version_option = click.option(
+    "--sim-version", "sim_version_file", type=click.Path(exists=True, dir_okay=False),
+    help="A file with the `spike --version` output of the simulator that made it, kept for provenance.")
+
+
+def _read_sim_version(path):
+    if path is None:
+        return None
+    try:
+        return read_sim_version(path)
+    except (OSError, SimVersionError) as e:
+        raise FwmValidationError(f"invalid --sim-version {path}: {e}")
 
 
 _exist_ok_option = click.option(
@@ -88,17 +103,18 @@ def add_entry_cmd(ctx, sysroot_name, workload_name, entry_point_name, entry_poin
 @click.option("--final-state", type=click.Path(exists=True, dir_okay=False),
               help="The +final-state-dump of the recording run: the instret of each HART.")
 @click.option("--description", "-d", help="A description of the trace.")
+@_sim_version_option
 @_exist_ok_option
 @click.pass_context
-def add_trace_cmd(ctx, entry, recording_dir, final_state, description, exist_ok):
+def add_trace_cmd(ctx, entry, recording_dir, final_state, description, sim_version_file, exist_ok):
     """
     Import RECORDING_DIR, a recording (+dev-traffic-record) of a run of the entry point ENTRY, as a trace.
 
     Prints the UUID of the trace. A recording that already is a trace of the entry point fails with status 5, or,
     with --exist-ok and the same final state, prints that trace.
     """
-    click.echo(str(add_trace(open_repo(ctx, write=True), entry, recording_dir, final_state, description,
-                             exist_ok).uuid))
+    click.echo(str(add_trace(open_repo(ctx, write=True), entry, recording_dir, final_state, description, exist_ok,
+                             _read_sim_version(sim_version_file)).uuid))
 
 
 @add.command("checkpoint")
@@ -109,15 +125,17 @@ def add_trace_cmd(ctx, entry, recording_dir, final_state, description, exist_ok)
               help="Its SimPoint weight. Defaults to the one in its name, when the name is "
                    "<entry>.<simpoint index>.<weight>.")
 @click.option("--description", "-d", help="A description of the checkpoint.")
+@_sim_version_option
 @_exist_ok_option
 @click.pass_context
-def add_checkpoint_cmd(ctx, trace, file, name, simpoint_weight, description, exist_ok):
+def add_checkpoint_cmd(ctx, trace, file, name, simpoint_weight, description, sim_version_file, exist_ok):
     """
     Import FILE, a checkpoint created from TRACE (a trace UUID or prefix, or an entry point with one trace).
 
     Prints the checkpoint as <trace UUID>:<name>.
     """
-    ckpt = add_checkpoint(open_repo(ctx, write=True), trace, file, name, simpoint_weight, description, exist_ok)
+    ckpt = add_checkpoint(open_repo(ctx, write=True), trace, file, name, simpoint_weight, description, exist_ok,
+                          _read_sim_version(sim_version_file))
     click.echo(f"{ckpt.trace.uuid}:{ckpt.name}")
 
 

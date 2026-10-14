@@ -97,13 +97,15 @@ def _existing_trace(trace: DecoupledTrace, instrets: Optional[List[int]], exist_
 
 
 def add_trace(repo: Repo, entry_name: str, recording_dir: str, final_state: Optional[str] = None,
-              description: Optional[str] = None, exist_ok: bool = False) -> DecoupledTrace:
+              description: Optional[str] = None, exist_ok: bool = False,
+              sim_version: Optional[str] = None) -> DecoupledTrace:
     """
     Import a device traffic recording of an entry point's run as a trace.
 
     :param final_state: The +final-state-dump of the recording run, which gives the instret of each HART.
     :param exist_ok: If the recording already is a trace of the entry point, with the same final state, return it
                      instead of failing.
+    :param sim_version: The `spike --version` output of the simulator that made the recording, for provenance.
     :raise AlreadyExistsError: The recording already is a trace of the entry point.
     """
     entry = get_entry(entry_name)
@@ -122,12 +124,12 @@ def add_trace(repo: Repo, entry_name: str, recording_dir: str, final_state: Opti
         except (RecordingFormatError, OSError, EOFError) as e:
             raise FwmValidationError(f"invalid recording {recording_dir}: {str(e).replace(staged, recording_dir)}")
         return _import_trace(repo, entry, recording_dir, staged, recording, final_state, instrets, description,
-                             exist_ok)
+                             exist_ok, sim_version)
 
 
 def _import_trace(repo: Repo, entry: NativeEntry, recording_dir: str, staged: str, recording: Recording,
                   final_state: Optional[str], instrets: Optional[List[int]], description: Optional[str],
-                  exist_ok: bool) -> DecoupledTrace:
+                  exist_ok: bool, sim_version: Optional[str]) -> DecoupledTrace:
     spec = recording.target_spec
 
     if spec.mem_mb != entry.mem_mb:
@@ -172,7 +174,7 @@ def _import_trace(repo: Repo, entry: NativeEntry, recording_dir: str, staged: st
         trace = DecoupledTrace.create(
             uuid=trace_uuid, native_entry=entry, file_catalog=save_catalog(catalog), mem_mb=spec.mem_mb,
             num_harts=spec.num_harts, boot_elf_sha256=spec.boot_elf_sha256, exit_status=recording.exit_status,
-            description=description)
+            sim_version=sim_version, description=description)
         for hart in recording.harts:
             TraceHart.create(trace=trace, hart_id=hart.hart_id, recording_sha256=hart.recording_sha256,
                              num_commands=hart.num_commands,
