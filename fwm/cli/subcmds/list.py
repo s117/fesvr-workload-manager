@@ -51,7 +51,7 @@ def list_cmd(ctx, kind, name_filter, workload, sysroot, trace_ref, as_json):
         for row in rows:
             row["csr_count"] = [h["csr_count"] for h in row["harts"]]
         columns = [("name", "CHECKPOINT"), ("entry", "ENTRY"), ("trace", "TRACE"), ("simpoint_weight", "WEIGHT"),
-                   ("csr_count", "COUNT")]
+                   ("simpoint_interval", "INTERVAL"), ("csr_count", "COUNT")]
 
     if as_json:
         echo_json(rows)

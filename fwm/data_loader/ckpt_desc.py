@@ -54,3 +54,15 @@ def parse_ckpt_desc(text: str) -> List[Tuple[str, int]]:
         names.add(ckpt_name)
         counts.add(ckpt_count)
     return result
+
+
+def read_ckpt_desc(path: str) -> List[Tuple[str, int]]:
+    """
+    Read and parse a checkpoint description file. Like FESVR, only "\n" ends a line: a file with other line endings
+    is read the same way spike reads it.
+
+    :raise OSError: The file can't be read.
+    :raise CkptDescError: The description is invalid.
+    """
+    with open(path, "rb") as f:
+        return parse_ckpt_desc(f.read().decode("latin-1"))

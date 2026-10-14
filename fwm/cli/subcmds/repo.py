@@ -7,7 +7,7 @@ from fwm.cli.fwm import open_repo
 from fwm.data_loader.sim_version import read_sim_version, SimVersionError
 from fwm.database.schema import Sysroot, DecoupledTrace, DecoupledCheckpoint
 from fwm.repo import remove as rm
-from fwm.repo.checkpoint import add_checkpoint, resolve_checkpoint, verify_checkpoint
+from fwm.repo.checkpoint import add_checkpoints, resolve_checkpoint, verify_checkpoint
 from fwm.repo.entry import add_entry
 from fwm.repo.errors import FwmValidationError
 from fwm.repo.gc import collect_garbage, find_leftovers
@@ -119,24 +119,34 @@ def add_trace_cmd(ctx, entry, recording_dir, final_state, description, sim_versi
 
 @add.command("checkpoint")
 @click.argument("trace", shell_complete=complete_trace)
-@click.argument("file", type=click.Path(exists=True, dir_okay=False))
-@click.option("--name", help="The checkpoint's name. Defaults to the file name.")
+@click.argument("files", metavar="FILE...", nargs=-1, required=True, type=click.Path(exists=True, dir_okay=False))
+@click.option("--desc", type=click.Path(exists=True, dir_okay=False),
+              help="The description file the checkpoints were created from (+create-checkpoint). The files must be "
+                   "exactly the checkpoints it lists; their requested instruction counts are kept.")
+@click.option("--simpoint-info", type=click.Path(exists=True, dir_okay=False),
+              help='A JSON file of SimPoint information by checkpoint name: '
+                   '{"<name>": {"simpoint_index": 3, "interval": 100000000, "weight": 0.2531}}.')
+@click.option("--name", help="The checkpoint's name, instead of the file name (one FILE only).")
 @click.option("--simpoint-weight", type=float,
-              help="Its SimPoint weight. Defaults to the one in its name, when the name is "
-                   "<entry>.<simpoint index>.<weight>.")
-@click.option("--description", "-d", help="A description of the checkpoint.")
+              help="Its SimPoint weight (one FILE only). Without a weight from here or --simpoint-info, it is decoded "
+                   "from a name of the form <entry>.<simpoint index>.<weight>.")
+@click.option("--description", "-d", help="A description of the checkpoints.")
 @_sim_version_option
 @_exist_ok_option
 @click.pass_context
-def add_checkpoint_cmd(ctx, trace, file, name, simpoint_weight, description, sim_version_file, exist_ok):
+def add_checkpoint_cmd(ctx, trace, files, desc, simpoint_info, name, simpoint_weight, description, sim_version_file,
+                       exist_ok):
     """
-    Import FILE, a checkpoint created from TRACE (a trace UUID or prefix, or an entry point with one trace).
+    Import checkpoints created from TRACE (a trace UUID or prefix, or an entry point with one trace), in one
+    transaction.
 
-    Prints the checkpoint as <trace UUID>:<name>.
+    Prints each checkpoint as <trace UUID>:<name>, in the order of the files.
     """
-    ckpt = add_checkpoint(open_repo(ctx, write=True), trace, file, name, simpoint_weight, description, exist_ok,
-                          _read_sim_version(sim_version_file))
-    click.echo(f"{ckpt.trace.uuid}:{ckpt.name}")
+    ckpts = add_checkpoints(open_repo(ctx, write=True), trace, files, name=name, simpoint_weight=simpoint_weight,
+                            simpoint_info=simpoint_info, desc=desc, description=description, exist_ok=exist_ok,
+                            sim_version=_read_sim_version(sim_version_file))
+    for ckpt in ckpts:
+        click.echo(f"{ckpt.trace.uuid}:{ckpt.name}")
 
 
 @repo.command("remove")

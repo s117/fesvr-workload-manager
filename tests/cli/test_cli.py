@@ -5,7 +5,11 @@ from click.testing import CliRunner
 
 from fwm.cli.fwm import cli
 from tests.data_loader.test_sim_version import SPIKE_VERSION
-from tests.fesvr_files import write_recording, Command, exit_command
+from tests.cli.conftest import COMMANDS
+from tests.fesvr_files import (
+    write_recording, write_checkpoint, recording_sha256, Command, CheckpointHart, encode_hart_state,
+    default_hart_state_entries, exit_command
+)
 
 
 def test_no_repo(tmp_path, monkeypatch):
@@ -191,3 +195,24 @@ def test_sim_version(run, populated, tmp_path):
     code, out, err = run("repo", "add", "trace", "e", str(rec3), "--sim-version", str(version))
     assert (code, out) == (4, "")
     assert "invalid --sim-version" in err
+
+
+def test_add_checkpoints(run, populated, tmp_path):
+    files = []
+    for name, count in (("e.5.0.25", 3000), ("e.7.0.35", 4000)):
+        path = tmp_path / name
+        write_checkpoint(str(path), [CheckpointHart(recording_sha256(COMMANDS), cmd_index=1,
+                                                    state=encode_hart_state(default_hart_state_entries(count=count)))])
+        files.append(str(path))
+    desc = tmp_path / "ckpt.desc"
+    desc.write_text("e.5.0.25: 3000\ne.7.0.35: 4000\n")
+    info = tmp_path / "simpoints.json"
+    info.write_text(json.dumps({"e.5.0.25": {"simpoint_index": 5, "interval": 1000, "weight": 0.2468}}))
+    code, out, _ = run("repo", "add", "checkpoint", populated, *files, "--desc", str(desc),
+                       "--simpoint-info", str(info))
+    assert code == 0
+    assert out.splitlines() == [f"{populated}:e.5.0.25", f"{populated}:e.7.0.35"]
+
+    view = json.loads(run("show", "checkpoint", "e.5.0.25", "--json")[1])
+    assert (view["simpoint_index"], view["simpoint_interval"], view["simpoint_weight"], view["requested_count"]) == \
+        (5, 1000, 0.2468, 3000)

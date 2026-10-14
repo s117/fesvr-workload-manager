@@ -110,6 +110,9 @@ def checkpoint_view(repo: Repo, ckpt: DecoupledCheckpoint) -> View:
         "format_version": ckpt.format_version,
         "content_sha256": ckpt.content_sha256,
         "simpoint_weight": ckpt.simpoint_weight,
+        "simpoint_index": ckpt.simpoint_index,
+        "simpoint_interval": ckpt.simpoint_interval,
+        "requested_count": ckpt.requested_count,
         "sim_version": sim_version_view(ckpt.sim_version),
         "fwm_version": ckpt.fwm_version,
         "harts": [{
