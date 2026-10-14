@@ -303,6 +303,17 @@ def test_add_trace_again(repo, entry, tmp_path):
     assert os.listdir(os.path.join(repo.path, "traces")) == [str(trace.uuid)]
 
 
+def test_add_trace_interrupted_run(repo, entry, tmp_path):
+    """spike stopped by SIGTERM writes its final state, so a truncated recording with one was interrupted."""
+    rec = tmp_path / "rec"
+    write_recording(str(rec), harts=[[Command(), Command()]])
+    final_state = tmp_path / "final-state.json"
+    final_state.write_text('{"hart_state": [{"instret": 1234}]}')
+    with pytest.raises(FwmValidationError, match="stopped by a signal"):
+        add_trace(repo, "e", str(rec), final_state=str(final_state))
+    assert add_trace(repo, "e", str(rec)).exit_status is None
+
+
 def test_resolve_trace(repo, entry, tmp_path, monkeypatch):
     uuids = iter([uuid.UUID("12345678-0000-0000-0000-000000000001"), uuid.UUID("12345678-0000-0000-0000-000000000002")])
     monkeypatch.setattr("fwm.repo.trace.uuid", SimpleNamespace(uuid4=lambda: next(uuids)))

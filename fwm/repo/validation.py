@@ -2,8 +2,9 @@
 Validation of checkpoints: load a checkpoint, run to the end of the program, and compare with its trace.
 
 A replay stops at the first difference from its recording (another command, other data written to the host, or a
-recording that ran out). So a run from a checkpoint that ends normally, with every HART's final instruction count equal
-to the trace's, has replayed the rest of the program exactly, including its exit command: the exit status matches too.
+recording that ran out). So a run from a checkpoint whose every HART's final instruction count equals the trace's has
+replayed the rest of the program exactly, including its exit command: the exit status matches too. (spike stopped by a
+signal also writes its final state, where it stopped: that count differs, so the run fails.)
 """
 import json
 import os

@@ -156,6 +156,12 @@ def _import_trace(repo: Repo, entry: NativeEntry, recording_dir: str, staged: st
     if instrets is not None and len(instrets) != spec.num_harts:
         raise FwmValidationError(
             f"the final state {final_state} has {len(instrets)} HART(s), but the recording has {spec.num_harts}")
+    if instrets is not None and recording.exit_status is None:
+        # -e leaves the final state empty; spike stopped by SIGTERM or SIGINT writes it, where it stopped, and exits 0
+        raise FwmValidationError(
+            f"the recording {recording_dir} is truncated (the program never exited), but its run wrote the final state "
+            f"{final_state}: spike was stopped by a signal, e.g. a job's time limit. Record it again, or import it as a "
+            f"truncated recording without --final-state.")
 
     log = Logger.get_logger()
     if recording.exit_status is None:
