@@ -9,7 +9,7 @@ from fwm.repo.repo import Repo
 from fwm.repo.sysroot import get_sysroot
 from fwm.repo.trace import resolve_trace
 
-# Removes a path along with the database rows (see Repo.removal())
+# Schedules a path to be deleted once the removal is committed (see Repo.removal())
 Remover = Callable[[str], None]
 
 
@@ -52,25 +52,25 @@ def _remove_entry(repo: Repo, entry: NativeEntry, recursive: bool, remove: Remov
 
 def remove_checkpoint(repo: Repo, ref: str) -> None:
     ckpt = resolve_checkpoint(ref)
-    with repo.removal() as remove, repo.db.atomic():
+    with repo.removal() as remove:
         _remove_checkpoint(repo, ckpt, remove)
 
 
 def remove_trace(repo: Repo, ref: str, recursive: bool = False) -> None:
     trace = resolve_trace(ref)
-    with repo.removal() as remove, repo.db.atomic():
+    with repo.removal() as remove:
         _remove_trace(repo, trace, recursive, remove)
 
 
 def remove_entry(repo: Repo, name: str, recursive: bool = False) -> None:
     entry = get_entry(name)
-    with repo.removal() as remove, repo.db.atomic():
+    with repo.removal() as remove:
         _remove_entry(repo, entry, recursive, remove)
 
 
 def remove_sysroot(repo: Repo, name: str, recursive: bool = False) -> None:
     sysroot: Sysroot = get_sysroot(name)
-    with repo.removal() as remove, repo.db.atomic():
+    with repo.removal() as remove:
         entries = list(sysroot.entries)
         if entries and not recursive:
             raise FwmValidationError(

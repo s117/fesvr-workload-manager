@@ -1,12 +1,25 @@
 #!/usr/bin/env python3
+import signal
+
 import click
 
 from fwm.repo.errors import FwmError
 from fwm.repo.repo import Repo
 
 
+def _exit_on_signal(signum, frame):
+    """End like Ctrl-C does: by an exception, so the cleanup of an interrupted import or removal runs."""
+    raise SystemExit(128 + signum)
+
+
 class FwmGroup(click.Group):
     """The fwm command group: reports an FwmError as a message, and exits with its exit code."""
+
+    def main(self, *args, **kwargs):
+        # Batch schedulers stop a job with SIGTERM (or SIGHUP), whose default action skips all cleanup
+        for sig in (signal.SIGTERM, signal.SIGHUP):
+            signal.signal(sig, _exit_on_signal)
+        return super().main(*args, **kwargs)
 
     def invoke(self, ctx: click.Context):
         try:

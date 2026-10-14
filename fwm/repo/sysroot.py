@@ -6,7 +6,7 @@ from fwm.database.schema import Sysroot
 from fwm.repo.errors import FwmValidationError, NotFoundError
 from fwm.repo.repo import Repo, check_name, DIGEST_ALGO, REPO_PERM_MASK
 from fwm.utils.file_catalog import create_catalog, verify_catalog, find_absolute_links, FailedDetail
-from fwm.utils.fs import copy_tree, set_tree_readonly, set_tree_writable, remove_tree
+from fwm.utils.fs import copy_tree, set_tree_writable, remove_tree
 from fwm.utils.log import Logger
 
 
@@ -42,14 +42,12 @@ def add_sysroot(repo: Repo, src_dir: str, name: str, description: Optional[str] 
                 f"strings, so in a recording run the host resolves them from the host's root, not the sysroot's:\n" +
                 "\n".join(f"  {link.path} -> {link.dest}" for link in abs_links))
 
-        final = repo.sysroot_dir(name)
         set_tree_writable(staged)  # to move it to another parent
-        with repo.db.atomic():
+        with repo.importing() as place:
             if Sysroot.get_or_none(Sysroot.name == name) is not None:
                 raise FwmValidationError(f"a sysroot named '{name}' already exists")
             sysroot = Sysroot.create(name=name, description=description, file_catalog=save_catalog(catalog))
-            repo.move_into_place(staged, final)
-        set_tree_readonly(final)
+            place(staged, repo.sysroot_dir(name))
     return sysroot
 
 

@@ -10,7 +10,6 @@ from fwm.repo.errors import FwmValidationError, NotFoundError
 from fwm.repo.repo import Repo, DIGEST_ALGO, REPO_PERM_MASK
 from fwm.repo.trace import resolve_trace, trace_harts
 from fwm.utils.file_catalog import create_catalog, verify_catalog, FailedDetail
-from fwm.utils.fs import set_tree_readonly
 
 # The checkpoint names FESVR accepts in a checkpoint description file (riscv-fesvr/fesvr/ckpt_desc_reader.cc)
 CHECKPOINT_NAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
@@ -76,10 +75,20 @@ def add_checkpoint(repo: Repo, trace_ref: str, file: str, name: Optional[str] = 
     if simpoint_weight is not None and not 0 <= simpoint_weight <= 1:
         raise FwmValidationError(f"the SimPoint weight {simpoint_weight} of '{name}' is not in [0, 1]")
 
+    with repo.staging() as staged:
+        os.mkdir(staged)
+        shutil.copy2(file, os.path.join(staged, name))
+        return _import_checkpoint(repo, trace, file, name, staged, simpoint_weight, description)
+
+
+def _import_checkpoint(repo: Repo, trace: DecoupledTrace, file: str, name: str, staged: str,
+                       simpoint_weight: Optional[float], description: Optional[str]) -> DecoupledCheckpoint:
+    # check the copy that is stored, not the source
+    staged_file = os.path.join(staged, name)
     try:
-        header = read_checkpoint_header(file)
+        header = read_checkpoint_header(staged_file)
         csr_counts = [hart.csr_count for hart in header.harts]
-        content_sha256 = checkpoint_content_sha256(file)
+        content_sha256 = checkpoint_content_sha256(staged_file)
     except (CheckpointFormatError, OSError) as e:
         raise FwmValidationError(f"invalid checkpoint {file}: {e}")
 
@@ -100,27 +109,24 @@ def add_checkpoint(repo: Repo, trace_ref: str, file: str, name: Optional[str] = 
             raise mismatch(f"HART {ckpt_hart.hart_id} resumes at command {ckpt_hart.cmd_index}, but the trace has only "
                            f"{rec_hart.num_commands}")
 
-    with repo.staging() as staged:
-        os.mkdir(staged)
-        shutil.copy2(file, os.path.join(staged, name))
-        catalog = create_catalog(DIGEST_ALGO, staged)
+    catalog = create_catalog(DIGEST_ALGO, staged)
+    with repo.importing() as place:
+        if DecoupledTrace.get_or_none(DecoupledTrace.uuid == trace.uuid) is None:
+            raise NotFoundError(f"trace {trace.uuid} was removed during the import")
+        if DecoupledCheckpoint.get_or_none((DecoupledCheckpoint.trace == trace) &
+                                           (DecoupledCheckpoint.name == name)) is not None:
+            raise FwmValidationError(f"trace {trace.uuid} already has a checkpoint named '{name}'")
+        ckpt = DecoupledCheckpoint.create(
+            trace=trace, name=name, file_catalog=save_catalog(catalog), format_version=header.format_version,
+            content_sha256=content_sha256, simpoint_weight=simpoint_weight, description=description)
+        for hart, csr_count in zip(header.harts, csr_counts):
+            CheckpointHart.create(checkpoint=ckpt, hart_id=hart.hart_id, recording_sha256=hart.recording_sha256,
+                                  cmd_index=hart.cmd_index, hart_state_version=hart.state_version,
+                                  csr_count=csr_count)
         final_dir = repo.checkpoint_dir(trace.uuid)
         os.makedirs(final_dir, exist_ok=True)
         os.chmod(final_dir, 0o755)  # it holds the read-only checkpoints of the trace, but stays writable itself
-        final = os.path.join(final_dir, name)
-        with repo.db.atomic():
-            if DecoupledCheckpoint.get_or_none((DecoupledCheckpoint.trace == trace) &
-                                               (DecoupledCheckpoint.name == name)) is not None:
-                raise FwmValidationError(f"trace {trace.uuid} already has a checkpoint named '{name}'")
-            ckpt = DecoupledCheckpoint.create(
-                trace=trace, name=name, file_catalog=save_catalog(catalog), format_version=header.format_version,
-                content_sha256=content_sha256, simpoint_weight=simpoint_weight, description=description)
-            for hart, csr_count in zip(header.harts, csr_counts):
-                CheckpointHart.create(checkpoint=ckpt, hart_id=hart.hart_id, recording_sha256=hart.recording_sha256,
-                                      cmd_index=hart.cmd_index, hart_state_version=hart.state_version,
-                                      csr_count=csr_count)
-            repo.move_into_place(os.path.join(staged, name), final)
-        set_tree_readonly(final)
+        place(staged_file, os.path.join(final_dir, name))
     return ckpt
 
 

@@ -7,7 +7,7 @@ import pydantic
 from fwm.data_loader.entry_point import load_entry_point, WorkloadEntry
 from fwm.data_loader.file_catalog import FileCatalog
 from fwm.database.catalog_store import load_catalog
-from fwm.database.schema import NativeEntry, Workload
+from fwm.database.schema import NativeEntry, Sysroot, Workload
 from fwm.repo.errors import FwmValidationError, NotFoundError
 from fwm.repo.repo import Repo, check_name
 from fwm.repo.sysroot import get_sysroot
@@ -95,6 +95,8 @@ def add_entry(repo: Repo, sysroot_name: str, workload_name: str, entry_name: str
     _check_paths(entry, load_catalog(sysroot.file_catalog))
 
     with repo.db.atomic():
+        if Sysroot.get_or_none(Sysroot.name == sysroot.name) is None:
+            raise NotFoundError(f"sysroot '{sysroot.name}' was removed while adding the entry point")
         if NativeEntry.get_or_none(NativeEntry.name == entry_name) is not None:
             raise FwmValidationError(f"an entry point named '{entry_name}' already exists")
         workload, _ = Workload.get_or_create(name=workload_name)

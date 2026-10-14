@@ -7,14 +7,14 @@ from typing import List, Optional
 import pydantic
 
 from fwm.data_loader.final_state import read_final_state
-from fwm.data_loader.recording import read_recording, RecordingFormatError
+from fwm.data_loader.recording import read_recording, Recording, RecordingFormatError
 from fwm.database.catalog_store import save_catalog, load_catalog
 from fwm.database.schema import DecoupledTrace, TraceHart, NativeEntry
 from fwm.repo.entry import get_entry, entry_target_path
 from fwm.repo.errors import FwmValidationError, NotFoundError
 from fwm.repo.repo import Repo, DIGEST_ALGO, REPO_PERM_MASK
 from fwm.utils.file_catalog import create_catalog, verify_catalog, FailedDetail
-from fwm.utils.fs import copy_tree, set_tree_readonly, set_tree_writable
+from fwm.utils.fs import copy_tree, set_tree_writable
 from fwm.utils.log import Logger
 from fwm.utils.target_path import target_path_to_sysroot_relative
 
@@ -59,10 +59,18 @@ def add_trace(repo: Repo, entry_name: str, recording_dir: str, final_state: Opti
     entry = get_entry(entry_name)
     if not os.path.isdir(recording_dir):
         raise NotFoundError(f"{recording_dir} is not a directory")
-    try:
-        recording = read_recording(recording_dir)
-    except (RecordingFormatError, OSError, EOFError) as e:
-        raise FwmValidationError(f"invalid recording {recording_dir}: {e}")
+    with repo.staging() as staged:
+        copy_tree(recording_dir, staged)
+        # check the copy that is stored, not the source
+        try:
+            recording = read_recording(staged)
+        except (RecordingFormatError, OSError, EOFError) as e:
+            raise FwmValidationError(f"invalid recording {recording_dir}: {str(e).replace(staged, recording_dir)}")
+        return _import_trace(repo, entry, recording_dir, staged, recording, final_state, description)
+
+
+def _import_trace(repo: Repo, entry: NativeEntry, recording_dir: str, staged: str, recording: Recording,
+                  final_state: Optional[str], description: Optional[str]) -> DecoupledTrace:
     spec = recording.target_spec
 
     if spec.mem_mb != entry.mem_mb:
@@ -105,22 +113,20 @@ def add_trace(repo: Repo, entry_name: str, recording_dir: str, final_state: Opti
         log.warning(f"the program of the recording {recording_dir} exited with status {recording.exit_status}")
 
     trace_uuid = uuid.uuid4()
-    with repo.staging() as staged:
-        copy_tree(recording_dir, staged)
-        catalog = create_catalog(DIGEST_ALGO, staged)
-        final = repo.trace_dir(trace_uuid)
-        set_tree_writable(staged)
-        with repo.db.atomic():
-            trace = DecoupledTrace.create(
-                uuid=trace_uuid, native_entry=entry, file_catalog=save_catalog(catalog), mem_mb=spec.mem_mb,
-                num_harts=spec.num_harts, boot_elf_sha256=spec.boot_elf_sha256, exit_status=recording.exit_status,
-                description=description)
-            for hart in recording.harts:
-                TraceHart.create(trace=trace, hart_id=hart.hart_id, recording_sha256=hart.recording_sha256,
-                                 num_commands=hart.num_commands,
-                                 instret=instrets[hart.hart_id] if instrets is not None else None)
-            repo.move_into_place(staged, final)
-        set_tree_readonly(final)
+    catalog = create_catalog(DIGEST_ALGO, staged)
+    set_tree_writable(staged)
+    with repo.importing() as place:
+        if NativeEntry.get_or_none(NativeEntry.name == entry.name) is None:
+            raise NotFoundError(f"entry point '{entry.name}' was removed during the import")
+        trace = DecoupledTrace.create(
+            uuid=trace_uuid, native_entry=entry, file_catalog=save_catalog(catalog), mem_mb=spec.mem_mb,
+            num_harts=spec.num_harts, boot_elf_sha256=spec.boot_elf_sha256, exit_status=recording.exit_status,
+            description=description)
+        for hart in recording.harts:
+            TraceHart.create(trace=trace, hart_id=hart.hart_id, recording_sha256=hart.recording_sha256,
+                             num_commands=hart.num_commands,
+                             instret=instrets[hart.hart_id] if instrets is not None else None)
+        place(staged, repo.trace_dir(trace_uuid))
     return trace
 
 

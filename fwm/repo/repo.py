@@ -1,4 +1,5 @@
 import contextlib
+import fcntl
 import os
 import re
 import uuid
@@ -8,13 +9,15 @@ import peewee as pw
 
 from fwm.database.db import open_db, SchemaVersionError
 from fwm.repo.errors import FwmValidationError, NotFoundError
-from fwm.utils.fs import remove_tree, set_tree_readonly, set_tree_writable
+from fwm.utils.fs import remove_tree, set_tree_readonly
+from fwm.utils.log import Logger
 
 REPO_DB_FILE = "fwm.db"
 SYSROOTS_DIR = "sysroots"
 TRACES_DIR = "traces"
 CHECKPOINTS_DIR = "checkpoints"
 STAGING_DIR = ".staging"
+STAGING_LOCK_SUFFIX = ".lock"
 
 # The digest algorithm of every catalog fwm creates. It is the one FESVR uses for the boot ELF, so the catalog's digest
 # of a sysroot's boot ELF compares directly with a recording's.
@@ -99,50 +102,71 @@ class Repo:
         """
         A fresh path in the staging area, inside the repository so that it can be renamed into place. Whatever is left
         at the path is removed at the end.
+
+        While the block runs, a lock file next to the path is held (flock), so that `fwm repo gc` can tell the staging
+        of a live import from the leftover of one that was killed.
         """
         path = os.path.join(self.path, STAGING_DIR, uuid.uuid4().hex)
+        lock_fd = os.open(path + STAGING_LOCK_SUFFIX, os.O_RDWR | os.O_CREAT | os.O_EXCL, 0o644)
         try:
+            fcntl.flock(lock_fd, fcntl.LOCK_EX)
             yield path
         finally:
             remove_tree(path)
+            os.unlink(path + STAGING_LOCK_SUFFIX)
+            os.close(lock_fd)
+
+    @contextlib.contextmanager
+    def importing(self) -> Iterator[Callable[[str, str], None]]:
+        """
+        The transaction of an import, with a function that renames a staged file or tree to its place:
+
+            with repo.importing() as place:
+                Sysroot.create(...)
+                place(staged, final)
+
+        If the block or the commit fails, the database is rolled back and the placed items are renamed back to the
+        staging area, so the import leaves nothing behind. (If the process dies before the commit, they remain as items
+        no row refers to, which `fwm repo gc` removes.) After the commit, they are made read-only.
+        """
+        placed: List[Tuple[str, str]] = []
+
+        def place(staged: str, final: str) -> None:
+            if os.path.lexists(final):
+                raise FwmValidationError(f"cannot import to {final}: it already exists")
+            os.rename(staged, final)
+            placed.append((staged, final))
+
+        try:
+            with self.db.atomic():
+                yield place
+        except BaseException:
+            for staged, final in reversed(placed):
+                try:
+                    os.rename(final, staged)
+                except OSError:
+                    pass  # left for `fwm repo gc`
+            raise
+        for _, final in placed:
+            set_tree_readonly(final)
 
     @contextlib.contextmanager
     def removal(self) -> Iterator[Callable[[str], None]]:
         """
-        Collect the paths to remove along with database rows. Use it around the database transaction:
+        The transaction of a removal, with a function that schedules a path to be deleted:
 
-            with repo.removal() as remove, repo.db.atomic():
+            with repo.removal() as remove:
                 row.delete_instance()
                 remove(path)
 
-        Each path is moved to the staging area at once. If the block fails (and the transaction is rolled back), the
-        paths are moved back and made read-only again; otherwise they are deleted.
+        The paths are deleted only after the commit, so a failure or a crash never leaves rows whose files are gone. A
+        path that can't be deleted then (or that a crash left) is reported, and left for `fwm repo gc`.
         """
-        moved: List[Tuple[str, str]] = []
-
-        def remove(path: str) -> None:
-            if not os.path.lexists(path):
-                return
-            retired = os.path.join(self.path, STAGING_DIR, uuid.uuid4().hex + ".removed")
-            if os.path.isdir(path) and not os.path.islink(path):
-                set_tree_writable(path)  # a directory must be writable to be moved to another parent
-            os.rename(path, retired)
-            moved.append((path, retired))
-
-        try:
-            yield remove
-        except BaseException:
-            for path, retired in reversed(moved):
-                os.rename(retired, path)
-                set_tree_readonly(path)
-            raise
-        for _, retired in moved:
-            remove_tree(retired)
-
-    def move_into_place(self, staged: str, final: str) -> None:
-        """
-        Rename a staged file or tree to its place in the repository. Call it inside the transaction that adds its rows.
-        """
-        if os.path.lexists(final):
-            raise FwmValidationError(f"cannot import to {final}: it already exists")
-        os.rename(staged, final)
+        paths: List[str] = []
+        with self.db.atomic():
+            yield paths.append
+        for path in paths:
+            try:
+                remove_tree(path)
+            except OSError as e:
+                Logger.get_logger().warning(f"cannot delete {path} ({e}); `fwm repo gc` will remove it")
