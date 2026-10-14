@@ -7,6 +7,10 @@ from fwm.data_loader.file_catalog import FileCatalog, FileItem, LinkItem, DirIte
 from fwm.utils.digest import Digest
 
 
+def _raise(error: OSError) -> None:
+    raise error
+
+
 def create_catalog(digest_algo: str, tree_root: str) -> FileCatalog:
     root = pathlib.Path(tree_root).resolve()
 
@@ -29,11 +33,17 @@ def create_catalog(digest_algo: str, tree_root: str) -> FileCatalog:
             "dest": os.readlink(link_full),
         })
 
-    for dirpath, dirnames, filenames in os.walk(root, topdown=True, followlinks=False):
+    for dirpath, dirnames, filenames in os.walk(root, topdown=True, followlinks=False, onerror=_raise):
         curr_dir = pathlib.Path(dirpath).resolve()
 
         filenames.sort()
         dirnames.sort()
+        for name in filenames + dirnames:
+            try:
+                name.encode("utf-8")
+            except UnicodeEncodeError:
+                raise NotImplementedError(
+                    f"{curr_dir / name!r} cannot be included by the catalog because its name is not UTF-8.")
 
         for f in filenames:
             f_full = curr_dir / f
@@ -104,7 +114,8 @@ def verify_catalog(catalog: FileCatalog, tree_root: str, use_digest_cache=False,
         # check digest
         file_digest = Digest.digest_file(digest_algo, str(file_path), use_digest_cache)
         if not file_item.digest == file_digest:
-            return file_item.path, f"file {digest_algo.upper()} mismatch (expect={file_item.digest}, actual={file_digest})"
+            return (file_item.path,
+                    f"file {digest_algo.upper()} mismatch (expect={file_item.digest}, actual={file_digest})")
 
         return None
 

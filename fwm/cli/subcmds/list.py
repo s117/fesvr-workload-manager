@@ -1,8 +1,10 @@
+from typing import List, Tuple
+
 import click
 
 from fwm.cli.completion import complete_list_filter, complete_sysroot, complete_trace, complete_workload
 from fwm.cli.fwm import open_repo
-from fwm.cli.output import echo_json, echo_table
+from fwm.cli.output import echo_json, echo_table, Column
 from fwm.repo import query
 from fwm.repo.trace import resolve_trace
 
@@ -27,32 +29,29 @@ def list_cmd(ctx, kind, name_filter, workload, sysroot, trace_ref, as_json):
     if trace_ref and kind != "checkpoints":
         raise click.UsageError("--trace applies to checkpoints")
 
+    # Each column is (heading, the value it shows): a key of the view, or a function of the view. The views themselves
+    # are printed by --json, the same as `fwm show --json` prints them.
+    columns: List[Tuple[str, Column]]
     if kind == "workloads":
         rows = query.list_workloads(name_filter)
-        columns = [("name", "WORKLOAD"), ("entries", "ENTRIES")]
+        columns = [("WORKLOAD", "name"), ("ENTRIES", "entries")]
     elif kind == "sysroots":
         rows = query.list_sysroots(r, name_filter)
-        columns = [("name", "SYSROOT"), ("num_files", "FILES"), ("size_bytes", "BYTES"), ("entries", "ENTRIES")]
+        columns = [("SYSROOT", "name"), ("FILES", "num_files"), ("BYTES", "size_bytes"), ("ENTRIES", "entries")]
     elif kind == "entries":
         rows = query.list_entries(name_filter, workload, sysroot)
-        for row in rows:
-            row["num_traces"] = len(row["traces"])
-        columns = [("name", "ENTRY"), ("workload", "WORKLOAD"), ("sysroot", "SYSROOT"), ("mem_mb", "MEM_MB"),
-                   ("num_traces", "TRACES"), ("command", "COMMAND")]
+        columns = [("ENTRY", "name"), ("WORKLOAD", "workload"), ("SYSROOT", "sysroot"), ("MEM_MB", "mem_mb"),
+                   ("TRACES", lambda v: len(v["traces"])), ("COMMAND", "command")]
     elif kind == "traces":
         rows = query.list_traces(r, name_filter)
-        for row in rows:
-            row["instret"] = [h["instret"] for h in row["harts"]]
-            row["num_checkpoints"] = len(row["checkpoints"])
-        columns = [("uuid", "TRACE"), ("entry", "ENTRY"), ("complete", "COMPLETE"), ("exit_status", "EXIT"),
-                   ("instret", "INSTRET"), ("num_checkpoints", "CHECKPOINTS")]
+        columns = [("TRACE", "uuid"), ("ENTRY", "entry"), ("COMPLETE", "complete"), ("EXIT", "exit_status"),
+                   ("INSTRET", lambda v: [h["instret"] for h in v["harts"]]),
+                   ("CHECKPOINTS", lambda v: len(v["checkpoints"]))]
     else:
         rows = query.list_checkpoints(r, name_filter, resolve_trace(trace_ref) if trace_ref else None)
-        for row in rows:
-            row["csr_count"] = [h["csr_count"] for h in row["harts"]]
-            row["validated"] = row["validation"]["status"] if row["validation"] else None
-        columns = [("name", "CHECKPOINT"), ("entry", "ENTRY"), ("trace", "TRACE"), ("simpoint_weight", "WEIGHT"),
-                   ("simpoint_interval", "INTERVAL"), ("csr_count", "COUNT"), ("validated", "VALIDATION")]
+        columns = [("CHECKPOINT", "name"), ("ENTRY", "entry"), ("TRACE", "trace"), ("WEIGHT", "simpoint_weight"),
+                   ("INTERVAL", "simpoint_interval"), ("COUNT", lambda v: [h["csr_count"] for h in v["harts"]]),
+                   ("VALIDATION", lambda v: v["validation"]["status"] if v["validation"] else None)]
 
     if as_json:
         echo_json(rows)

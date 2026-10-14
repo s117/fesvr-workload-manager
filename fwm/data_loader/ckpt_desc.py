@@ -48,7 +48,8 @@ def parse_ckpt_desc(text: str) -> List[Tuple[str, int]]:
             raise CkptDescError(f"two checkpoints are named '{ckpt_name}'")
         if ckpt_count in counts:
             raise CkptDescError(f"two checkpoints are at instruction count {ckpt_count}")
-        if not _NAME_RE.match(ckpt_name):
+        if not _NAME_RE.match(ckpt_name) or ckpt_name in (".", ".."):
+            # (FESVR accepts "." and "..", then fails to write a checkpoint file of that name)
             raise CkptDescError(
                 f"invalid checkpoint name '{ckpt_name}': a name may contain only letters, digits, '-', '_' and '.'")
         names.add(ckpt_name)

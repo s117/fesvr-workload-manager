@@ -4,6 +4,7 @@ import re
 import uuid
 from typing import List, Optional
 
+import peewee as pw
 import pydantic
 
 from fwm.data_loader.final_state import read_final_state
@@ -11,12 +12,12 @@ from fwm.data_loader.recording import (
     read_recording, read_recording_sha256, read_target_spec, Recording, RecordingFormatError
 )
 from fwm.database.catalog_store import save_catalog, load_catalog
-from fwm.database.schema import DecoupledTrace, TraceHart, NativeEntry
+from fwm.database.schema import CatalogFile, DecoupledTrace, TraceHart, NativeEntry
 from fwm.repo.entry import get_entry, entry_target_path
 from fwm.repo.errors import AlreadyExistsError, FwmValidationError, NotFoundError
-from fwm.repo.repo import Repo, DIGEST_ALGO, REPO_PERM_MASK
-from fwm.utils.file_catalog import create_catalog, verify_catalog, FailedDetail
-from fwm.utils.fs import copy_tree, set_tree_writable
+from fwm.repo.repo import Repo, catalog_of, copy_source, DIGEST_ALGO, REPO_PERM_MASK
+from fwm.utils.file_catalog import verify_catalog, FailedDetail
+from fwm.utils.fs import set_tree_writable
 from fwm.utils.log import Logger
 from fwm.utils.target_path import target_path_to_sysroot_relative
 
@@ -39,7 +40,8 @@ def resolve_trace(ref: str) -> DecoupledTrace:
     prefix = ref.lower().replace("-", "")
     if not re.fullmatch(r"[0-9a-f]{1,32}", prefix):
         raise NotFoundError(f"no trace or entry point '{ref}'")
-    matches = [t for t in DecoupledTrace.select() if t.uuid.hex.startswith(prefix)]
+    # the UUIDs are stored as 32 hex digits
+    matches = list(DecoupledTrace.select().where(pw.fn.substr(DecoupledTrace.uuid, 1, len(prefix)) == prefix))
     if len(matches) == 1:
         return matches[0]
     if not matches:
@@ -117,7 +119,7 @@ def add_trace(repo: Repo, entry_name: str, recording_dir: str, final_state: Opti
         return _existing_trace(existing, instrets, exist_ok)
 
     with repo.staging() as staged:
-        copy_tree(recording_dir, staged)
+        copy_source(recording_dir, staged)
         # check the copy that is stored, not the source
         try:
             recording = read_recording(staged)
@@ -142,9 +144,10 @@ def _import_trace(repo: Repo, entry: NativeEntry, recording_dir: str, staged: st
 
     boot_elf = entry_target_path(entry, entry.boot_elf)
     boot_elf_rel = target_path_to_sysroot_relative(boot_elf)
-    sysroot_catalog = load_catalog(entry.sysroot.file_catalog)
-    assert sysroot_catalog.digest_algo == DIGEST_ALGO
-    boot_elf_digest = next((f.digest.lower() for f in sysroot_catalog.files if f.path == boot_elf_rel), None)
+    assert entry.sysroot.file_catalog.digest_algo == DIGEST_ALGO
+    boot_elf_file = CatalogFile.get_or_none((CatalogFile.catalog == entry.sysroot.file_catalog) &
+                                            (CatalogFile.path == boot_elf_rel))
+    boot_elf_digest = boot_elf_file.digest.lower() if boot_elf_file is not None else None
     if boot_elf_digest != spec.boot_elf_sha256:
         raise FwmValidationError(
             f"the recording booted an ELF of SHA256 {spec.boot_elf_sha256}, but the boot ELF {boot_elf} of entry "
@@ -162,7 +165,7 @@ def _import_trace(repo: Repo, entry: NativeEntry, recording_dir: str, staged: st
         log.warning(f"the program of the recording {recording_dir} exited with status {recording.exit_status}")
 
     trace_uuid = uuid.uuid4()
-    catalog = create_catalog(DIGEST_ALGO, staged)
+    catalog = catalog_of(staged, recording_dir)
     set_tree_writable(staged)
     with repo.importing() as place:
         if NativeEntry.get_or_none(NativeEntry.name == entry.name) is None:

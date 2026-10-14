@@ -151,3 +151,20 @@ def test_packets_truncated(tmp_path):
     # the SHA256 file still holds the digest of the full stream
     with pytest.raises(RecordingFormatError):
         read_recording(str(tmp_path))
+
+
+def test_corrupt_gzip(tmp_path):
+    write_recording(str(tmp_path), harts=[[Command(), exit_command(0)]], compress=True)
+    packets = tmp_path / "device_traffic_hart0.packets"
+    data = bytearray(packets.read_bytes())
+    data[len(data) // 2] ^= 0xff
+    packets.write_bytes(bytes(data))
+    with pytest.raises(RecordingFormatError):
+        read_recording(str(tmp_path))
+
+
+@pytest.mark.parametrize("status, expected", [(0, 0), (3, 3), (-1, 255), (256, 0)])
+def test_exit_status_like_spike(tmp_path, status, expected):
+    # spike's process exits with the low 8 bits of the program's status
+    write_recording(str(tmp_path), harts=[[Command(), exit_command(status)]])
+    assert read_recording(str(tmp_path)).exit_status == expected

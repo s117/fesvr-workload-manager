@@ -8,6 +8,7 @@ readme = "README.md"
 keywords = ["riscv", "fesvr", "simenv", "anycore"]
 classifiers = [
     "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
     "Development Status :: 3 - Alpha",
 ]
 requires-python = ">=3.12"

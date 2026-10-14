@@ -9,7 +9,9 @@ import peewee as pw
 
 from fwm.database.db import open_db, SchemaVersionError
 from fwm.repo.errors import FwmValidationError, RepoUnusableError
-from fwm.utils.fs import remove_tree, set_tree_readonly
+from fwm.data_loader.file_catalog import FileCatalog
+from fwm.utils.file_catalog import create_catalog
+from fwm.utils.fs import copy_tree, remove_tree, set_tree_readonly
 from fwm.utils.log import Logger
 
 REPO_DB_FILE = "fwm.db"
@@ -28,6 +30,26 @@ REPO_PERM_MASK = 0o555
 
 # Names of sysroots, workloads and entry points: they are used as file names and in Makefiles
 _NAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
+
+
+def copy_source(src: str, staged: str) -> None:
+    """Copy a tree to import into the staging area. What can't be copied is reported as invalid input."""
+    try:
+        copy_tree(src, staged)
+    except OSError as e:
+        raise FwmValidationError(f"cannot copy {src}: {e}")
+
+
+def catalog_of(tree: str, shown_as: str) -> FileCatalog:
+    """
+    The catalog of a tree to import. What can't be cataloged is reported as invalid input.
+
+    :param shown_as: The path to show in messages for the tree, e.g. the source of a staged copy.
+    """
+    try:
+        return create_catalog(DIGEST_ALGO, tree)
+    except (NotImplementedError, OSError) as e:
+        raise FwmValidationError(str(e).replace(tree, shown_as))
 
 
 def check_name(kind: str, name: str) -> None:

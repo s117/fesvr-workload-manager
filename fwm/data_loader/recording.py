@@ -9,6 +9,7 @@ import gzip
 import hashlib
 import os
 import struct
+import zlib
 from dataclasses import dataclass
 from typing import BinaryIO, List, Optional, Tuple
 
@@ -219,6 +220,13 @@ def read_recording(recording_dir: str) -> Recording:
 
     :raise RecordingFormatError: The folder is not a complete, consistent recording.
     """
+    try:
+        return _read_recording(recording_dir)
+    except (zlib.error, EOFError, gzip.BadGzipFile) as e:
+        raise RecordingFormatError(f"a file of {recording_dir} is corrupt: {e}")
+
+
+def _read_recording(recording_dir: str) -> Recording:
     target_spec = read_target_spec(recording_dir)
     check_boot_elf(recording_dir, target_spec)
 
@@ -239,7 +247,9 @@ def read_recording(recording_dir: str) -> Recording:
                                    last_exit_code=last_exit_code))
 
     # sys_exit sets the FESVR exit code to (code << 1 | 1), which is never 0, and the run stops right after that
-    # command. A run stopped earlier (e.g. by -e) leaves 0 in every last command.
+    # command. A run stopped earlier (e.g. by -e) leaves 0 in every last command. The HARTs after the exiting one are
+    # still serviced in that round and record the final code, so the last HART's is the one. Like spike's process, keep
+    # the low 8 bits of the status (exit(-1) is 255).
     exit_codes = [h.last_exit_code for h in harts if h.last_exit_code != 0]
-    exit_status = exit_codes[0] >> 1 if exit_codes else None
+    exit_status = (exit_codes[-1] >> 1) & 0xff if exit_codes else None
     return Recording(target_spec=target_spec, harts=harts, exit_status=exit_status)

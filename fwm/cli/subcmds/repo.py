@@ -2,7 +2,9 @@ import os
 
 import click
 
-from fwm.cli.completion import complete_checkpoint, complete_by_kind, complete_entry, complete_sysroot, complete_trace, complete_workload
+from fwm.cli.completion import (
+    complete_by_kind, complete_checkpoint, complete_entry, complete_sysroot, complete_trace, complete_workload
+)
 from fwm.cli.fwm import open_repo
 from fwm.data_loader.sim_version import read_sim_version, SimVersionError
 from fwm.database.schema import Sysroot, DecoupledTrace, DecoupledCheckpoint

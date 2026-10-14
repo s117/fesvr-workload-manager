@@ -143,7 +143,7 @@ def test_mkgen(run, populated, tmp_path, caplog):
     desc.write_text("c: 9000\n")
     code, _, err = run("mkgen", "replay", "e", "--create-checkpoints", str(desc), "-o", str(tmp_path / "r5"))
     assert code == 4
-    assert "stops after 5000 instructions" in err
+    assert "exits after 5000 instructions" in err
 
 
 def test_read_only_repo(run, populated, tmp_path, write_entry_point):
@@ -216,3 +216,13 @@ def test_add_checkpoints(run, populated, tmp_path):
     view = json.loads(run("show", "checkpoint", "e.5.0.25", "--json")[1])
     assert (view["simpoint_index"], view["simpoint_interval"], view["simpoint_weight"], view["requested_count"]) == \
         (5, 1000, 0.2468, 3000)
+
+
+def test_list_json_is_show_json(run, populated):
+    for list_kind, show_kind, key in (("workloads", "workload", "name"), ("sysroots", "sysroot", "name"),
+                                      ("entries", "entry", "name"), ("traces", "trace", "uuid"),
+                                      ("checkpoints", "checkpoint", "name")):
+        listed = json.loads(run("list", list_kind, "--json")[1])
+        assert listed, list_kind
+        for view in listed:
+            assert view == json.loads(run("show", show_kind, view[key], "--json")[1])

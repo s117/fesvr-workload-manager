@@ -495,3 +495,36 @@ def test_remove_rolls_back(repo, trace, tmp_path, monkeypatch):
     assert mode(repo.sysroot_dir("sr")) == 0o555
     assert verify_sysroot(repo, Sysroot.get()) == []
     assert os.listdir(os.path.join(repo.path, ".staging")) == []
+
+
+# --- inputs that can't be imported
+
+
+def test_unreadable_file(repo, sysroot_src):
+    (sysroot_src / "app" / "data" / "private").chmod(0o000)
+    with pytest.raises(FwmValidationError, match="cannot copy"):
+        add_sysroot(repo, str(sysroot_src), "sr")
+    assert os.listdir(os.path.join(repo.path, ".staging")) == []
+
+
+def test_non_utf8_name(repo, sysroot_src):
+    with open(os.path.join(os.fsencode(str(sysroot_src)), b"\xff-name"), "w") as f:
+        f.write("x")
+    with pytest.raises(FwmValidationError, match="is not UTF-8"):
+        add_sysroot(repo, str(sysroot_src), "sr")
+
+
+def test_fifo_in_trace(repo, entry, tmp_path):
+    rec = tmp_path / "rec"
+    write_recording(str(rec), harts=[COMMANDS])
+    os.mkfifo(rec / "fifo")
+    with pytest.raises(FwmValidationError, match="neither a file nor symlink"):
+        add_trace(repo, "e", str(rec))
+
+
+def test_spawn_refuses_repository(repo, sysroot_src):
+    add_sysroot(repo, str(sysroot_src), "sr")
+    for dest in (repo.sysroot_dir("sr"), os.path.join(repo.path, "elsewhere")):
+        with pytest.raises(FwmValidationError, match="inside the repository"):
+            spawn_sysroot(repo, "sr", dest, force=True)
+    assert os.path.isfile(os.path.join(repo.sysroot_dir("sr"), "boot", "pk"))

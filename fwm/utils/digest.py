@@ -10,7 +10,7 @@ class Digest:
     cache: Dict[str, Dict[str, str]] = defaultdict(dict)
 
     @classmethod
-    def digest_file(cls, algo: str, fpath: str, use_cache: bool = True) -> str:
+    def digest_file(cls, algo: str, fpath: str, use_cache: bool = False) -> str:
         cache = cls.cache[algo]
         fpath_abs = os.path.abspath(fpath)
 

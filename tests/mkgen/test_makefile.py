@@ -131,7 +131,7 @@ def test_create_checkpoints(repo, trace, tmp_path):
 
 @pytest.mark.parametrize("text, match", [
     ("a 1000", "has no ':'"),
-    ("a: 5000", r"stops after 5000 instructions.*a \(5000\)"),
+    ("a: 5000", r"exits after 5000 instructions.*a \(5000\)"),
     ("a: 1\nb: 6000", r"b \(6000\)"),
 ])
 def test_create_checkpoints_invalid(repo, trace, tmp_path, text, match):

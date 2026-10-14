@@ -1,5 +1,5 @@
 import json
-from typing import Any, List, Sequence, Tuple
+from typing import Any, Callable, List, Sequence, Tuple, Union
 
 import click
 
@@ -10,11 +10,15 @@ def echo_json(value: Any) -> None:
     click.echo(json.dumps(value, indent=2))
 
 
-def echo_table(rows: List[View], columns: Sequence[Tuple[str, str]]) -> None:
+# What a table column shows: a key of the view, or a function of the view
+Column = Union[str, Callable[[View], Any]]
+
+
+def echo_table(rows: List[View], columns: Sequence[Tuple[str, Column]]) -> None:
     """
     Print views as a table.
 
-    :param columns: (key, heading) of each column.
+    :param columns: (heading, what it shows) of each column.
     """
     def cell(value: Any) -> str:
         if value is None:
@@ -23,7 +27,10 @@ def echo_table(rows: List[View], columns: Sequence[Tuple[str, str]]) -> None:
             return ",".join(cell(v) for v in value) if value else "-"
         return str(value)
 
-    table = [[heading for _, heading in columns]] + [[cell(row[key]) for key, _ in columns] for row in rows]
+    def value(row: View, column: Column) -> Any:
+        return column(row) if callable(column) else row[column]
+
+    table = [[heading for heading, _ in columns]] + [[cell(value(row, c)) for _, c in columns] for row in rows]
     widths = [max(len(r[i]) for r in table) for i in range(len(columns))]
     for r in table:
         click.echo("  ".join(c.ljust(w) for c, w in zip(r, widths)).rstrip())

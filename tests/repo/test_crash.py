@@ -83,16 +83,16 @@ def test_sigterm_during_import_cleans_up(repo, sysroot_src, tmp_path):
     ready = tmp_path / "ready"
     script = textwrap.dedent(f"""
         import time
-        import fwm.repo.sysroot as sysroot
+        import fwm.repo.repo as repo_module
 
-        create_catalog = sysroot.create_catalog
+        create_catalog = repo_module.create_catalog
 
         def slow_create_catalog(*args, **kwargs):
             open({str(ready)!r}, "w").close()
             time.sleep(60)
             return create_catalog(*args, **kwargs)
 
-        sysroot.create_catalog = slow_create_catalog
+        repo_module.create_catalog = slow_create_catalog
         from fwm.cli.fwm import cli
         cli(["--repo-path", {repo.path!r}, "repo", "add", "sysroot", {str(sysroot_src)!r}, "sr"])
     """)

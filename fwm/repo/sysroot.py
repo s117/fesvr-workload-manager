@@ -4,10 +4,10 @@ from typing import List, Optional
 from fwm.database.catalog_store import save_catalog, load_catalog
 from fwm.database.schema import Sysroot
 from fwm.repo.errors import AlreadyExistsError, FwmValidationError, NotFoundError
-from fwm.repo.repo import Repo, check_name, DIGEST_ALGO, REPO_PERM_MASK
+from fwm.repo.repo import Repo, catalog_of, check_name, copy_source, REPO_PERM_MASK
 from fwm.data_loader.file_catalog import FileCatalog
 from fwm.utils.file_catalog import (
-    create_catalog, verify_catalog, find_absolute_links, catalog_differences, FailedDetail
+    verify_catalog, find_absolute_links, catalog_differences, FailedDetail
 )
 from fwm.utils.fs import copy_tree, set_tree_writable, remove_tree
 from fwm.utils.log import Logger
@@ -32,19 +32,12 @@ def _existing_sysroot(sysroot: Sysroot, catalog: Optional[FileCatalog], src_dir:
     if not exist_ok:
         raise AlreadyExistsError(what)
     if catalog is None:
-        catalog = _catalog_of(src_dir, src_dir)
+        catalog = catalog_of(src_dir, src_dir)
     differences = catalog_differences(catalog, load_catalog(sysroot.file_catalog))
     if differences:
         raise AlreadyExistsError(
             f"{what}, with different content: {len(differences)} path(s) differ, e.g. {differences[0]}")
     return sysroot
-
-
-def _catalog_of(tree: str, shown_as: str) -> FileCatalog:
-    try:
-        return create_catalog(DIGEST_ALGO, tree)
-    except NotImplementedError as e:
-        raise FwmValidationError(str(e).replace(tree, shown_as))
 
 
 def add_sysroot(repo: Repo, src_dir: str, name: str, description: Optional[str] = None,
@@ -64,8 +57,8 @@ def add_sysroot(repo: Repo, src_dir: str, name: str, description: Optional[str] 
         return _existing_sysroot(existing, None, src_dir, exist_ok)
 
     with repo.staging() as staged:
-        copy_tree(src_dir, staged)
-        catalog = _catalog_of(staged, src_dir)
+        copy_source(src_dir, staged)
+        catalog = catalog_of(staged, src_dir)
 
         abs_links = find_absolute_links(catalog)
         if abs_links:
@@ -103,6 +96,9 @@ def spawn_sysroot(repo: Repo, name: str, dest: str, force: bool = False) -> None
     """
     sysroot = get_sysroot(name)
     dest = os.path.abspath(dest)
+    repo_path = os.path.realpath(repo.path)
+    if os.path.commonpath([os.path.realpath(dest), repo_path]) == repo_path:
+        raise FwmValidationError(f"{dest} is inside the repository: spawn the sysroot somewhere else")
     if os.path.lexists(dest):
         if not force:
             raise FwmValidationError(f"{dest} already exists")

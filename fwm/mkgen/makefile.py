@@ -13,7 +13,7 @@ from datetime import datetime
 from importlib import resources
 from typing import Dict, Optional
 
-from fwm.data_loader.ckpt_desc import parse_ckpt_desc, CkptDescError
+from fwm.data_loader.ckpt_desc import read_ckpt_desc, CkptDescError
 from fwm.database.schema import NativeEntry, DecoupledTrace
 from fwm.repo.checkpoint import resolve_checkpoint
 from fwm.repo.entry import get_entry, entry_target_cwd, entry_target_path
@@ -167,12 +167,9 @@ def generate_replay(repo: Repo, trace_ref: str, out_dir: str, ckpt_desc: Optiona
         raise FwmValidationError(
             f"trace {trace.uuid} has {trace.num_harts} HARTs: FESVR creates checkpoints of a single HART only")
     try:
-        with open(ckpt_desc) as f:
-            text = f.read()
+        checkpoints = read_ckpt_desc(ckpt_desc)
     except OSError as e:
         raise NotFoundError(f"cannot read the checkpoint description {ckpt_desc}: {e}")
-    try:
-        checkpoints = parse_ckpt_desc(text)
     except CkptDescError as e:
         raise FwmValidationError(f"invalid checkpoint description {ckpt_desc}: {e}")
     instret = trace_harts(trace)[0].instret
@@ -180,8 +177,9 @@ def generate_replay(repo: Repo, trace_ref: str, out_dir: str, ckpt_desc: Optiona
         beyond = [(name, count) for name, count in checkpoints if count >= instret]
         if beyond:
             raise FwmValidationError(
-                f"the program of trace {trace.uuid} stops after {instret} instructions, so these checkpoints can't be "
-                f"created: " + ", ".join(f"{name} ({count})" for name, count in beyond))
+                f"the program of trace {trace.uuid} exits after {instret} instructions, so these checkpoints would be "
+                f"at or after its exit, where spike creates none: " +
+                ", ".join(f"{name} ({count})" for name, count in beyond))
 
     run_dir = prepare_run_dir(out_dir)
     shutil.copyfile(ckpt_desc, os.path.join(run_dir, "ckpt.desc"))
