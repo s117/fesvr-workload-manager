@@ -1,3 +1,4 @@
+import sqlite3
 import uuid
 from datetime import datetime
 
@@ -11,6 +12,7 @@ from fwm.database.schema import (
     SchemaInfo, TreeCatalog, CatalogFile, CatalogLink, CatalogDir, Workload, Sysroot, NativeEntry, DecoupledTrace,
     TraceHart, DecoupledCheckpoint, CheckpointHart
 )
+from fwm.version import fwm_version
 
 SHA_A = "a" * 64
 SHA_B = "b" * 64
@@ -182,3 +184,28 @@ def test_read_only(tmp_path):
     with pytest.raises(pw.OperationalError, match="readonly"):
         Workload.create(name="x")
     db.close()
+
+
+def test_catalog_with_old_sqlite_variable_limit(db):
+    # SQLite before 3.32 (e.g. RHEL 8's) allows only 999 bound variables per statement
+    db.connection().setlimit(sqlite3.SQLITE_LIMIT_VARIABLE_NUMBER, 999)
+    catalog = make_catalog(1200)
+    tree = save_catalog(catalog)
+    assert len(load_catalog(TreeCatalog.get_by_id(tree.id)).files) == 1200
+
+
+def test_provenance_and_simpoint_fields(db):
+    catalog = save_catalog(make_catalog())
+    sysroot = Sysroot.create(name="s", file_catalog=catalog)
+    entry = NativeEntry.create(name="e", workload=Workload.create(name="w"), sysroot=sysroot, command="p",
+                               working_directory="/", boot_elf="/pk", mem_mb=1, nprocs=1)
+    trace = DecoupledTrace.create(uuid=uuid.uuid4(), native_entry=entry, file_catalog=catalog, mem_mb=1, num_harts=1,
+                                  boot_elf_sha256="0" * 64)
+    assert trace.sim_version is None
+    assert trace.fwm_version == fwm_version()
+    ckpt = DecoupledCheckpoint.create(name="c", trace=trace, file_catalog=catalog, format_version=1,
+                                      content_sha256="0" * 64, simpoint_index=3, simpoint_interval=100000000,
+                                      requested_count=300000017)
+    ckpt = DecoupledCheckpoint.get_by_id(ckpt.id)
+    assert (ckpt.simpoint_index, ckpt.simpoint_interval, ckpt.requested_count) == (3, 100000000, 300000017)
+    assert (ckpt.validation_status, ckpt.validation_time, ckpt.validation_detail) == (None, None, None)

@@ -1,8 +1,8 @@
 from fwm.data_loader.file_catalog import FileCatalog
 from fwm.database.schema import TreeCatalog, CatalogFile, CatalogLink, CatalogDir
 
-# Rows per INSERT, well below SQLite's limit on the number of bound variables
-_INSERT_BATCH = 500
+# Bound variables per INSERT: the limit of SQLite before 3.32 (e.g. RHEL 8's 3.26), which newer ones also accept
+_MAX_VARIABLES = 999
 
 
 def save_catalog(catalog: FileCatalog) -> TreeCatalog:
@@ -15,8 +15,11 @@ def save_catalog(catalog: FileCatalog) -> TreeCatalog:
     tree = TreeCatalog.create(digest_algo=catalog.digest_algo, creation_time=catalog.creation_time)
 
     def insert(model, rows):
-        for i in range(0, len(rows), _INSERT_BATCH):
-            model.insert_many(rows[i:i + _INSERT_BATCH]).execute()
+        if not rows:
+            return
+        batch = _MAX_VARIABLES // len(rows[0])
+        for i in range(0, len(rows), batch):
+            model.insert_many(rows[i:i + batch]).execute()
 
     insert(CatalogFile, [
         {"catalog": tree, "path": f.path, "perm": f.perm, "actual_size": f.actual_size, "digest": f.digest}

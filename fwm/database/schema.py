@@ -4,6 +4,7 @@ import peewee as pw
 
 from fwm.database.custom_field import TimestampTzField
 from fwm.database.db import BaseModel, now_tz
+from fwm.version import fwm_version
 
 # Length of a hex SHA256 digest (passed positionally: the peewee stubs don't accept max_length= for FixedCharField)
 SHA256_HEX_LEN = 64
@@ -185,6 +186,12 @@ class DecoupledTrace(BaseModel):
     # The program's exit status, read from the recording. Null if the run never exited (a truncated recording).
     exit_status = pw.IntegerField(null=True)
 
+    # The `spike --version` output of the simulator that recorded it, if given at import.
+    sim_version = pw.TextField(null=True)
+
+    # Version of the fwm that imported it.
+    fwm_version = pw.CharField(default=fwm_version)
+
     # Optional description.
     description = pw.TextField(null=True)
 
@@ -240,6 +247,26 @@ class DecoupledCheckpoint(BaseModel):
 
     # SimPoint weight of the interval the checkpoint starts, if it is a SimPoint checkpoint.
     simpoint_weight = pw.FloatField(null=True)
+
+    # Index of that interval among the SimPoint intervals, and the interval size the analysis used (in instructions):
+    # simulate one interval with -e<simpoint_interval>.
+    simpoint_index = pw.IntegerField(null=True)
+    simpoint_interval = pw.BigIntegerField(null=True)
+
+    # The instruction count it was requested at, in the description file it was created from. Where it was actually
+    # taken is CheckpointHart.csr_count, which can differ slightly.
+    requested_count = pw.BigIntegerField(null=True)
+
+    # The `spike --version` output of the simulator that created it, if given at import.
+    sim_version = pw.TextField(null=True)
+
+    # Version of the fwm that imported it.
+    fwm_version = pw.CharField(default=fwm_version)
+
+    # The result of its validation (fwm repo record-validation): "passed", "failed", or null if not validated.
+    validation_status = pw.CharField(null=True)
+    validation_time = TimestampTzField(null=True)
+    validation_detail = pw.TextField(null=True)
 
     # Optional description.
     description = pw.TextField(null=True)
