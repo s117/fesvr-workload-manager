@@ -29,7 +29,7 @@ def _open_repo_quietly(ctx: click.Context) -> Optional[Repo]:
     if not path:
         return None
     try:
-        return Repo.open(path)
+        return Repo.open(path, readonly=True)
     except Exception:
         return None
 

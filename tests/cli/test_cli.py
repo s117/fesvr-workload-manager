@@ -137,3 +137,25 @@ def test_mkgen(run, populated, tmp_path, caplog):
     code, _, err = run("mkgen", "replay", "e", "--create-checkpoints", str(desc), "-o", str(tmp_path / "r5"))
     assert code == 4
     assert "stops after 5000 instructions" in err
+
+
+def test_read_only_repo(run, populated, tmp_path, write_entry_point):
+    """A repository the user can't write to can still be read: list, show, verify, mkgen."""
+    repo_path = tmp_path / "repo"
+    readonly = [repo_path, repo_path / "fwm.db", repo_path / ".staging"]
+    for p in readonly:
+        p.chmod(p.stat().st_mode & ~0o222)
+    try:
+        assert run("list", "--json")[0] == 0
+        assert run("show", "trace", populated, "--json")[0] == 0
+        assert run("repo", "verify")[0] == 0
+        assert run("mkgen", "replay", populated, "-o", str(tmp_path / "run"))[0] == 0
+        # no journal or other file is left behind by reading
+        assert sorted(os.listdir(repo_path)) == [".staging", "checkpoints", "fwm.db", "sysroots", "traces"]
+
+        code, out, err = run("repo", "add", "entry", "sr", "wl", "e2", write_entry_point())
+        assert (code, out) == (4, "")
+        assert "is read-only for you" in err
+    finally:
+        for p in readonly:
+            p.chmod(p.stat().st_mode | 0o200)

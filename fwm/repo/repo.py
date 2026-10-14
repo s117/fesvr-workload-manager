@@ -59,13 +59,23 @@ class Repo:
         return cls(path, open_db(os.path.join(path, REPO_DB_FILE), create=True))
 
     @classmethod
-    def open(cls, path: str) -> "Repo":
+    def open(cls, path: str, readonly: bool = False) -> "Repo":
+        """
+        Open a repository.
+
+        :param readonly: Only read it: this works without write permission, but nothing can be changed.
+        """
         expected = (REPO_DB_FILE, SYSROOTS_DIR, TRACES_DIR, CHECKPOINTS_DIR, STAGING_DIR)
         missing = [p for p in expected if not os.path.exists(os.path.join(path, p))]
         if missing:
             raise NotFoundError(f"{path} is not an fwm repository: it has no {', '.join(missing)}")
+        if not readonly:
+            # SQLite writes its rollback journal next to the database, and imports go through the staging area
+            for p in ("", REPO_DB_FILE, STAGING_DIR):
+                if not os.access(os.path.join(path, p), os.W_OK):
+                    raise FwmValidationError(f"the repository {path} is read-only for you: it can't be changed")
         try:
-            return cls(path, open_db(os.path.join(path, REPO_DB_FILE)))
+            return cls(path, open_db(os.path.join(path, REPO_DB_FILE), readonly=readonly))
         except SchemaVersionError as e:
             raise FwmValidationError(str(e))
 

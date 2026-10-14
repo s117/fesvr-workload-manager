@@ -31,13 +31,18 @@ def cli(ctx, repo_path):
     ctx.obj["repo_path"] = repo_path
 
 
-def open_repo(ctx: click.Context) -> Repo:
-    """The repository given by --repo-path or FWM_REPO_PATH, opened once and closed with the command."""
+def open_repo(ctx: click.Context, write: bool = False) -> Repo:
+    """
+    The repository given by --repo-path or FWM_REPO_PATH, opened once and closed with the command.
+
+    :param write: The command changes the repository. Otherwise it's opened read-only, so that it can be used without
+                  write permission.
+    """
     obj = ctx.find_root().obj
     if "repo" not in obj:
         if not obj.get("repo_path"):
             raise click.UsageError("no workload repository: pass --repo-path or set FWM_REPO_PATH")
-        obj["repo"] = Repo.open(obj["repo_path"])
+        obj["repo"] = Repo.open(obj["repo_path"], readonly=not write)
         ctx.find_root().call_on_close(obj["repo"].close)
     return obj["repo"]
 

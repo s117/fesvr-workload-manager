@@ -50,7 +50,7 @@ def add_sysroot_cmd(ctx, directory, sysroot_name, description):
 
     The tree is copied into the repository, cataloged with its permissions, and made read-only.
     """
-    click.echo(add_sysroot(open_repo(ctx), directory, sysroot_name, description).name)
+    click.echo(add_sysroot(open_repo(ctx, write=True), directory, sysroot_name, description).name)
 
 
 @add.command("entry")
@@ -70,7 +70,7 @@ def add_entry_cmd(ctx, sysroot_name, workload_name, entry_point_name, entry_poin
        "stdin_file": null, "boot_elf": "/boot/pk", "mem_mb": 2048, "nprocs": 1}
     In paths, "/" is the sysroot's root and "." the working directory.
     """
-    click.echo(add_entry(open_repo(ctx), sysroot_name, workload_name, entry_point_name, entry_point_json,
+    click.echo(add_entry(open_repo(ctx, write=True), sysroot_name, workload_name, entry_point_name, entry_point_json,
                          description).name)
 
 
@@ -87,7 +87,7 @@ def add_trace_cmd(ctx, entry, recording_dir, final_state, description):
 
     Prints the UUID of the trace.
     """
-    click.echo(str(add_trace(open_repo(ctx), entry, recording_dir, final_state, description).uuid))
+    click.echo(str(add_trace(open_repo(ctx, write=True), entry, recording_dir, final_state, description).uuid))
 
 
 @add.command("checkpoint")
@@ -105,7 +105,7 @@ def add_checkpoint_cmd(ctx, trace, file, name, simpoint_weight, description):
 
     Prints the checkpoint as <trace UUID>:<name>.
     """
-    ckpt = add_checkpoint(open_repo(ctx), trace, file, name, simpoint_weight, description)
+    ckpt = add_checkpoint(open_repo(ctx, write=True), trace, file, name, simpoint_weight, description)
     click.echo(f"{ckpt.trace.uuid}:{ckpt.name}")
 
 
@@ -121,7 +121,7 @@ def remove_cmd(ctx, kind, id, recursive):
     A sysroot with entry points, an entry point with traces, or a trace with checkpoints is removed only with
     --recursive.
     """
-    r = open_repo(ctx)
+    r = open_repo(ctx, write=True)
     if kind == "sysroot":
         rm.remove_sysroot(r, id, recursive)
     elif kind == "entry":

@@ -80,8 +80,10 @@ def test_open_db_rejects_uninitialized(tmp_path):
 
 def test_open_db_pragmas(tmp_path):
     db = open_db(str(tmp_path / "fwm.db"), create=True)
-    assert db.execute_sql("pragma journal_mode").fetchone()[0] == "wal"
+    # a rollback journal, not WAL, which needs every process on one host
+    assert db.execute_sql("pragma journal_mode").fetchone()[0] == "delete"
     assert db.execute_sql("pragma foreign_keys").fetchone()[0] == 1
+    assert db.execute_sql("pragma busy_timeout").fetchone()[0] == 30000
     db.close()
 
 
@@ -167,3 +169,16 @@ def test_creation_time_defaults_to_now(db):
     entry = make_entry()
     assert NativeEntry.get_by_id(entry.id).creation_time >= before.replace(microsecond=0)
     assert NativeEntry.get_by_id(entry.id).creation_time.tzinfo is not None
+
+
+def test_read_only(tmp_path):
+    path = str(tmp_path / "fwm.db")
+    db = open_db(path, create=True)
+    Workload.create(name="w")
+    db.close()
+
+    db = open_db(path, readonly=True)
+    assert [w.name for w in Workload.select()] == ["w"]
+    with pytest.raises(pw.OperationalError, match="readonly"):
+        Workload.create(name="x")
+    db.close()
