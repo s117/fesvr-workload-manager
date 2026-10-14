@@ -9,6 +9,7 @@ from fwm.repo import remove as rm
 from fwm.repo.checkpoint import add_checkpoint, resolve_checkpoint, verify_checkpoint
 from fwm.repo.entry import add_entry
 from fwm.repo.errors import FwmValidationError
+from fwm.repo.gc import collect_garbage, find_leftovers
 from fwm.repo.repo import Repo
 from fwm.repo.sysroot import add_sysroot, get_sysroot, verify_sysroot
 from fwm.repo.trace import add_trace, resolve_trace, verify_trace
@@ -140,7 +141,8 @@ def verify_cmd(ctx, kind, id):
     """
     Verify the content of the repository against its catalogs: everything, or one sysroot, trace or checkpoint.
 
-    Prints each problem found, and fails if there is any.
+    Verifying everything also reports the leftovers of interrupted commands, which `fwm repo gc` removes. Prints each
+    problem found, and fails if there is any.
     """
     r = open_repo(ctx)
     if kind is not None and id is None:
@@ -164,6 +166,29 @@ def verify_cmd(ctx, kind, id):
             failed += 1
         for path, reason in problems:
             click.echo(f"{label}: {path}: {reason}")
-    Logger.get_logger().info(f"verified {len(items)} item(s), {failed} with problems")
-    if failed:
-        raise FwmValidationError(f"{failed} item(s) failed the verification")
+    leftovers = find_leftovers(r) if kind is None else []
+    for leftover in leftovers:
+        click.echo(f"leftover {leftover.path}: {leftover.reason}")
+    Logger.get_logger().info(
+        f"verified {len(items)} item(s), {failed} with problems" +
+        (f"; {len(leftovers)} leftover(s), which `fwm repo gc` removes" if leftovers else ""))
+    if failed or leftovers:
+        raise FwmValidationError(
+            f"{failed} item(s) failed the verification" + (f", {len(leftovers)} leftover(s)" if leftovers else ""))
+
+
+@repo.command("gc")
+@click.option("--dry-run", "-n", is_flag=True, help="Only print what would be removed.")
+@click.pass_context
+def gc_cmd(ctx, dry_run):
+    """
+    Remove the leftovers of interrupted commands: the staging of imports that were killed, and files that no
+    sysroot, trace or checkpoint refers to.
+
+    Prints each leftover removed (or, with --dry-run, found).
+    """
+    r = open_repo(ctx, write=not dry_run)
+    leftovers = find_leftovers(r) if dry_run else collect_garbage(r)
+    for leftover in leftovers:
+        click.echo(f"{leftover.path}: {leftover.reason}")
+    Logger.get_logger().info(f"{'found' if dry_run else 'removed'} {len(leftovers)} leftover(s)")
