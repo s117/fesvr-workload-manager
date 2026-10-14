@@ -7,8 +7,7 @@ from click.testing import CliRunner
 
 from fwm.cli.completion import _natural_key
 from fwm.cli.fwm import cli
-from tests.fesvr_files import write_recording, write_checkpoint, CheckpointHart, recording_sha256
-from tests.cli.conftest import COMMANDS
+from tests.fesvr_files import write_recording, write_checkpoint, CheckpointHart, Command, exit_command, recording_sha256
 
 
 @pytest.fixture
@@ -33,17 +32,22 @@ def naturally_sorted(items):
     return sorted(items, key=lambda item: _natural_key(item[0]))
 
 
+def other_commands(name):
+    """The commands of a recording of its own: the same recording can't be imported twice."""
+    return [Command(payload=0x2000 + sum(map(ord, name))), exit_command(0)]
+
+
 def add_trace(run, tmp_path, entry, name):
     rec = tmp_path / f"rec-{name}"
-    write_recording(str(rec), harts=[COMMANDS])
+    write_recording(str(rec), harts=[other_commands(name)])
     code, out, _ = run("repo", "add", "trace", entry, str(rec))
     assert code == 0
     return out.strip()
 
 
-def add_checkpoint(run, tmp_path, trace, name):
+def add_checkpoint(run, tmp_path, trace, name, commands):
     file = tmp_path / name
-    write_checkpoint(str(file), [CheckpointHart(recording_sha256(COMMANDS), cmd_index=1)])
+    write_checkpoint(str(file), [CheckpointHart(recording_sha256(commands), cmd_index=1)])
     assert run("repo", "add", "checkpoint", trace, str(file))[0] == 0
 
 
@@ -101,8 +105,8 @@ def test_trace_entry_name_only_while_unique(complete, run, populated, tmp_path):
 def test_checkpoints(complete, run, populated, tmp_path):
     first = populated
     second = add_trace(run, tmp_path, "e", "second")
-    add_checkpoint(run, tmp_path, second, "e.2.0.40")  # the same name as the first trace's
-    add_checkpoint(run, tmp_path, second, "e.10.0.60")
+    add_checkpoint(run, tmp_path, second, "e.2.0.40", other_commands("second"))  # the first trace's has this name
+    add_checkpoint(run, tmp_path, second, "e.10.0.60", other_commands("second"))
 
     # a name in two traces is offered with its trace
     assert values(complete("mkgen", "load")) == values(naturally_sorted(

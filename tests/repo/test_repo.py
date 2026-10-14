@@ -10,7 +10,7 @@ from fwm.database.schema import (
 from fwm.repo import remove as rm
 from fwm.repo.checkpoint import add_checkpoint, resolve_checkpoint, decode_simpoint_weight, verify_checkpoint
 from fwm.repo.entry import add_entry
-from fwm.repo.errors import FwmValidationError, NotFoundError
+from fwm.repo.errors import AlreadyExistsError, FwmValidationError, NotFoundError, RepoUnusableError
 from fwm.repo.repo import Repo
 from fwm.repo.sysroot import add_sysroot, verify_sysroot, spawn_sysroot
 from fwm.repo.trace import add_trace, resolve_trace, verify_trace
@@ -21,6 +21,7 @@ from tests.fesvr_files import (
 from tests.conftest import mode
 
 COMMANDS = [Command(), Command(), exit_command(0)]
+OTHER_COMMANDS = [Command(payload=0x2000), exit_command(0)]
 
 
 # --- repository
@@ -41,7 +42,7 @@ def test_init_non_empty(tmp_path):
 
 
 def test_open_not_a_repo(tmp_path):
-    with pytest.raises(NotFoundError):
+    with pytest.raises(RepoUnusableError):
         Repo.open(str(tmp_path))
 
 
@@ -71,9 +72,16 @@ def test_add_sysroot_warns_absolute_links(repo, sysroot_src, caplog):
 
 
 def test_add_sysroot_duplicate(repo, sysroot_src):
-    add_sysroot(repo, str(sysroot_src), "sr")
-    with pytest.raises(FwmValidationError, match="already exists"):
+    sysroot = add_sysroot(repo, str(sysroot_src), "sr")
+    with pytest.raises(AlreadyExistsError, match="already exists"):
         add_sysroot(repo, str(sysroot_src), "sr")
+    # the same tree is accepted with exist_ok...
+    assert add_sysroot(repo, str(sysroot_src), "sr", exist_ok=True).name == sysroot.name
+    # ...a different one isn't
+    (sysroot_src / "app" / "input.txt").chmod(0o644)
+    (sysroot_src / "app" / "input.txt").write_text("changed\n")
+    with pytest.raises(AlreadyExistsError, match="different content: 1 path.*app/input.txt"):
+        add_sysroot(repo, str(sysroot_src), "sr", exist_ok=True)
 
 
 @pytest.mark.parametrize("name", ["a/b", "..", "", "x y"])
@@ -175,9 +183,16 @@ def test_add_entry_relative_paths(repo, sysroot_src, write_entry_point):
 
 def test_add_entry_duplicate(repo, sysroot_src, write_entry_point):
     add_sysroot(repo, str(sysroot_src), "sr")
-    add_entry(repo, "sr", "wl", "e", write_entry_point())
-    with pytest.raises(FwmValidationError, match="already exists"):
+    add_entry(repo, "sr", "wl", "e", write_entry_point(), description="first")
+    with pytest.raises(AlreadyExistsError, match="already exists"):
         add_entry(repo, "sr", "wl", "e", write_entry_point())
+    # the same entry point (its description aside) is accepted with exist_ok
+    assert add_entry(repo, "sr", "wl", "e", write_entry_point(), description="other", exist_ok=True).description == \
+        "first"
+    with pytest.raises(AlreadyExistsError, match="differs"):
+        add_entry(repo, "sr", "wl", "e", write_entry_point(mem_mb=2), exist_ok=True)
+    with pytest.raises(AlreadyExistsError, match="differs"):
+        add_entry(repo, "sr", "other-wl", "e", write_entry_point(), exist_ok=True)
 
 
 def test_add_entry_missing_sysroot(repo, write_entry_point):
@@ -266,6 +281,27 @@ def test_add_trace_empty_final_state(repo, entry, tmp_path):
         add_trace(repo, "e", str(rec), final_state=str(final_state))
 
 
+def test_add_trace_again(repo, entry, tmp_path):
+    rec = tmp_path / "rec"
+    write_recording(str(rec), harts=[COMMANDS])
+    final_state = tmp_path / "final-state.json"
+    final_state.write_text('{"hart_state": [{"instret": 5000}]}')
+    trace = add_trace(repo, "e", str(rec), final_state=str(final_state))
+
+    # the same recording isn't imported twice
+    with pytest.raises(AlreadyExistsError, match=f"already is trace {trace.uuid}"):
+        add_trace(repo, "e", str(rec), final_state=str(final_state))
+    assert add_trace(repo, "e", str(rec), final_state=str(final_state), exist_ok=True).uuid == trace.uuid
+    # with exist_ok, only with the same final state
+    with pytest.raises(AlreadyExistsError, match="different final state"):
+        add_trace(repo, "e", str(rec), exist_ok=True)
+    final_state.write_text('{"hart_state": [{"instret": 6000}]}')
+    with pytest.raises(AlreadyExistsError, match="different final state"):
+        add_trace(repo, "e", str(rec), final_state=str(final_state), exist_ok=True)
+    assert DecoupledTrace.select().count() == 1
+    assert os.listdir(os.path.join(repo.path, "traces")) == [str(trace.uuid)]
+
+
 def test_resolve_trace(repo, entry, tmp_path, monkeypatch):
     uuids = iter([uuid.UUID("12345678-0000-0000-0000-000000000001"), uuid.UUID("12345678-0000-0000-0000-000000000002")])
     monkeypatch.setattr("fwm.repo.trace.uuid", SimpleNamespace(uuid4=lambda: next(uuids)))
@@ -276,7 +312,9 @@ def test_resolve_trace(repo, entry, tmp_path, monkeypatch):
     assert resolve_trace(str(trace.uuid)).uuid == trace.uuid
     assert resolve_trace("12345678-0000-0000-0000-00000000000").uuid == trace.uuid
 
-    add_trace(repo, "e", str(rec))
+    rec2 = tmp_path / "rec2"
+    write_recording(str(rec2), harts=[OTHER_COMMANDS])
+    add_trace(repo, "e", str(rec2))
     with pytest.raises(FwmValidationError, match="has 2 traces"):
         resolve_trace("e")
     with pytest.raises(FwmValidationError, match="matches 2 traces"):
@@ -299,6 +337,7 @@ def trace(repo, entry, tmp_path):
 
 def make_checkpoint(tmp_path, name, rec_sha=None, cmd_index=1, count=1000, **kwargs) -> str:
     path = tmp_path / name
+    path.parent.mkdir(parents=True, exist_ok=True)
     state = encode_hart_state(default_hart_state_entries(count=count))
     write_checkpoint(str(path), [CkptHart(rec_sha or recording_sha256(COMMANDS), cmd_index=cmd_index, state=state)],
                      mem_mb=1, **kwargs)
@@ -361,9 +400,13 @@ def test_add_checkpoint_corrupt(repo, trace, tmp_path):
 
 def test_add_checkpoint_duplicate(repo, trace, tmp_path):
     file = make_checkpoint(tmp_path, "c")
-    add_checkpoint(repo, "e", file)
-    with pytest.raises(FwmValidationError, match="already has a checkpoint"):
+    ckpt = add_checkpoint(repo, "e", file)
+    with pytest.raises(AlreadyExistsError, match="already has a checkpoint"):
         add_checkpoint(repo, "e", file)
+    assert add_checkpoint(repo, "e", file, exist_ok=True).content_sha256 == ckpt.content_sha256
+    other = make_checkpoint(tmp_path / "other", "c", count=2000)
+    with pytest.raises(AlreadyExistsError, match="different content"):
+        add_checkpoint(repo, "e", other, exist_ok=True)
 
 
 def test_resolve_checkpoint(repo, entry, trace, tmp_path):
@@ -373,8 +416,11 @@ def test_resolve_checkpoint(repo, entry, trace, tmp_path):
     assert resolve_checkpoint(f"{trace.uuid}:c").name == "c"
 
     # another trace with a checkpoint of the same name
-    trace2 = add_trace(repo, "e", str(tmp_path / "rec"))
-    add_checkpoint(repo, str(trace2.uuid), file)
+    rec2 = tmp_path / "rec2"
+    write_recording(str(rec2), harts=[OTHER_COMMANDS])
+    trace2 = add_trace(repo, "e", str(rec2))
+    add_checkpoint(repo, str(trace2.uuid), make_checkpoint(tmp_path / "other", "c",
+                                                           rec_sha=recording_sha256(OTHER_COMMANDS)))
     with pytest.raises(FwmValidationError, match="give it as <trace>:<name>"):
         resolve_checkpoint("c")
     assert resolve_checkpoint(f"{trace2.uuid.hex[:12]}:c").trace.uuid == trace2.uuid

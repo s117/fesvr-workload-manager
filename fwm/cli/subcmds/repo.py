@@ -40,18 +40,24 @@ def add():
     """
 
 
+_exist_ok_option = click.option(
+    "--exist-ok", is_flag=True,
+    help="If the same item is already in the repository, print it and succeed instead of failing with status 5.")
+
+
 @add.command("sysroot")
 @click.argument("directory", type=click.Path(exists=True, file_okay=False))
 @click.argument("sysroot_name")
 @click.option("--description", "-d", help="A description of the sysroot.")
+@_exist_ok_option
 @click.pass_context
-def add_sysroot_cmd(ctx, directory, sysroot_name, description):
+def add_sysroot_cmd(ctx, directory, sysroot_name, description, exist_ok):
     """
     Import DIRECTORY as the sysroot SYSROOT_NAME.
 
     The tree is copied into the repository, cataloged with its permissions, and made read-only.
     """
-    click.echo(add_sysroot(open_repo(ctx, write=True), directory, sysroot_name, description).name)
+    click.echo(add_sysroot(open_repo(ctx, write=True), directory, sysroot_name, description, exist_ok).name)
 
 
 @add.command("entry")
@@ -60,8 +66,9 @@ def add_sysroot_cmd(ctx, directory, sysroot_name, description):
 @click.argument("entry_point_name")
 @click.argument("entry_point_json", type=click.Path(exists=True, dir_okay=False))
 @click.option("--description", "-d", help="A description of the entry point.")
+@_exist_ok_option
 @click.pass_context
-def add_entry_cmd(ctx, sysroot_name, workload_name, entry_point_name, entry_point_json, description):
+def add_entry_cmd(ctx, sysroot_name, workload_name, entry_point_name, entry_point_json, description, exist_ok):
     """
     Add the entry point ENTRY_POINT_NAME: how to launch the workload WORKLOAD_NAME in the sysroot SYSROOT_NAME.
 
@@ -72,7 +79,7 @@ def add_entry_cmd(ctx, sysroot_name, workload_name, entry_point_name, entry_poin
     In paths, "/" is the sysroot's root and "." the working directory.
     """
     click.echo(add_entry(open_repo(ctx, write=True), sysroot_name, workload_name, entry_point_name, entry_point_json,
-                         description).name)
+                         description, exist_ok).name)
 
 
 @add.command("trace")
@@ -81,14 +88,17 @@ def add_entry_cmd(ctx, sysroot_name, workload_name, entry_point_name, entry_poin
 @click.option("--final-state", type=click.Path(exists=True, dir_okay=False),
               help="The +final-state-dump of the recording run: the instret of each HART.")
 @click.option("--description", "-d", help="A description of the trace.")
+@_exist_ok_option
 @click.pass_context
-def add_trace_cmd(ctx, entry, recording_dir, final_state, description):
+def add_trace_cmd(ctx, entry, recording_dir, final_state, description, exist_ok):
     """
     Import RECORDING_DIR, a recording (+dev-traffic-record) of a run of the entry point ENTRY, as a trace.
 
-    Prints the UUID of the trace.
+    Prints the UUID of the trace. A recording that already is a trace of the entry point fails with status 5, or,
+    with --exist-ok and the same final state, prints that trace.
     """
-    click.echo(str(add_trace(open_repo(ctx, write=True), entry, recording_dir, final_state, description).uuid))
+    click.echo(str(add_trace(open_repo(ctx, write=True), entry, recording_dir, final_state, description,
+                             exist_ok).uuid))
 
 
 @add.command("checkpoint")
@@ -99,14 +109,15 @@ def add_trace_cmd(ctx, entry, recording_dir, final_state, description):
               help="Its SimPoint weight. Defaults to the one in its name, when the name is "
                    "<entry>.<simpoint index>.<weight>.")
 @click.option("--description", "-d", help="A description of the checkpoint.")
+@_exist_ok_option
 @click.pass_context
-def add_checkpoint_cmd(ctx, trace, file, name, simpoint_weight, description):
+def add_checkpoint_cmd(ctx, trace, file, name, simpoint_weight, description, exist_ok):
     """
     Import FILE, a checkpoint created from TRACE (a trace UUID or prefix, or an entry point with one trace).
 
     Prints the checkpoint as <trace UUID>:<name>.
     """
-    ckpt = add_checkpoint(open_repo(ctx, write=True), trace, file, name, simpoint_weight, description)
+    ckpt = add_checkpoint(open_repo(ctx, write=True), trace, file, name, simpoint_weight, description, exist_ok)
     click.echo(f"{ckpt.trace.uuid}:{ckpt.name}")
 
 

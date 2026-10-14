@@ -8,7 +8,7 @@ from fwm.data_loader.entry_point import load_entry_point, WorkloadEntry
 from fwm.data_loader.file_catalog import FileCatalog
 from fwm.database.catalog_store import load_catalog
 from fwm.database.schema import NativeEntry, Sysroot, Workload
-from fwm.repo.errors import FwmValidationError, NotFoundError
+from fwm.repo.errors import AlreadyExistsError, FwmValidationError, NotFoundError
 from fwm.repo.repo import Repo, check_name
 from fwm.repo.sysroot import get_sysroot
 from fwm.utils.log import Logger
@@ -67,10 +67,29 @@ def _check_paths(entry: WorkloadEntry, catalog: FileCatalog) -> None:
             f"directory {cwd})")
 
 
+def _existing_entry(existing: NativeEntry, sysroot_name: str, workload_name: str, entry: WorkloadEntry,
+                    exist_ok: bool) -> NativeEntry:
+    """The answer to adding an entry point under a name already used: that entry point with --exist-ok, if it is the
+    same (its description aside), else an error."""
+    what = f"an entry point named '{existing.name}' already exists"
+    if not exist_ok:
+        raise AlreadyExistsError(what)
+    stored = (existing.sysroot.name, existing.workload.name, existing.command, existing.working_directory,
+              existing.stdin_file, existing.boot_elf, existing.mem_mb, existing.nprocs)
+    given = (sysroot_name, workload_name, entry.command, entry.working_directory, entry.stdin_file, entry.boot_elf,
+             entry.mem_mb, entry.nprocs)
+    if stored != given:
+        raise AlreadyExistsError(f"{what}, and differs from this one")
+    return existing
+
+
 def add_entry(repo: Repo, sysroot_name: str, workload_name: str, entry_name: str, entry_json: str,
-              description: Optional[str] = None) -> NativeEntry:
+              description: Optional[str] = None, exist_ok: bool = False) -> NativeEntry:
     """
     Add an entry point: how to launch a workload in a sysroot. The paths are checked against the sysroot's catalog.
+
+    :param exist_ok: If the same entry point exists (its description aside), return it instead of failing.
+    :raise AlreadyExistsError: An entry point of this name exists.
     """
     check_name("entry point", entry_name)
     check_name("workload", workload_name)
@@ -97,8 +116,9 @@ def add_entry(repo: Repo, sysroot_name: str, workload_name: str, entry_name: str
     with repo.db.atomic():
         if Sysroot.get_or_none(Sysroot.name == sysroot.name) is None:
             raise NotFoundError(f"sysroot '{sysroot.name}' was removed while adding the entry point")
-        if NativeEntry.get_or_none(NativeEntry.name == entry_name) is not None:
-            raise FwmValidationError(f"an entry point named '{entry_name}' already exists")
+        existing = NativeEntry.get_or_none(NativeEntry.name == entry_name)
+        if existing is not None:
+            return _existing_entry(existing, sysroot_name, workload_name, entry, exist_ok)
         workload, _ = Workload.get_or_create(name=workload_name)
         return NativeEntry.create(
             name=entry_name, workload=workload, sysroot=sysroot, command=entry.command,

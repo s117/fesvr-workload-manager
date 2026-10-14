@@ -8,7 +8,7 @@ from typing import Callable, Iterator, List, Tuple
 import peewee as pw
 
 from fwm.database.db import open_db, SchemaVersionError
-from fwm.repo.errors import FwmValidationError, NotFoundError
+from fwm.repo.errors import FwmValidationError, RepoUnusableError
 from fwm.utils.fs import remove_tree, set_tree_readonly
 from fwm.utils.log import Logger
 
@@ -71,16 +71,16 @@ class Repo:
         expected = (REPO_DB_FILE, SYSROOTS_DIR, TRACES_DIR, CHECKPOINTS_DIR, STAGING_DIR)
         missing = [p for p in expected if not os.path.exists(os.path.join(path, p))]
         if missing:
-            raise NotFoundError(f"{path} is not an fwm repository: it has no {', '.join(missing)}")
+            raise RepoUnusableError(f"{path} is not an fwm repository: it has no {', '.join(missing)}")
         if not readonly:
             # SQLite writes its rollback journal next to the database, and imports go through the staging area
             for p in ("", REPO_DB_FILE, STAGING_DIR):
                 if not os.access(os.path.join(path, p), os.W_OK):
-                    raise FwmValidationError(f"the repository {path} is read-only for you: it can't be changed")
+                    raise RepoUnusableError(f"the repository {path} is read-only for you: it can't be changed")
         try:
             return cls(path, open_db(os.path.join(path, REPO_DB_FILE), readonly=readonly))
         except SchemaVersionError as e:
-            raise FwmValidationError(str(e))
+            raise RepoUnusableError(str(e))
 
     def close(self) -> None:
         self.db.close()
@@ -133,7 +133,8 @@ class Repo:
 
         def place(staged: str, final: str) -> None:
             if os.path.lexists(final):
-                raise FwmValidationError(f"cannot import to {final}: it already exists")
+                raise FwmValidationError(
+                    f"cannot import to {final}: something no row refers to is there. Remove it with `fwm repo gc`.")
             os.rename(staged, final)
             placed.append((staged, final))
 

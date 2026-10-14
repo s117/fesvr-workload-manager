@@ -6,7 +6,7 @@ from typing import List, Optional
 from fwm.data_loader.checkpoint import read_checkpoint_header, checkpoint_content_sha256, CheckpointFormatError
 from fwm.database.catalog_store import save_catalog, load_catalog
 from fwm.database.schema import DecoupledCheckpoint, CheckpointHart, DecoupledTrace
-from fwm.repo.errors import FwmValidationError, NotFoundError
+from fwm.repo.errors import AlreadyExistsError, FwmValidationError, NotFoundError
 from fwm.repo.repo import Repo, DIGEST_ALGO, REPO_PERM_MASK
 from fwm.repo.trace import resolve_trace, trace_harts
 from fwm.utils.file_catalog import create_catalog, verify_catalog, FailedDetail
@@ -53,14 +53,38 @@ def checkpoint_harts(ckpt: DecoupledCheckpoint) -> List[CheckpointHart]:
     return list(ckpt.harts.order_by(CheckpointHart.hart_id))
 
 
+def _existing_checkpoint(ckpt: DecoupledCheckpoint, content_sha256: Optional[str], file: str,
+                         exist_ok: bool) -> DecoupledCheckpoint:
+    """
+    The answer to importing a checkpoint under a name its trace already has: that checkpoint with --exist-ok, if the
+    content is the same, else an error.
+
+    :param content_sha256: The content digest of the file being imported, if already computed.
+    """
+    what = f"trace {ckpt.trace.uuid} already has a checkpoint named '{ckpt.name}'"
+    if not exist_ok:
+        raise AlreadyExistsError(what)
+    if content_sha256 is None:
+        try:
+            content_sha256 = checkpoint_content_sha256(file)
+        except (CheckpointFormatError, OSError) as e:
+            raise FwmValidationError(f"invalid checkpoint {file}: {e}")
+    if content_sha256 != ckpt.content_sha256:
+        raise AlreadyExistsError(f"{what}, with different content")
+    return ckpt
+
+
 def add_checkpoint(repo: Repo, trace_ref: str, file: str, name: Optional[str] = None,
-                   simpoint_weight: Optional[float] = None, description: Optional[str] = None) -> DecoupledCheckpoint:
+                   simpoint_weight: Optional[float] = None, description: Optional[str] = None,
+                   exist_ok: bool = False) -> DecoupledCheckpoint:
     """
     Import a checkpoint created from a trace. It is checked against the trace, so that it is known to load with it.
 
     :param name: The checkpoint's name, by default the file name.
     :param simpoint_weight: Its SimPoint weight, by default decoded from its name when it follows the riscv-simenv
                             convention {entry}.{simpoint_index}.{weight}.
+    :param exist_ok: If the trace has a checkpoint of this name with the same content, return it instead of failing.
+    :raise AlreadyExistsError: The trace has a checkpoint of this name.
     """
     trace: DecoupledTrace = resolve_trace(trace_ref)
     if not os.path.isfile(file):
@@ -75,14 +99,20 @@ def add_checkpoint(repo: Repo, trace_ref: str, file: str, name: Optional[str] = 
     if simpoint_weight is not None and not 0 <= simpoint_weight <= 1:
         raise FwmValidationError(f"the SimPoint weight {simpoint_weight} of '{name}' is not in [0, 1]")
 
+    existing = DecoupledCheckpoint.get_or_none((DecoupledCheckpoint.trace == trace) &
+                                               (DecoupledCheckpoint.name == name))
+    if existing is not None:
+        return _existing_checkpoint(existing, None, file, exist_ok)
+
     with repo.staging() as staged:
         os.mkdir(staged)
         shutil.copy2(file, os.path.join(staged, name))
-        return _import_checkpoint(repo, trace, file, name, staged, simpoint_weight, description)
+        return _import_checkpoint(repo, trace, file, name, staged, simpoint_weight, description, exist_ok)
 
 
 def _import_checkpoint(repo: Repo, trace: DecoupledTrace, file: str, name: str, staged: str,
-                       simpoint_weight: Optional[float], description: Optional[str]) -> DecoupledCheckpoint:
+                       simpoint_weight: Optional[float], description: Optional[str],
+                       exist_ok: bool) -> DecoupledCheckpoint:
     # check the copy that is stored, not the source
     staged_file = os.path.join(staged, name)
     try:
@@ -113,9 +143,11 @@ def _import_checkpoint(repo: Repo, trace: DecoupledTrace, file: str, name: str, 
     with repo.importing() as place:
         if DecoupledTrace.get_or_none(DecoupledTrace.uuid == trace.uuid) is None:
             raise NotFoundError(f"trace {trace.uuid} was removed during the import")
-        if DecoupledCheckpoint.get_or_none((DecoupledCheckpoint.trace == trace) &
-                                           (DecoupledCheckpoint.name == name)) is not None:
-            raise FwmValidationError(f"trace {trace.uuid} already has a checkpoint named '{name}'")
+        # another import of this name may have committed meanwhile
+        existing = DecoupledCheckpoint.get_or_none((DecoupledCheckpoint.trace == trace) &
+                                                   (DecoupledCheckpoint.name == name))
+        if existing is not None:
+            return _existing_checkpoint(existing, content_sha256, file, exist_ok)
         ckpt = DecoupledCheckpoint.create(
             trace=trace, name=name, file_catalog=save_catalog(catalog), format_version=header.format_version,
             content_sha256=content_sha256, simpoint_weight=simpoint_weight, description=description)

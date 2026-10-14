@@ -15,7 +15,7 @@ def test_no_repo(tmp_path, monkeypatch):
 
 def test_not_a_repo(tmp_path):
     result = CliRunner().invoke(cli, ["--repo-path", str(tmp_path), "list"])
-    assert result.exit_code == 3
+    assert result.exit_code == 2
     assert "is not an fwm repository" in result.stderr
 
 
@@ -79,10 +79,11 @@ def test_exit_codes(run, populated, write_entry_point, tmp_path):
     code, _, err = run("show", "entry", "missing")
     assert code == 3
     assert "error: no entry point named 'missing'" in err
-    # failed check
-    code, _, err = run("repo", "add", "entry", "sr", "wl", "e", write_entry_point())
-    assert code == 4
+    # already exists
+    code, _, err = run("repo", "add", "entry", "sr", "wl", "e", write_entry_point(command="other"))
+    assert code == 5
     assert "already exists" in err
+    # failed check
     code, _, err = run("repo", "remove", "sysroot", "sr")
     assert code == 4
     assert "--recursive" in err
@@ -154,7 +155,7 @@ def test_read_only_repo(run, populated, tmp_path, write_entry_point):
         assert sorted(os.listdir(repo_path)) == [".staging", "checkpoints", "fwm.db", "sysroots", "traces"]
 
         code, out, err = run("repo", "add", "entry", "sr", "wl", "e2", write_entry_point())
-        assert (code, out) == (4, "")
+        assert (code, out) == (2, "")
         assert "is read-only for you" in err
     finally:
         for p in readonly:

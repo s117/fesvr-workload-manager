@@ -164,3 +164,25 @@ def find_absolute_links(catalog: FileCatalog) -> List[LinkItem]:
     sysroot, it resolves it from the host's root, not the sysroot's.
     """
     return [link for link in catalog.links if os.path.isabs(link.dest)]
+
+
+def catalog_differences(a: FileCatalog, b: FileCatalog) -> List[str]:
+    """
+    The paths whose entries differ between two catalogs (type, permission, size, digest or link destination), ignoring
+    when the catalogs were created. Empty if the catalogs describe the same tree.
+    """
+    if a.digest_algo != b.digest_algo:
+        raise ValueError(f"cannot compare catalogs of different digest algorithms: {a.digest_algo}, {b.digest_algo}")
+
+    def entries(c: FileCatalog) -> Dict[str, Tuple]:
+        result: Dict[str, Tuple] = {}
+        for f in c.files:
+            result[f.path] = ("file", f.perm, f.actual_size, f.digest.lower())
+        for link in c.links:
+            result[link.path] = ("link", link.perm, link.dest)
+        for d in c.dirs:
+            result[d.path] = ("dir", d.perm)
+        return result
+
+    ea, eb = entries(a), entries(b)
+    return sorted(p for p in ea.keys() | eb.keys() if ea.get(p) != eb.get(p))

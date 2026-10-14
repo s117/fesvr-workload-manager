@@ -38,7 +38,8 @@ def cli(ctx, repo_path):
     The RISCV FESVR Workload Manager (fwm).
 
     \b
-    Exit status: 0 success, 1 unexpected error, 2 usage error, 3 not found, 4 failed check.
+    Exit status: 0 success, 1 unexpected error, 2 usage error or unusable repository, 3 not found, 4 failed
+    check, 5 already exists.
     """
     ctx.ensure_object(dict)
     ctx.obj["repo_path"] = repo_path

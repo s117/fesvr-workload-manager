@@ -7,11 +7,13 @@ from typing import List, Optional
 import pydantic
 
 from fwm.data_loader.final_state import read_final_state
-from fwm.data_loader.recording import read_recording, Recording, RecordingFormatError
+from fwm.data_loader.recording import (
+    read_recording, read_recording_sha256, read_target_spec, Recording, RecordingFormatError
+)
 from fwm.database.catalog_store import save_catalog, load_catalog
 from fwm.database.schema import DecoupledTrace, TraceHart, NativeEntry
 from fwm.repo.entry import get_entry, entry_target_path
-from fwm.repo.errors import FwmValidationError, NotFoundError
+from fwm.repo.errors import AlreadyExistsError, FwmValidationError, NotFoundError
 from fwm.repo.repo import Repo, DIGEST_ALGO, REPO_PERM_MASK
 from fwm.utils.file_catalog import create_catalog, verify_catalog, FailedDetail
 from fwm.utils.fs import copy_tree, set_tree_writable
@@ -49,16 +51,69 @@ def trace_harts(trace: DecoupledTrace) -> List[TraceHart]:
     return list(trace.harts.order_by(TraceHart.hart_id))
 
 
+def _read_instrets(final_state: Optional[str]) -> Optional[List[int]]:
+    """The instret of each HART in a +final-state-dump file, if one is given."""
+    if final_state is None:
+        return None
+    if os.path.isfile(final_state) and os.path.getsize(final_state) == 0:
+        raise FwmValidationError(
+            f"the final state {final_state} is empty: spike writes it only when the simulation ends normally, not "
+            f"when -e stops the run. Import a truncated recording without --final-state.")
+    try:
+        return read_final_state(final_state)
+    except (OSError, json.JSONDecodeError, pydantic.ValidationError) as e:
+        raise FwmValidationError(f"invalid final state {final_state}: {e}")
+
+
+def _source_recording_sha256s(recording_dir: str) -> Optional[List[str]]:
+    """The per-HART SHA256s of a recording, read cheaply from its .sha256 files; None if they can't be read (the full
+    check of the recording then reports why)."""
+    try:
+        spec = read_target_spec(recording_dir)
+        return [read_recording_sha256(recording_dir, hart) for hart in range(spec.num_harts)]
+    except Exception:
+        return None
+
+
+def _trace_with_recording(entry: NativeEntry, sha256s: Optional[List[str]]) -> Optional[DecoupledTrace]:
+    """The trace of an entry point made of this very recording (the same SHA256 for every HART), if any."""
+    if sha256s is None:
+        return None
+    for trace in entry.traces:
+        if [h.recording_sha256 for h in trace_harts(trace)] == sha256s:
+            return trace
+    return None
+
+
+def _existing_trace(trace: DecoupledTrace, instrets: Optional[List[int]], exist_ok: bool) -> DecoupledTrace:
+    """The answer to importing a recording that already is a trace: that trace with --exist-ok, else an error."""
+    what = f"this recording already is trace {trace.uuid} of entry point '{trace.native_entry.name}'"
+    if not exist_ok:
+        raise AlreadyExistsError(what)
+    stored = [h.instret for h in trace_harts(trace)]
+    if instrets is not None and stored != instrets or instrets is None and any(i is not None for i in stored):
+        raise AlreadyExistsError(f"{what}, with a different final state: instret {stored}")
+    return trace
+
+
 def add_trace(repo: Repo, entry_name: str, recording_dir: str, final_state: Optional[str] = None,
-              description: Optional[str] = None) -> DecoupledTrace:
+              description: Optional[str] = None, exist_ok: bool = False) -> DecoupledTrace:
     """
     Import a device traffic recording of an entry point's run as a trace.
 
     :param final_state: The +final-state-dump of the recording run, which gives the instret of each HART.
+    :param exist_ok: If the recording already is a trace of the entry point, with the same final state, return it
+                     instead of failing.
+    :raise AlreadyExistsError: The recording already is a trace of the entry point.
     """
     entry = get_entry(entry_name)
     if not os.path.isdir(recording_dir):
         raise NotFoundError(f"{recording_dir} is not a directory")
+    instrets = _read_instrets(final_state)
+    existing = _trace_with_recording(entry, _source_recording_sha256s(recording_dir))
+    if existing is not None:
+        return _existing_trace(existing, instrets, exist_ok)
+
     with repo.staging() as staged:
         copy_tree(recording_dir, staged)
         # check the copy that is stored, not the source
@@ -66,11 +121,13 @@ def add_trace(repo: Repo, entry_name: str, recording_dir: str, final_state: Opti
             recording = read_recording(staged)
         except (RecordingFormatError, OSError, EOFError) as e:
             raise FwmValidationError(f"invalid recording {recording_dir}: {str(e).replace(staged, recording_dir)}")
-        return _import_trace(repo, entry, recording_dir, staged, recording, final_state, description)
+        return _import_trace(repo, entry, recording_dir, staged, recording, final_state, instrets, description,
+                             exist_ok)
 
 
 def _import_trace(repo: Repo, entry: NativeEntry, recording_dir: str, staged: str, recording: Recording,
-                  final_state: Optional[str], description: Optional[str]) -> DecoupledTrace:
+                  final_state: Optional[str], instrets: Optional[List[int]], description: Optional[str],
+                  exist_ok: bool) -> DecoupledTrace:
     spec = recording.target_spec
 
     if spec.mem_mb != entry.mem_mb:
@@ -91,19 +148,9 @@ def _import_trace(repo: Repo, entry: NativeEntry, recording_dir: str, staged: st
             f"the recording booted an ELF of SHA256 {spec.boot_elf_sha256}, but the boot ELF {boot_elf} of entry "
             f"point '{entry.name}' in sysroot '{entry.sysroot.name}' has SHA256 {boot_elf_digest}")
 
-    instrets: Optional[List[int]] = None
-    if final_state is not None:
-        if os.path.isfile(final_state) and os.path.getsize(final_state) == 0:
-            raise FwmValidationError(
-                f"the final state {final_state} is empty: spike writes it only when the program ends, not when -e "
-                f"stops the run. Import a truncated recording without --final-state.")
-        try:
-            instrets = read_final_state(final_state)
-        except (OSError, json.JSONDecodeError, pydantic.ValidationError) as e:
-            raise FwmValidationError(f"invalid final state {final_state}: {e}")
-        if len(instrets) != spec.num_harts:
-            raise FwmValidationError(
-                f"the final state {final_state} has {len(instrets)} HART(s), but the recording has {spec.num_harts}")
+    if instrets is not None and len(instrets) != spec.num_harts:
+        raise FwmValidationError(
+            f"the final state {final_state} has {len(instrets)} HART(s), but the recording has {spec.num_harts}")
 
     log = Logger.get_logger()
     if recording.exit_status is None:
@@ -118,6 +165,10 @@ def _import_trace(repo: Repo, entry: NativeEntry, recording_dir: str, staged: st
     with repo.importing() as place:
         if NativeEntry.get_or_none(NativeEntry.name == entry.name) is None:
             raise NotFoundError(f"entry point '{entry.name}' was removed during the import")
+        # another import of the same recording may have committed meanwhile
+        existing = _trace_with_recording(entry, [h.recording_sha256 for h in recording.harts])
+        if existing is not None:
+            return _existing_trace(existing, instrets, exist_ok)
         trace = DecoupledTrace.create(
             uuid=trace_uuid, native_entry=entry, file_catalog=save_catalog(catalog), mem_mb=spec.mem_mb,
             num_harts=spec.num_harts, boot_elf_sha256=spec.boot_elf_sha256, exit_status=recording.exit_status,

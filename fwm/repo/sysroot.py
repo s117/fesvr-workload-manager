@@ -3,9 +3,12 @@ from typing import List, Optional
 
 from fwm.database.catalog_store import save_catalog, load_catalog
 from fwm.database.schema import Sysroot
-from fwm.repo.errors import FwmValidationError, NotFoundError
+from fwm.repo.errors import AlreadyExistsError, FwmValidationError, NotFoundError
 from fwm.repo.repo import Repo, check_name, DIGEST_ALGO, REPO_PERM_MASK
-from fwm.utils.file_catalog import create_catalog, verify_catalog, find_absolute_links, FailedDetail
+from fwm.data_loader.file_catalog import FileCatalog
+from fwm.utils.file_catalog import (
+    create_catalog, verify_catalog, find_absolute_links, catalog_differences, FailedDetail
+)
 from fwm.utils.fs import copy_tree, set_tree_writable, remove_tree
 from fwm.utils.log import Logger
 
@@ -17,23 +20,52 @@ def get_sysroot(name: str) -> Sysroot:
     return sysroot
 
 
-def add_sysroot(repo: Repo, src_dir: str, name: str, description: Optional[str] = None) -> Sysroot:
+def _existing_sysroot(sysroot: Sysroot, catalog: Optional[FileCatalog], src_dir: str,
+                      exist_ok: bool) -> Sysroot:
+    """
+    The answer to importing a sysroot under a name already used: that sysroot with --exist-ok, if the tree is the same,
+    else an error.
+
+    :param catalog: The catalog of the tree being imported, if already made.
+    """
+    what = f"a sysroot named '{sysroot.name}' already exists"
+    if not exist_ok:
+        raise AlreadyExistsError(what)
+    if catalog is None:
+        catalog = _catalog_of(src_dir, src_dir)
+    differences = catalog_differences(catalog, load_catalog(sysroot.file_catalog))
+    if differences:
+        raise AlreadyExistsError(
+            f"{what}, with different content: {len(differences)} path(s) differ, e.g. {differences[0]}")
+    return sysroot
+
+
+def _catalog_of(tree: str, shown_as: str) -> FileCatalog:
+    try:
+        return create_catalog(DIGEST_ALGO, tree)
+    except NotImplementedError as e:
+        raise FwmValidationError(str(e).replace(tree, shown_as))
+
+
+def add_sysroot(repo: Repo, src_dir: str, name: str, description: Optional[str] = None,
+                exist_ok: bool = False) -> Sysroot:
     """
     Import a sysroot: copy the tree into the repository, catalog it with its original permissions, and make the copy
     read-only.
+
+    :param exist_ok: If a sysroot of this name with the same content exists, return it instead of failing.
+    :raise AlreadyExistsError: A sysroot of this name exists.
     """
     check_name("sysroot", name)
     if not os.path.isdir(src_dir):
         raise NotFoundError(f"{src_dir} is not a directory")
-    if Sysroot.get_or_none(Sysroot.name == name) is not None:
-        raise FwmValidationError(f"a sysroot named '{name}' already exists")
+    existing = Sysroot.get_or_none(Sysroot.name == name)
+    if existing is not None:
+        return _existing_sysroot(existing, None, src_dir, exist_ok)
 
     with repo.staging() as staged:
         copy_tree(src_dir, staged)
-        try:
-            catalog = create_catalog(DIGEST_ALGO, staged)
-        except NotImplementedError as e:
-            raise FwmValidationError(str(e).replace(staged, src_dir))
+        catalog = _catalog_of(staged, src_dir)
 
         abs_links = find_absolute_links(catalog)
         if abs_links:
@@ -44,8 +76,10 @@ def add_sysroot(repo: Repo, src_dir: str, name: str, description: Optional[str] 
 
         set_tree_writable(staged)  # to move it to another parent
         with repo.importing() as place:
-            if Sysroot.get_or_none(Sysroot.name == name) is not None:
-                raise FwmValidationError(f"a sysroot named '{name}' already exists")
+            # another import of this name may have committed meanwhile
+            existing = Sysroot.get_or_none(Sysroot.name == name)
+            if existing is not None:
+                return _existing_sysroot(existing, catalog, src_dir, exist_ok)
             sysroot = Sysroot.create(name=name, description=description, file_catalog=save_catalog(catalog))
             place(staged, repo.sysroot_dir(name))
     return sysroot
