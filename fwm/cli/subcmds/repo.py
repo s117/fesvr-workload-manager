@@ -184,8 +184,8 @@ def record_validation_cmd(ctx, checkpoint, run_dir):
     Judge RUN_DIR, a run of CHECKPOINT to the end of the program (`fwm mkgen load`, run without -e), and record the
     result with the checkpoint.
 
-    It passes when the run ended normally and every HART's final instruction count equals the trace's. Prints
-    "passed" or "failed" and why; fails with status 4 if the checkpoint failed.
+    It passes when every HART's final instruction count equals the trace's. Prints "passed" or "failed" and why;
+    fails with status 4 if the checkpoint failed.
     """
     ckpt = record_validation(open_repo(ctx, write=True), checkpoint, run_dir)
     click.echo(f"{ckpt.validation_status}: {ckpt.validation_detail}")

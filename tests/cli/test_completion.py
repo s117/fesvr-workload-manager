@@ -69,6 +69,7 @@ def test_names(complete, run, populated, write_entry_point):
     ])
     assert values(complete("repo", "add", "checkpoint", incomplete=trace_uuid[:4])) == [trace_uuid]
     assert complete("mkgen", "load") == [("e.2.0.40", "e, weight 0.4")]
+    assert values(complete("repo", "record-validation")) == ["e.2.0.40"]
 
     # new names aren't completed
     assert complete("repo", "add", "entry", "sr", "wl") == []

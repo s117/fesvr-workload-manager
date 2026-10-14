@@ -1,65 +1,95 @@
 # The interface between fwm and fwm-bootstrap
 
-fwm-bootstrap is the workload preparation pipeline (Snakemake) that turns a workload into fwm repository content: a sysroot, entry points, a trace and checkpoints. This document is the contract it relies on: the commands it runs, what they read and write, and how they report results.
+fwm-bootstrap is the workload preparation pipeline (Snakemake) that turns a workload into fwm repository content: a sysroot, entry points, a trace and checkpoints. This document is the contract it relies on: where each command runs, what it reads and writes, how it reports results, and how it behaves when rerun or interrupted.
+
+## Where commands run
+
+| Where | What runs there |
+| --- | --- |
+| One host, e.g. the Snakemake controller (`localrules`) | Commands that change the repository: `fwm repo init`, `repo add`, `repo remove`, `repo gc`, `repo record-validation`. |
+| Any compute node | The generated Makefiles (`make -C <run dir> run`). Only a record run opens the database, read-only, when `fwm spawn` checks the sysroot out. |
+| Anywhere, even without write permission | `fwm list`, `show`, `verify`, `mkgen`, `spawn`, shell completion. |
+
+The database uses SQLite's rollback journal, not WAL, so it can sit on a shared filesystem such as NFS and be read from several hosts. Commands that change it start their transaction with the write lock held and wait up to 30 seconds for each other. Keep them on one host anyway: SQLite's locking over a network filesystem is only as reliable as that filesystem's.
 
 ## Pipeline outline
 
 ```
-1. fwm repo add sysroot <dir> <sysroot>                        once per sysroot
-2. fwm repo add entry <sysroot> <workload> <entry> <json>      once per entry point
-3. fwm mkgen record <entry> -o R1 && make -C R1 run            record; validate R1's outputs
-4. fwm repo add trace <entry> R1/trace --final-state R1/final-state.json      -> trace UUID
-5. fwm mkgen replay <uuid> -o R2 && make -C R2 run SIM_FLAGS_EXTRA=-s<interval>   SimPoint BBV, from the trace
-   (SimPoint analysis -> checkpoint description file D)
-6. fwm mkgen replay <uuid> --create-checkpoints D -o R3 && make -C R3 run
-7. fwm repo add checkpoint <uuid> R3/checkpoints/<name>        once per checkpoint
-8. fwm mkgen load <uuid>:<name> -o R4 && make -C R4 run        validate each checkpoint
+ 1. fwm repo add sysroot <dir> <sysroot> --exist-ok                                   controller
+ 2. fwm repo add entry <sysroot> <workload> <entry> <entry.json> --exist-ok           controller
+ 3. spike --version > V                                                                compute
+    fwm mkgen record <entry> -o R1
+    make -C R1 run SIM_FLAGS_EXTRA=-s<interval> || true
+    -> validate R1's console and sysroot with the suite's validator
+ 4. fwm repo add trace <entry> R1/trace --final-state R1/final-state.json \
+        --sim-version V --exist-ok                                       -> trace UUID   controller
+ 5. SimPoint analysis of R1/bbv_proc_0.bb.gz -> description file D, SimPoint info S    pipeline
+ 6. fwm mkgen replay <uuid> --create-checkpoints D -o R3                               compute
+    make -C R3 run || true
+ 7. fwm repo add checkpoint <uuid> R3/checkpoints/* --desc R3/ckpt.desc \
+        --simpoint-info S --sim-version V --exist-ok                     -> <uuid>:<name> per line   controller
+ 8. per checkpoint:                                                                    compute
+    fwm mkgen load <uuid>:<name> -o R4
+    make -C R4 run || true
+    fwm repo record-validation <uuid>:<name> R4                          -> exit 0 passed, 4 failed   controller
 ```
 
-- **Step 2: `<json>`.** The entry point's launch fields: `command`, `working_directory`, `envs` (`null` or `{}`), `stdin_file` (or `null`), `boot_elf`, `mem_mb`, and `nprocs` (must be 1). In paths, `/` is the sysroot's root and `.` the working directory. `boot_elf` and `stdin_file` must be regular files of the sysroot, not symlinks.
-- **Step 3.** Recording is the only step that needs the sysroot, and it must run on Linux.
-- **Step 4.** A truncated recording (one whose program never exited) is accepted, with a warning. It can't be replayed past its last command, and its checkpoints can't be created or loaded past it. See [Truncated recordings](#truncated-recordings) for the `--final-state` rule.
-- **Steps 5–8** need only the trace and its checkpoints, so they can run on another host, including ARM64 Linux or macOS.
+- **Step 2: `entry.json`** holds the entry point's launch fields: `command`, `working_directory`, `envs` (`null` or `{}`), `stdin_file` (or `null`), `boot_elf`, `mem_mb`, and `nprocs` (must be 1). In paths, `/` is the sysroot's root and `.` the working directory. `boot_elf` and `stdin_file` must be regular files of the sysroot, not symlinks.
+- **Step 3** is the only step that needs the sysroot, and it must run on Linux. Steps 6 and 8 need only the trace and its checkpoints, so they can also run on ARM64 Linux or macOS.
+- **Step 3's SimPoint profile.** `-s<interval>` makes spike write `bbv_proc_<hart>.bb.gz` in the run directory. Taking it in the record run saves a full replay; a replay with `-s` gives the same profile. It needs a spike built without `NO_SIMPOINT`.
+- **Step 5's description file.** A checkpoint's instruction count is the number of instructions retired before it. spike's BBV intervals are not exactly `<interval>` long (the first was 1,000,005 for a 1,000,000 interval), and spike drops the last partial interval. So the count of the interval with index `i` must be the sum of the sizes of intervals `0 … i-1`, not `i × interval`. Name a SimPoint checkpoint `<entry>.<simpoint index>.<weight>` with the weight to 2 decimals, e.g. `bfs-road-n64.3.0.25`, as riscv-simenv did; the full-precision weight goes in the SimPoint info file.
+- **Step 7** imports all checkpoints in one transaction. `--desc` makes it fail unless the files are exactly the checkpoints the description lists: spike creates no checkpoint at or after the program's exit, and reports nothing about it.
+
+## Running a Makefile
+
+`fwm mkgen ... -o <dir>` writes `<dir>/Makefile` and prints its path on stdout. The directory must be new, empty, or a run directory fwm generated before. Each Makefile has a single target, `run`, which removes that run's previous outputs, prepares what spike needs, and runs spike.
+
+| Makefile | Outputs |
+| --- | --- |
+| record | `trace/` (the recording), `final-state.json`, `console.stdout`, `console.stderr`, and the post-run `sysroot/` |
+| replay | `final-state.json` |
+| replay `--create-checkpoints` | `ckpt.desc` (the copied description, written by `mkgen`), `final-state.json`, and `checkpoints/`, which holds only the checkpoint files |
+| load | `final-state.json` |
+
+**What the calling script does:**
+- **Run `make -C <dir> run || true`, and let fwm judge the run,** not make's exit status. A program that legitimately exits non-zero makes `make` fail, while spike stopped by SIGTERM (e.g. a job's time limit) exits 0. fwm judges each kind of run from its outputs:
+  - a record run, by `fwm repo add trace --final-state`;
+  - a create-checkpoints run, by `fwm repo add checkpoint --desc`;
+  - a run from a checkpoint, by `fwm repo record-validation`.
+- **Save `spike --version`** for provenance, and pass the file to `repo add trace` and `repo add checkpoint` with `--sim-version`. fwm checks it is build information. A recording replays reliably only with a spike of the same semantics, and this records which one made it.
+- **Clean what the Makefile doesn't own,** such as BBV files, or use a fresh run directory. Don't pass `-s` to a create-checkpoints run: the BBV would be written into `checkpoints/`, and `--desc` would then reject the extra file.
+
+**`final-state.json`** is written when the simulation ends: normally, or when spike is stopped by SIGTERM or SIGINT, with the instruction count where it stopped. It stays empty after an `-e` stop or a simulator error, such as a replay that diverged from its recording. What it holds:
+- **record, replay, load:** each HART's instruction count at the end of the program, or where a signal stopped it.
+- **create-checkpoints:** where the run stopped, just after the last checkpoint, not the end of the program. Don't compare it with the trace.
+
+Each Makefile also starts with a line `# fwm-run: {...}` saying what the run is for, e.g. `{"kind": "load", "trace": "<uuid>", "checkpoint": "<name>"}`. `record-validation` uses it to check that a run directory belongs to the checkpoint.
 
 ## Names
 
 | Name | Characters | Unique within |
 | --- | --- | --- |
 | sysroot, workload, entry point | `[A-Za-z0-9._-]` | the repository |
-| checkpoint | `[A-Za-z0-9._-]`, the rule of FESVR's description file | its trace |
+| checkpoint | `[A-Za-z0-9._-]`, not `.` or `..` | its trace |
 
-A SimPoint checkpoint should be named `<entry>.<simpoint index>.<weight>` with the weight to 2 decimals, e.g. `bfs-road-n64.3.0.25`. `fwm repo add checkpoint` then decodes its weight, unless `--simpoint-weight` is given. A name that doesn't follow the convention gets no weight.
-
-## Run directories
-
-`fwm mkgen ... -o <dir>` writes `<dir>/Makefile`, and prints its path on stdout. The directory must be new, empty, or a run directory fwm generated before. Each Makefile has the single target `run`, which removes that run's previous outputs first, so a failed job can simply be run again.
-
-Outputs, at fixed names in the run directory:
-
-| Makefile | Outputs |
-| --- | --- |
-| record | `trace/` (the recording), `final-state.json`, `console.stdout`, `console.stderr`, and the post-run `sysroot/` |
-| replay | `final-state.json` |
-| replay `--create-checkpoints` | `ckpt.desc` (the copied description), `final-state.json`, and `checkpoints/`, which holds only the checkpoint files |
-| load | `final-state.json` |
-
-- **The suite validator.** It gets the record run's console output (`console.stdout`, `console.stderr`) and its post-run `sysroot/`. A replay prints nothing and writes no file, so only the record run can be validated by its output.
-- **SimPoint profile.** With `SIM_FLAGS_EXTRA=-s<interval>`, spike writes `bbv_proc_<hart>.bb.gz` in the run directory. This works in a replay too, so the profile can be taken from the trace. It needs a spike built without `NO_SIMPOINT`. Don't combine `-s` with `--create-checkpoints`: the BBV would be written to `checkpoints/`.
-- **Checkpoint stop points.** A checkpoint is taken *before* the instruction count in the description file, counted from the start of the run. A count at or beyond the trace's final `instret` is rejected by `fwm mkgen replay`.
+- **A trace** is named by its UUID (a unique prefix is enough), or by the name of an entry point that has one trace.
+- **A checkpoint** is named `<trace>:<name>`, or by its name alone when no other trace has a checkpoint of that name.
 
 ## Command results
 
-**stdout carries results, stderr carries messages.** Logs and errors go to stderr only.
+**stdout carries results; stderr carries messages.** Logs, warnings and errors go to stderr only.
 
 | Command | stdout |
 | --- | --- |
 | `fwm repo init <path>` | the repository path |
 | `fwm repo add sysroot` / `add entry` | the name |
 | `fwm repo add trace` | the trace UUID |
-| `fwm repo add checkpoint` | `<trace UUID>:<name>` |
+| `fwm repo add checkpoint` | `<trace UUID>:<name>`, one line per checkpoint, in the order of the files |
+| `fwm repo record-validation` | `passed: <why>` or `failed: <why>` |
+| `fwm repo verify` | one line per problem: `<kind> <id>: <path>: <reason>`, or `leftover <path>: <reason>` |
+| `fwm repo gc` | one line per leftover removed (with `--dry-run`, found): `<path>: <reason>` |
 | `fwm mkgen ...` | the Makefile path |
-| `fwm repo verify` | one line per problem: `<kind> <id>: <path>: <reason>` |
-| `fwm list ... --json`, `fwm show ... --json` | JSON (below) |
+| `fwm list ... --json`, `fwm show ... --json` | JSON, below |
 
 Exit status:
 
@@ -67,13 +97,14 @@ Exit status:
 | --- | --- |
 | 0 | success |
 | 1 | unexpected error |
-| 2 | usage error |
+| 2 | usage error, including an unusable repository path: not a repository, another schema version, or read-only for a command that changes it |
 | 3 | not found |
-| 4 | failed check, e.g. an invalid input, a name already used, a recording that doesn't match its entry point, or a checkpoint that doesn't belong to its trace |
+| 4 | failed check: invalid input, a recording that doesn't match its entry point, a checkpoint that doesn't belong to its trace, a failed validation, problems found by `verify` |
+| 5 | already exists (see Reruns) |
 
 ### JSON
 
-`fwm show <kind> <id> --json` prints one object. `fwm list <kinds> --json` prints a list of the same objects. Times are ISO 8601 with a timezone, and absent values are `null`.
+`fwm show <kind> <id> --json` prints one object; `fwm list <kinds> --json` prints a list of the same objects. Times are ISO 8601 with a timezone, and absent values are `null`.
 
 - **workload:** `name`, `description`, `creation_time`, `entries` (names).
 - **sysroot:** `name`, `description`, `creation_time`, `path`, `num_files`, `num_links`, `num_dirs`, `size_bytes`, `entries`.
@@ -81,30 +112,59 @@ Exit status:
 - **trace:**
   - `uuid`, `entry`, `description`, `creation_time`, `path`;
   - `mem_mb`, `num_harts`, `boot_elf_sha256`;
-  - `exit_status` (`null` if truncated) and `complete`;
+  - `exit_status` (0–255, `null` if truncated) and `complete`;
+  - `sim_version`: `{"builds": {<component>: {<field>: <value>}}, "raw": <text>}`, or `null`. The components are `spike` and `FESVR (libfesvr)`, with fields such as `Version` and `Commit`;
+  - `fwm_version`;
   - `harts`: a list of `{hart_id, recording_sha256, num_commands, instret}`;
   - `checkpoints` (names).
 - **checkpoint:**
   - `name`, `trace`, `entry`, `description`, `creation_time`, `path`;
-  - `format_version`, `content_sha256`, `simpoint_weight`;
-  - `harts`: a list of `{hart_id, recording_sha256, cmd_index, hart_state_version, csr_count}`. `csr_count` is the instruction count where the checkpoint was actually taken. It can differ slightly from the requested count.
+  - `format_version`, `content_sha256`;
+  - `simpoint_weight`, `simpoint_index`, `simpoint_interval`, `requested_count`;
+  - `validation`: `{"status": "passed" | "failed", "time", "detail"}`, or `null` if not validated;
+  - `sim_version`, `fwm_version`, as for a trace;
+  - `harts`: a list of `{hart_id, recording_sha256, cmd_index, hart_state_version, csr_count}`. `csr_count` is the instruction count where the checkpoint was actually taken; it can differ slightly from `requested_count`.
 
 `content_sha256` is the SHA-256 of what `riscv-isa-sim/scripts/checkpoint-digest.py <file>` prints. It doesn't depend on how zlib compressed the memory, so two checkpoints of the same point compare equal wherever they were created.
 
-## Concurrency
+## Reruns
 
-Jobs may run fwm commands on one repository at the same time:
-- The database runs in WAL mode, and every transaction takes the write lock when it starts, with a 30-second busy timeout.
-- An import is copied into the repository's staging area first, then renamed into place within the transaction that records it, so a failed import leaves nothing behind.
-- Two imports of the same name: one succeeds, and the other fails with status 4.
+Every `repo add` takes `--exist-ok`, so a rule can simply be rerun:
+
+| Adding | With `--exist-ok`, succeeds and prints the existing item when |
+| --- | --- |
+| a sysroot | the tree has the same files, links, directories, permissions and digests |
+| an entry point | its sysroot, workload and launch fields are the same (the description may differ) |
+| a trace | the recording is the same (per-HART SHA-256) and so is the final state |
+| a checkpoint | the trace has a checkpoint of that name with the same content digest |
+
+A different item under the same name fails with status 5. Without `--exist-ok`, adding anything that exists fails with status 5. A recording that already is a trace of the entry point counts as existing, so importing it twice never creates a second trace.
+
+`repo record-validation` can be rerun; the last result is kept.
+
+## Interruptions
+
+- **SIGTERM and SIGHUP,** which batch schedulers send to stop a job, end fwm through its cleanup, like Ctrl-C: an interrupted import leaves nothing behind, and an interrupted removal leaves the repository as it was.
+- **A harder kill** (SIGKILL, a node failure) can leave a staging copy, or files that no row refers to. A removal deletes its files only after committing, so a kill never leaves rows whose files are missing.
+- **`fwm repo verify`** without arguments reports such leftovers, and **`fwm repo gc`** removes them. A staging copy counts as a leftover only when no process holds its lock and it is older than ten minutes, so gc can run while imports do.
 
 ## Validating a checkpoint
 
-A replay stops at the first difference from its recording: a different command, different data written to the host, or a recording that ran out. A checkpoint is therefore validated by loading it and running to the end. The run must succeed, and each HART's final `instret` must equal the trace's (`fwm show trace <uuid> --json`, `harts[].instret`). This applies to complete traces only.
+A replay stops at the first difference from its recording: a different command, different data written to the host, or a recording that ran out. A checkpoint is therefore validated by loading it and running to the end of the program, without `-e`.
+
+`fwm repo record-validation <checkpoint> <run dir>`:
+- **Passes when** each HART's final instruction count in `final-state.json` equals the trace's. A run that reached the trace's final count has replayed the recorded exit, so it has the trace's exit status too.
+- **Fails** otherwise, with the reason: no `final-state.json`, an empty one (an `-e` stop or a simulator error), or different counts (e.g. spike was stopped by a signal).
+- **Is refused** (status 4, nothing recorded) when the run directory isn't a `mkgen load` run of that checkpoint, or the trace has no final instruction counts (imported without `--final-state`, or truncated).
 
 ## Truncated recordings
 
-If `-e` stops the recording run:
-- spike leaves `final-state.json` **empty**, because it writes the file only when the program ends;
-- `fwm repo add trace --final-state` rejects that empty file, so import such a recording without `--final-state`;
-- the trace then has no `instret`, and fwm can't check its checkpoint counts against the end of the recording.
+A recording is truncated when its run was stopped before the program exited:
+- by `-e`: spike leaves `final-state.json` empty, which `fwm repo add trace --final-state` rejects;
+- by a signal (SIGTERM, SIGINT): spike writes `final-state.json` and exits 0, and `fwm repo add trace --final-state` rejects the combination of a truncated recording and a final state;
+- import a truncated recording on purpose without `--final-state`;
+- the trace then has no instruction counts, so `mkgen replay --create-checkpoints` can't check the counts against the end of the recording, and its checkpoints can't be validated.
+
+## 721sim
+
+Checkpoints are created with spike. A 721sim build can load them only if it carries the same riscv-fesvr as the spike that made them: one that saves `boot.elf` in recordings, has the versioned checkpoint format and the portable `RVHSTATE` hart state. The load Makefile runs 721sim with `make -C <run dir> run SIM=<721sim>`.
