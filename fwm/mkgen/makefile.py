@@ -28,6 +28,16 @@ def make_escape(value: str) -> str:
     return value.replace("$", "$$").replace("#", r"\#")
 
 
+def shell_value(value: str) -> str:
+    """
+    Quote a value for the shell, then escape it for make. A variable holding it can be joined with more text in a
+    recipe: $(RUN)/trace becomes '/a b'/trace, which the shell reads as one word.
+    """
+    if "\n" in value:
+        raise FwmValidationError(f"a Makefile can't hold a value with a newline: {value!r}")
+    return make_escape(shlex.quote(value))
+
+
 def _sim_command() -> str:
     return os.environ.get("FWM_SIM_CMD", "spike")
 
@@ -54,6 +64,7 @@ def prepare_run_dir(out_dir: str) -> str:
     :return: Its absolute path.
     """
     out_dir = os.path.abspath(out_dir)
+    shell_value(out_dir)  # reject what a Makefile can't hold, before creating anything
     if os.path.exists(out_dir):
         if not os.path.isdir(out_dir):
             raise FwmValidationError(f"{out_dir} is not a directory")
@@ -76,7 +87,7 @@ def _write_makefile(run_dir: str, body_template: str, values: Dict[str, str]) ->
         "DATE": datetime.now().astimezone().isoformat(timespec="seconds"),
         "COMMAND": " ".join(shlex.quote(a) for a in ["fwm"] + sys.argv[1:]),
         "SIM": make_escape(_sim_command()),
-        "RUN": make_escape(run_dir),
+        "RUN": shell_value(run_dir),
         **values,
     }
     path = os.path.join(run_dir, MAKEFILE)
@@ -97,14 +108,15 @@ def generate_record(repo: Repo, entry_name: str, out_dir: str) -> str:
     return _write_makefile(run_dir, "record.mk", {
         "ENTRY": entry.name,
         "FWM": make_escape(_fwm_command()),
-        "REPO": make_escape(repo.path),
-        "SYSROOT_NAME": entry.sysroot.name,
+        "REPO": shell_value(repo.path),
+        "SYSROOT_NAME": shell_value(entry.sysroot.name),
         "MEM": str(entry.mem_mb),
         "NPROCS": str(entry.nprocs),
-        "CWD": make_escape(entry_target_cwd(entry)),
-        "BOOT_ELF": make_escape(entry.boot_elf),
+        "CWD": shell_value(entry_target_cwd(entry)),
+        "BOOT_ELF": shell_value(entry.boot_elf),
         "APP_CMD": make_escape(shlex.join(shlex.split(entry.command))),
-        "STDIN_FILE": make_escape(stdin_file),
+        # left empty when there is none: the Makefile tests it with $(if ...)
+        "STDIN_FILE": shell_value(stdin_file) if stdin_file else "",
     })
 
 
@@ -112,7 +124,7 @@ def _trace_values(repo: Repo, trace: DecoupledTrace) -> Dict[str, str]:
     return {
         "ENTRY": trace.native_entry.name,
         "TRACE_UUID": str(trace.uuid),
-        "TRACE_DIR": make_escape(repo.trace_dir(trace.uuid)),
+        "TRACE_DIR": shell_value(repo.trace_dir(trace.uuid)),
         "MEM": str(trace.mem_mb),
         "HARTS": str(trace.num_harts),
     }
@@ -163,5 +175,5 @@ def generate_load(repo: Repo, ckpt_ref: str, out_dir: str) -> str:
     return _write_makefile(prepare_run_dir(out_dir), "load.mk", {
         **_trace_values(repo, ckpt.trace),
         "CHECKPOINT_NAME": ckpt.name,
-        "CHECKPOINT": make_escape(repo.checkpoint_path(ckpt.trace.uuid, ckpt.name)),
+        "CHECKPOINT": shell_value(repo.checkpoint_path(ckpt.trace.uuid, ckpt.name)),
     })

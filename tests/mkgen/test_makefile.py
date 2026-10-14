@@ -6,8 +6,9 @@ import subprocess
 import pytest
 
 from fwm.mkgen.makefile import (
-    generate_record, generate_replay, generate_load, prepare_run_dir, make_escape, MAKEFILE
+    generate_record, generate_replay, generate_load, prepare_run_dir, make_escape, shell_value, MAKEFILE
 )
+from fwm.repo.repo import Repo
 from fwm.repo.checkpoint import add_checkpoint
 from fwm.repo.entry import add_entry
 from fwm.repo.errors import FwmValidationError, NotFoundError
@@ -189,3 +190,63 @@ def test_generated_in_place(repo, entry, tmp_path, monkeypatch):
     monkeypatch.chdir("run")
     generate_record(repo, "e", ".")
     assert (tmp_path / "run" / MAKEFILE).is_file()
+
+
+AWKWARD = "a b;c $HOME 'q' #x"
+
+
+def fake_sim(tmp_path):
+    """A simulator that saves its arguments (one per line) and its stdin in the current directory."""
+    sim = tmp_path / "fake-sim"
+    sim.write_text('#!/bin/sh\nprintf "%s\\n" "$@" > argv.txt\ncat > stdin.txt 2>/dev/null\n')
+    sim.chmod(sim.stat().st_mode | stat.S_IXUSR)
+    return sim
+
+
+def test_awkward_paths(tmp_path, sysroot_src, write_entry_point):
+    """Paths with spaces and shell or make metacharacters reach the simulator intact."""
+    base = tmp_path / AWKWARD
+    base.mkdir()
+    repo = Repo.init(str(base / "repo"))
+    try:
+        add_sysroot(repo, str(sysroot_src), "sr")
+        add_entry(repo, "sr", "wl", "e", write_entry_point(stdin_file="input.txt"))
+        sim = fake_sim(tmp_path)
+
+        run = base / "rec run"
+        generate_record(repo, "e", str(run))
+        subprocess.run(["make", "-C", str(run), "run", f"SIM={sim}"], check=True, capture_output=True)
+        argv = (run / "argv.txt").read_text().splitlines()
+        assert f"+chroot={run}/sysroot" in argv
+        assert f"+dev-traffic-record={run}/trace" in argv
+        assert f"+final-state-dump={run}/final-state.json" in argv
+        assert argv[-3:] == ["/boot/pk", "prog.rv64", "input.txt"]
+        assert (run / "stdin.txt").read_text() == "1\n2\n"
+        assert (run / "trace").is_dir()
+
+        rec = tmp_path / "rec"
+        write_recording(str(rec), harts=[COMMANDS])
+        trace = add_trace(repo, "e", str(rec))
+        run = base / "replay run"
+        generate_replay(repo, "e", str(run))
+        (run / "final-state.json").write_text("stale")
+        subprocess.run(["make", "-C", str(run), "run", f"SIM={sim}"], check=True, capture_output=True)
+        argv = (run / "argv.txt").read_text().splitlines()
+        assert f"+dev-traffic-replay={repo.trace_dir(trace.uuid)}" in argv
+        assert not (run / "final-state.json").exists()
+    finally:
+        repo.close()
+
+
+def test_shell_value():
+    assert shell_value("/plain/path") == "/plain/path"
+    assert shell_value("a b") == "'a b'"
+    assert shell_value("$x#y") == r"'$$x\#y'"
+    with pytest.raises(FwmValidationError, match="newline"):
+        shell_value("a\nb")
+
+
+def test_run_dir_with_newline(tmp_path):
+    with pytest.raises(FwmValidationError, match="newline"):
+        prepare_run_dir(str(tmp_path / "a\nb"))
+    assert os.listdir(tmp_path) == []
