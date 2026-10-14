@@ -2,7 +2,7 @@ import os
 
 import click
 
-from fwm.cli.completion import complete_by_kind, complete_entry, complete_sysroot, complete_trace, complete_workload
+from fwm.cli.completion import complete_checkpoint, complete_by_kind, complete_entry, complete_sysroot, complete_trace, complete_workload
 from fwm.cli.fwm import open_repo
 from fwm.data_loader.sim_version import read_sim_version, SimVersionError
 from fwm.database.schema import Sysroot, DecoupledTrace, DecoupledCheckpoint
@@ -14,6 +14,7 @@ from fwm.repo.gc import collect_garbage, find_leftovers
 from fwm.repo.repo import Repo
 from fwm.repo.sysroot import add_sysroot, get_sysroot, verify_sysroot
 from fwm.repo.trace import add_trace, resolve_trace, verify_trace
+from fwm.repo.validation import record_validation, PASSED
 from fwm.utils.log import Logger
 
 
@@ -170,6 +171,24 @@ def remove_cmd(ctx, kind, id, recursive):
         rm.remove_trace(r, id, recursive)
     else:
         rm.remove_checkpoint(r, id)
+
+
+@repo.command("record-validation")
+@click.argument("checkpoint", shell_complete=complete_checkpoint)
+@click.argument("run_dir", type=click.Path(exists=True, file_okay=False))
+@click.pass_context
+def record_validation_cmd(ctx, checkpoint, run_dir):
+    """
+    Judge RUN_DIR, a run of CHECKPOINT to the end of the program (`fwm mkgen load`, run without -e), and record the
+    result with the checkpoint.
+
+    It passes when the run ended normally and every HART's final instruction count equals the trace's. Prints
+    "passed" or "failed" and why; fails with status 4 if the checkpoint failed.
+    """
+    ckpt = record_validation(open_repo(ctx, write=True), checkpoint, run_dir)
+    click.echo(f"{ckpt.validation_status}: {ckpt.validation_detail}")
+    if ckpt.validation_status != PASSED:
+        raise FwmValidationError(f"checkpoint {ckpt.trace.uuid}:{ckpt.name} failed its validation")
 
 
 @repo.command("verify")

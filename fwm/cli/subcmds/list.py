@@ -50,8 +50,9 @@ def list_cmd(ctx, kind, name_filter, workload, sysroot, trace_ref, as_json):
         rows = query.list_checkpoints(r, name_filter, resolve_trace(trace_ref) if trace_ref else None)
         for row in rows:
             row["csr_count"] = [h["csr_count"] for h in row["harts"]]
+            row["validated"] = row["validation"]["status"] if row["validation"] else None
         columns = [("name", "CHECKPOINT"), ("entry", "ENTRY"), ("trace", "TRACE"), ("simpoint_weight", "WEIGHT"),
-                   ("simpoint_interval", "INTERVAL"), ("csr_count", "COUNT")]
+                   ("simpoint_interval", "INTERVAL"), ("csr_count", "COUNT"), ("validated", "VALIDATION")]
 
     if as_json:
         echo_json(rows)

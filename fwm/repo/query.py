@@ -113,6 +113,11 @@ def checkpoint_view(repo: Repo, ckpt: DecoupledCheckpoint) -> View:
         "simpoint_index": ckpt.simpoint_index,
         "simpoint_interval": ckpt.simpoint_interval,
         "requested_count": ckpt.requested_count,
+        "validation": {
+            "status": ckpt.validation_status,
+            "time": _time(ckpt.validation_time),
+            "detail": ckpt.validation_detail,
+        } if ckpt.validation_status is not None else None,
         "sim_version": sim_version_view(ckpt.sim_version),
         "fwm_version": ckpt.fwm_version,
         "harts": [{

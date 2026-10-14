@@ -6,7 +6,8 @@ import subprocess
 import pytest
 
 from fwm.mkgen.makefile import (
-    generate_record, generate_replay, generate_load, prepare_run_dir, make_escape, shell_value, MAKEFILE
+    generate_record, generate_replay, generate_load, prepare_run_dir, make_escape, shell_value, read_run_info,
+    MAKEFILE
 )
 from fwm.repo.repo import Repo
 from fwm.repo.checkpoint import add_checkpoint
@@ -250,3 +251,20 @@ def test_run_dir_with_newline(tmp_path):
     with pytest.raises(FwmValidationError, match="newline"):
         prepare_run_dir(str(tmp_path / "a\nb"))
     assert os.listdir(tmp_path) == []
+
+
+def test_run_info(repo, trace, tmp_path):
+    generate_record(repo, "e", str(tmp_path / "record"))
+    assert read_run_info(str(tmp_path / "record")) == {"kind": "record", "entry": "e"}
+    generate_replay(repo, "e", str(tmp_path / "replay"))
+    assert read_run_info(str(tmp_path / "replay")) == {"kind": "replay", "trace": str(trace.uuid)}
+    desc = tmp_path / "d.txt"
+    desc.write_text("c: 10\n")
+    generate_replay(repo, "e", str(tmp_path / "create"), ckpt_desc=str(desc))
+    assert read_run_info(str(tmp_path / "create")) == {"kind": "create-checkpoints", "trace": str(trace.uuid)}
+    file = tmp_path / "c"
+    write_checkpoint(str(file), [CheckpointHart(recording_sha256(COMMANDS))])
+    add_checkpoint(repo, "e", str(file))
+    generate_load(repo, "c", str(tmp_path / "load"))
+    assert read_run_info(str(tmp_path / "load")) == {"kind": "load", "trace": str(trace.uuid), "checkpoint": "c"}
+    assert read_run_info(str(tmp_path)) is None
