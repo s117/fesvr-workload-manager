@@ -34,13 +34,19 @@ def _age(path: str) -> float:
 
 
 def _owner_is_dead(lock: str) -> bool:
-    """Whether no process holds the lock of a staging entry."""
+    """
+    Whether no process holds the lock of a staging entry. A shared lock tells it as well as an exclusive one, and needs
+    only read access, so that verify works in a repository it can't write to (on NFS, flock is emulated with fcntl
+    locks, where an exclusive one needs a file opened for writing).
+    """
     try:
-        fd = os.open(lock, os.O_RDWR)
+        fd = os.open(lock, os.O_RDONLY)
     except FileNotFoundError:
         return False  # its import just ended
+    except PermissionError:
+        return False  # can't tell
     try:
-        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        fcntl.flock(fd, fcntl.LOCK_SH | fcntl.LOCK_NB)
     except BlockingIOError:
         return False
     finally:

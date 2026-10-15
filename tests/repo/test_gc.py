@@ -81,6 +81,24 @@ def test_live_import_is_kept(repo):
         assert find_leftovers(repo, min_age=0) == []
 
 
+def test_read_only_repo(repo, sysroot_src, tmp_path):
+    """verify reports leftovers in a repository it can't write to, e.g. one shared with a group."""
+    kill_import(repo, sysroot_src, tmp_path)
+    for name in staging_entries(repo):
+        make_old(os.path.join(repo.path, STAGING_DIR, name))
+    paths = [repo.path] + [os.path.join(root, n) for root, dirs, files in os.walk(repo.path) for n in dirs + files]
+    modes = {p: os.lstat(p).st_mode for p in paths if not os.path.islink(p)}
+    for p, mode in modes.items():
+        os.chmod(p, mode & ~0o222)
+    try:
+        result = CliRunner().invoke(cli, ["--repo-path", repo.path, "repo", "verify"])
+    finally:
+        for p, mode in modes.items():
+            os.chmod(p, mode)
+    assert result.exit_code == 4, result.output
+    assert result.stdout.count("leftover ") == 2
+
+
 def test_untracked(repo, sysroot_src, write_entry_point, tmp_path, monkeypatch):
     add_sysroot(repo, str(sysroot_src), "sr")
     add_entry(repo, "sr", "wl", "e", write_entry_point())
