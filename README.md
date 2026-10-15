@@ -23,7 +23,7 @@ sysroot ──(entry point)──> record ──> trace ──> replay + create 
 | **workload** | A name grouping the entry points that run the same program. |
 | **entry point** | How to launch a workload in a sysroot: the command, working directory, boot ELF (usually pk), stdin file, memory size and processor count. A workload can have entry points on several sysroots, and a sysroot can serve several workloads. |
 | **trace** | A recording (`+dev-traffic-record`) of a run of an entry point, identified by a UUID. It is *complete* if the program exited, or *truncated* if the run was stopped first (e.g. by `-e`). |
-| **checkpoint** | A snapshot taken while replaying a trace. It loads only with that trace. A SimPoint checkpoint carries its weight. |
+| **checkpoint** | A snapshot taken while replaying a trace. It loads only with that trace. A SimPoint checkpoint carries its SimPoint index, interval and weight. |
 
 ## Install
 
@@ -120,7 +120,7 @@ make -C run4 run SIM=/path/to/721sim SIM_FLAGS_EXTRA=-e100000000
 How to name things:
 - **A trace** is its UUID (a unique prefix is enough), or the name of an entry point that has one trace.
 - **A checkpoint** is `<trace>:<name>`, or just its name when no other trace has a checkpoint of that name.
-- **A checkpoint's SimPoint weight** is decoded from a name following the riscv-simenv convention `<entry>.<simpoint index>.<weight>`, e.g. `bfs-road-n64.3.0.25`, unless `--simpoint-weight` is given.
+- **A checkpoint's SimPoint weight** comes from `--simpoint-info` or `--simpoint-weight`. Without either, it is decoded from a name following the riscv-simenv convention `<entry>.<simpoint index>.<weight>`, e.g. `bfs-road-n64.3.0.25`.
 
 Every `repo add` takes `--exist-ok`: if the same item is already in the repository, it prints it and succeeds. Without it, adding what exists fails with status 5. A recording that already is a trace of the entry point counts as existing, so a rerun never creates a second trace.
 
@@ -136,6 +136,7 @@ Every Makefile has a single target, `run`. It first removes that run's previous 
 | `SIM_FLAGS_EXTRA` | spike options such as `-e<n>` or `-s<interval>`. They come before the FESVR options. |
 | `FESVR_FLAGS_EXTRA` | FESVR options such as `+verbose`. |
 | `BOOT_ELF_FLAGS_EXTRA`, `APP_CMD_EXTRA` | (record only) Options of the boot ELF (pk), and extra program arguments. |
+| `FWM` | (record only) How to run fwm for `spawn` (default: the Python that generated the Makefile, so fwm needn't be on `PATH`). |
 
 spike's exit status:
 - **Without `-e`:** the program's exit status, or 0 after creating the last checkpoint.
