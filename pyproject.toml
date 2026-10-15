@@ -52,3 +52,7 @@ module-root = ""
 [tool.mypy]
 # tests import helpers as tests.<module>, so map files to modules from the project root
 explicit_package_bases = true
+
+[tool.ruff.lint]
+# ruff's former default rules, which this code follows; newer ruff releases select more by default
+select = ["E4", "E7", "E9", "F"]
