@@ -256,6 +256,9 @@ class DecoupledCheckpoint(BaseModel):
     simpoint_index = pw.IntegerField(null=True)
     simpoint_interval = pw.BigIntegerField(null=True)
 
+    # The maximum number of clusters the SimPoint analysis considered (its maxK).
+    simpoint_max_k = pw.IntegerField(null=True)
+
     # The instruction count it was requested at, in the description file it was created from. Where it was actually
     # taken is CheckpointHart.csr_count, which can differ slightly.
     requested_count = pw.BigIntegerField(null=True)

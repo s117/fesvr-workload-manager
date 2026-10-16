@@ -1,10 +1,15 @@
 import json
 import os
 import pathlib
-from typing import Any, Dict
+import shutil
+import tempfile
+from typing import Any, Dict, List, Optional, Sequence
 
 import pytest
 
+from fwm.data_loader.checkpoint import read_checkpoint_header
+from fwm.database.schema import DecoupledCheckpoint
+from fwm.repo.checkpoint import add_checkpoints
 from fwm.repo.repo import Repo
 from fwm.utils.fs import set_tree_writable
 from tests.fesvr_files import DEFAULT_BOOT_ELF
@@ -73,3 +78,32 @@ def write_entry_point(tmp_path):
 
 def mode(path) -> int:
     return os.lstat(path).st_mode & 0o777
+
+
+def import_checkpoints(repo: Repo, trace_ref: str, files: Sequence[str], simpoint_info: Optional[Dict] = None,
+                       **kwargs: Any) -> List[DecoupledCheckpoint]:
+    """
+    Import checkpoint files as `fwm repo add checkpoint` takes them: copied into a new checkpoint directory, with a
+    description file requesting each one where it was taken. A checkpoint is named after its file.
+
+    :param simpoint_info: The content of the SimPoint information file, if any.
+    """
+    work = tempfile.mkdtemp(prefix="import-", dir=os.path.dirname(os.path.abspath(files[0])))
+    checkpoint_dir = os.path.join(work, "checkpoints")
+    os.mkdir(checkpoint_dir)
+    desc = os.path.join(work, "ckpt.desc")
+    with open(desc, "w") as f:
+        for file in files:
+            shutil.copyfile(file, os.path.join(checkpoint_dir, os.path.basename(file)))
+            f.write(f"{os.path.basename(file)}: {read_checkpoint_header(str(file)).harts[0].csr_count}\n")
+    info = None
+    if simpoint_info is not None:
+        info = os.path.join(work, "simpoints.json")
+        with open(info, "w") as f:
+            json.dump(simpoint_info, f)
+    return add_checkpoints(repo, trace_ref, desc, checkpoint_dir, simpoint_info=info, **kwargs)
+
+
+def import_checkpoint(repo: Repo, trace_ref: str, file: str, **kwargs: Any) -> DecoupledCheckpoint:
+    """Import one checkpoint file; see import_checkpoints()."""
+    return import_checkpoints(repo, trace_ref, [file], **kwargs)[0]

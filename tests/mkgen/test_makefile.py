@@ -13,11 +13,12 @@ from fwm.mkgen.makefile import (
 from fwm.mkgen.run_json import RUN_JSON
 from fwm.repo import query
 from fwm.repo.repo import Repo
-from fwm.repo.checkpoint import add_checkpoint, resolve_checkpoint
+from fwm.repo.checkpoint import resolve_checkpoint
 from fwm.repo.entry import add_entry, get_entry, set_entry_metadata
 from fwm.repo.errors import FwmValidationError, NotFoundError
 from fwm.repo.sysroot import add_sysroot, get_sysroot
 from fwm.repo.trace import add_trace
+from tests.conftest import import_checkpoint
 from tests.fesvr_files import (
     write_recording, write_checkpoint, Command, exit_command, recording_sha256, CheckpointHart
 )
@@ -153,7 +154,7 @@ def test_create_checkpoints_missing_desc(repo, trace, tmp_path):
 def test_load(repo, trace, tmp_path):
     file = tmp_path / "e.0.0.50"
     write_checkpoint(str(file), [CheckpointHart(recording_sha256(COMMANDS))])
-    add_checkpoint(repo, "e", str(file))
+    import_checkpoint(repo, "e", str(file))
     run = tmp_path / "run"
     generate_load(repo, "e.0.0.50", str(run))
     commands = make_dry_run(run, "SIM_FLAGS_EXTRA=-e100000000")
@@ -267,7 +268,7 @@ def test_run_info(repo, trace, tmp_path):
     assert read_run_info(str(tmp_path / "create")) == {"kind": "create-checkpoints", "trace": str(trace.uuid)}
     file = tmp_path / "c"
     write_checkpoint(str(file), [CheckpointHart(recording_sha256(COMMANDS))])
-    add_checkpoint(repo, "e", str(file))
+    import_checkpoint(repo, "e", str(file))
     generate_load(repo, "c", str(tmp_path / "load"))
     assert read_run_info(str(tmp_path / "load")) == {"kind": "load", "trace": str(trace.uuid), "checkpoint": "c"}
     assert read_run_info(str(tmp_path)) is None
@@ -286,7 +287,7 @@ def test_run_json(repo, trace, tmp_path, monkeypatch):
     set_entry_metadata(repo, "e", str(metadata))
     file = tmp_path / "c"
     write_checkpoint(str(file), [CheckpointHart(recording_sha256(COMMANDS))])
-    add_checkpoint(repo, "e", str(file))
+    import_checkpoint(repo, "e", str(file))
     desc = tmp_path / "d.txt"
     desc.write_text("a: 10\nb: 20\n")
 

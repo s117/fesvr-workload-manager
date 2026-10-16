@@ -7,12 +7,12 @@ from click.testing import CliRunner
 from fwm.cli.fwm import cli
 from fwm.database.schema import DecoupledCheckpoint
 from fwm.mkgen.makefile import generate_load, generate_replay
-from fwm.repo.checkpoint import add_checkpoint
 from fwm.repo.entry import add_entry
 from fwm.repo.errors import FwmValidationError
 from fwm.repo.sysroot import add_sysroot
 from fwm.repo.trace import add_trace
 from fwm.repo.validation import record_validation, PASSED, FAILED
+from tests.conftest import import_checkpoint
 from tests.fesvr_files import write_recording, write_checkpoint, Command, exit_command, recording_sha256, CheckpointHart
 
 COMMANDS = [Command(), exit_command(0)]
@@ -29,7 +29,7 @@ def ckpt(repo, sysroot_src, write_entry_point, tmp_path):
     add_trace(repo, "e", str(rec), final_state=str(final_state))
     for name in ("c", "d"):
         write_checkpoint(str(tmp_path / name), [CheckpointHart(recording_sha256(COMMANDS), cmd_index=1)])
-        add_checkpoint(repo, "e", str(tmp_path / name))
+        import_checkpoint(repo, "e", str(tmp_path / name))
     return "c"
 
 
@@ -93,7 +93,7 @@ def test_trace_without_instret(repo, sysroot_src, write_entry_point, tmp_path):
     write_recording(str(rec), harts=[COMMANDS])
     add_trace(repo, "e", str(rec))
     write_checkpoint(str(tmp_path / "c"), [CheckpointHart(recording_sha256(COMMANDS), cmd_index=1)])
-    add_checkpoint(repo, "e", str(tmp_path / "c"))
+    import_checkpoint(repo, "e", str(tmp_path / "c"))
     run = tmp_path / "load"
     generate_load(repo, "c", str(run))
     final_state(run, 5000)

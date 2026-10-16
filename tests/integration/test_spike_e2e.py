@@ -104,24 +104,27 @@ def test_record_replay_checkpoint(env, tmp_path):
     desc = base / "d.txt"
     first, second = total // 3, 2 * total // 3
     desc.write_text(f"e.0.0.40: {first}\ne.1.0.60: {second}\n")
-    info = base / "simpoints.json"
-    info.write_text(json.dumps({"e.0.0.40": {"simpoint_index": 0, "interval": 1000000, "weight": 0.4012}}))
     r3 = base / "r3"
     fwm(env, "mkgen", "replay", trace, "--create-checkpoints", str(desc), "-o", str(r3))
     assert make(r3) == 0
-    files = sorted(str(f) for f in (r3 / "checkpoints").iterdir())
-    assert [os.path.basename(f) for f in files] == ["e.0.0.40", "e.1.0.60"]
+    assert sorted(os.listdir(r3 / "checkpoints")) == ["e.0.0.40", "e.1.0.60"]
     # a checkpoint of the description that wasn't created is caught at import
-    with open(r3 / "ckpt.desc", "a") as f:
-        f.write(f"e.2.0.00: {total * 2}\n")
-    assert fwm_status(env, "repo", "add", "checkpoint", trace, *files, "--desc", str(r3 / "ckpt.desc")) == 4
-    desc_copy = base / "d-created.txt"
-    desc_copy.write_text(desc.read_text())
-    fwm(env, "repo", "add", "checkpoint", trace, *files, "--desc", str(desc_copy), "--simpoint-info", str(info),
-        "--sim-version", str(version))
+    beyond = base / "d-beyond.txt"
+    beyond.write_text(desc.read_text() + f"e.2.0.00: {total * 2}\n")
+    assert fwm_status(env, "repo", "add", "checkpoint", trace, str(beyond), str(r3 / "checkpoints")) == 4
+    # the first one with its SimPoint, the second one without (other files of the directory are ignored)
+    first_desc, second_desc = base / "d-first.txt", base / "d-second.txt"
+    first_desc.write_text(f"e.0.0.40: {first}\n")
+    second_desc.write_text(f"e.1.0.60: {second}\n")
+    info = base / "simpoints.json"
+    info.write_text(json.dumps({"interval": 1000000, "maxK": 3, "checkpoints": {"e.0.0.40": {"index": 0,
+                                                                                           "weight": 0.4012}}}))
+    fwm(env, "repo", "add", "checkpoint", trace, str(first_desc), str(r3 / "checkpoints"),
+        "--simpoint-info", str(info), "--sim-version", str(version))
+    fwm(env, "repo", "add", "checkpoint", trace, str(second_desc), str(r3 / "checkpoints"))
     ckpts = {c["name"]: c for c in json.loads(fwm(env, "list", "checkpoints", "--json"))}
-    assert ckpts["e.0.0.40"]["simpoint_weight"] == 0.4012
-    assert ckpts["e.1.0.60"]["simpoint_weight"] == 0.6
+    assert (ckpts["e.0.0.40"]["simpoint_weight"], ckpts["e.0.0.40"]["simpoint_max_k"]) == (0.4012, 3)
+    assert ckpts["e.1.0.60"]["simpoint_weight"] is None
     assert ckpts["e.0.0.40"]["requested_count"] == first
     assert abs(ckpts["e.0.0.40"]["harts"][0]["csr_count"] - first) < 100
     assert abs(ckpts["e.1.0.60"]["harts"][0]["csr_count"] - second) < 100

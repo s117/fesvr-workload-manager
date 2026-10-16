@@ -3,7 +3,7 @@ import os
 import re
 import shutil
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Sequence
+from typing import Dict, List, Optional, Tuple
 
 import pydantic
 
@@ -21,18 +21,6 @@ from fwm.utils.file_catalog import create_catalog, verify_catalog, FailedDetail
 
 # The checkpoint names FESVR accepts in a checkpoint description file (riscv-fesvr/fesvr/ckpt_desc_reader.cc)
 CHECKPOINT_NAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
-
-# The riscv-simenv naming convention of SimPoint checkpoints: {entry}.{simpoint_index}.{weight:0.2f}
-SIMPOINT_NAME_RE = re.compile(r"^.+\.\d+\.(\d+\.\d+)$")
-
-
-def decode_simpoint_weight(name: str) -> Optional[float]:
-    """
-    The SimPoint weight encoded in a checkpoint name, e.g. 0.25 for "bfs-road-n64.3.0.25", or None.
-    """
-    match = SIMPOINT_NAME_RE.match(name)
-    return float(match.group(1)) if match else None
-
 
 def resolve_checkpoint(ref: str) -> DecoupledCheckpoint:
     """
@@ -94,7 +82,8 @@ class _NewCheckpoint:
     simpoint_weight: Optional[float]
     simpoint_index: Optional[int]
     simpoint_interval: Optional[int]
-    requested_count: Optional[int]
+    simpoint_max_k: Optional[int]
+    requested_count: int
 
 
 def _check_against_trace(trace: DecoupledTrace, file: str, header: CheckpointHeader) -> None:
@@ -116,108 +105,102 @@ def _check_against_trace(trace: DecoupledTrace, file: str, header: CheckpointHea
                            f"{rec_hart.num_commands}")
 
 
-def _checkpoint_names(files: Sequence[str], name: Optional[str]) -> List[str]:
-    names = [name] if name is not None else [os.path.basename(f) for f in files]
-    for n in names:
-        if not CHECKPOINT_NAME_RE.match(n) or n in (".", ".."):
-            raise FwmValidationError(
-                f"invalid checkpoint name '{n}': a name may contain only letters, digits, '.', '_' and '-'")
-    duplicates = sorted({n for n in names if names.count(n) > 1})
-    if duplicates:
-        raise FwmValidationError(f"several files would be named {', '.join(duplicates)}")
-    return names
+def _check_name(name: str) -> None:
+    if not CHECKPOINT_NAME_RE.match(name) or name in (".", ".."):
+        raise FwmValidationError(
+            f"invalid checkpoint name '{name}': a name may contain only letters, digits, '.', '_' and '-'")
 
 
-def _requested_counts(desc: Optional[str], names: List[str]) -> Dict[str, int]:
-    """The instruction count each checkpoint was requested at, from the description file it was created from. The
-    files must be exactly the checkpoints it lists."""
-    if desc is None:
-        return {}
+def _requested_checkpoints(desc: str, checkpoint_dir: str) -> List[Tuple[str, int, str]]:
+    """
+    The checkpoints a description file lists, with the instruction count each was requested at, and its file in the
+    checkpoint directory. Other files in the directory are ignored.
+
+    :raise FwmValidationError: The description is invalid (an empty one too), or a checkpoint it lists wasn't
+                               created.
+    """
     try:
-        counts = dict(read_ckpt_desc(desc))
+        requested = read_ckpt_desc(desc)
     except OSError as e:
         raise NotFoundError(f"cannot read the checkpoint description {desc}: {e}")
     except CkptDescError as e:
         raise FwmValidationError(f"invalid checkpoint description {desc}: {e}")
-    missing = sorted(set(counts) - set(names), key=lambda n: counts[n])
-    extra = sorted(set(names) - set(counts))
-    problems = []
+    if not os.path.isdir(checkpoint_dir):
+        raise NotFoundError(f"{checkpoint_dir} is not a directory")
+    for name, _ in requested:
+        _check_name(name)
+    missing = [(name, count) for name, count in requested
+               if not os.path.isfile(os.path.join(checkpoint_dir, name))]
     if missing:
-        problems.append("these checkpoints of the description weren't created (a count at or after the program's "
-                        "exit creates none): " + ", ".join(f"{n} ({counts[n]})" for n in missing))
-    if extra:
-        problems.append(f"these files aren't in the description: {', '.join(extra)}")
-    if problems:
-        raise FwmValidationError(f"the checkpoints don't match {desc}: " + "; ".join(problems))
-    return counts
+        raise FwmValidationError(
+            f"these checkpoints of {desc} are not files of {checkpoint_dir}, so they weren't created (a count at or "
+            f"after the program's exit creates none): " + ", ".join(f"{n} ({c})" for n, c in missing))
+    return [(name, count, os.path.join(checkpoint_dir, name)) for name, count in requested]
 
 
-def _simpoint_infos(path: Optional[str], names: List[str]) -> Dict[str, SimpointInfo]:
+def _simpoint_info(path: Optional[str], names: List[str]) -> Optional[SimpointInfo]:
+    """The SimPoint information of the checkpoints being imported, which must name exactly these checkpoints."""
     if path is None:
-        return {}
+        return None
     try:
-        infos = load_simpoint_info(path)
+        info = load_simpoint_info(path)
     except OSError as e:
         raise NotFoundError(f"cannot read the SimPoint information {path}: {e}")
     except (json.JSONDecodeError, pydantic.ValidationError) as e:
         raise FwmValidationError(f"invalid SimPoint information {path}: {e}")
-    unknown = sorted(set(infos) - set(names))
+    problems = []
+    unknown = sorted(set(info.checkpoints) - set(names))
     if unknown:
-        raise FwmValidationError(
-            f"the SimPoint information {path} names checkpoints not imported: {', '.join(unknown)}")
-    return infos
+        problems.append(f"it names checkpoints that aren't imported: {', '.join(unknown)}")
+    missing = [n for n in names if n not in info.checkpoints]
+    if missing:
+        problems.append(f"it has no SimPoint for these checkpoints: {', '.join(missing)}")
+    indexes = [c.index for c in info.checkpoints.values()]
+    duplicates = sorted({i for i in indexes if indexes.count(i) > 1})
+    if duplicates:
+        problems.append(f"several checkpoints have the SimPoint index {', '.join(map(str, duplicates))}")
+    if problems:
+        raise FwmValidationError(f"the SimPoint information {path} doesn't match the checkpoints: " +
+                                 "; ".join(problems))
+    return info
 
 
-def add_checkpoints(repo: Repo, trace_ref: str, files: Sequence[str], name: Optional[str] = None,
-                    simpoint_weight: Optional[float] = None, simpoint_info: Optional[str] = None,
-                    desc: Optional[str] = None, description: Optional[str] = None, exist_ok: bool = False,
+def add_checkpoints(repo: Repo, trace_ref: str, desc: str, checkpoint_dir: str, simpoint_info: Optional[str] = None,
+                    description: Optional[str] = None, exist_ok: bool = False,
                     sim_version: Optional[str] = None) -> List[DecoupledCheckpoint]:
     """
-    Import checkpoints created from a trace, in one transaction. Each is checked against the trace, so that it is known
-    to load with it.
+    Import the checkpoints created from a trace by a description file, in one transaction. Each is checked against the
+    trace, so that it is known to load with it.
 
-    :param files: The checkpoint files. Each checkpoint is named after its file.
-    :param name: The name of the checkpoint, instead of its file name (one file only).
-    :param simpoint_weight: Its SimPoint weight (one file only).
-    :param simpoint_info: A JSON file of SimPoint information (index, interval and weight) by checkpoint name.
-    :param desc: The description file the checkpoints were created from: the files must be exactly the checkpoints it
-                 lists, and it gives the instruction count each one was requested at.
+    :param desc: The description file the checkpoints were created from (+create-checkpoint). Each checkpoint it lists
+                 must have been created, and the instruction count it was requested at is kept.
+    :param checkpoint_dir: The directory spike created them in. Only the checkpoints of the description are imported.
+    :param simpoint_info: A JSON file of SimPoint information (see data_loader.simpoint_info) naming exactly these
+                          checkpoints. Without it, the checkpoints have no SimPoint data.
     :param exist_ok: If the trace has a checkpoint of a name with the same content, keep it instead of failing.
     :param sim_version: The `spike --version` output of the simulator that created them, for provenance.
-    :return: The checkpoints, in the order of the files.
+    :return: The checkpoints, in the order of the description.
     :raise AlreadyExistsError: The trace has a checkpoint of one of the names.
-
-    Without a weight from simpoint_weight or simpoint_info, it is decoded from the name, when the name follows the
-    riscv-simenv convention {entry}.{simpoint_index}.{weight}.
     """
     trace: DecoupledTrace = resolve_trace(trace_ref)
-    if not files:
-        raise FwmValidationError("no checkpoint file given")
-    if len(files) > 1 and (name is not None or simpoint_weight is not None):
-        raise FwmValidationError("a name or a SimPoint weight can be given for one checkpoint file only")
-    if simpoint_weight is not None and simpoint_info is not None:
-        raise FwmValidationError("give the SimPoint weight in the SimPoint information file")
-    for file in files:
-        if not os.path.isfile(file):
-            raise NotFoundError(f"{file} is not a file")
-    names = _checkpoint_names(files, name)
-    requested = _requested_counts(desc, names)
-    infos = _simpoint_infos(simpoint_info, names)
+    requested = _requested_checkpoints(desc, checkpoint_dir)
+    names = [name for name, _, _ in requested]
+    info = _simpoint_info(simpoint_info, names)
 
     result: Dict[str, DecoupledCheckpoint] = {}
     todo = []
-    for file, n in zip(files, names):
+    for n, count, file in requested:
         existing = DecoupledCheckpoint.get_or_none((DecoupledCheckpoint.trace == trace) &
                                                    (DecoupledCheckpoint.name == n))
         if existing is not None:
             result[n] = _existing_checkpoint(existing, None, file, exist_ok)
         else:
-            todo.append((file, n))
+            todo.append((file, n, count))
 
     with repo.staging() as staged:
         os.mkdir(staged)
         new = []
-        for i, (file, n) in enumerate(todo):
+        for i, (file, n, count) in enumerate(todo):
             staged_dir = os.path.join(staged, str(i))
             os.mkdir(staged_dir)
             staged_file = os.path.join(staged_dir, n)
@@ -230,20 +213,13 @@ def add_checkpoints(repo: Repo, trace_ref: str, files: Sequence[str], name: Opti
             except (CheckpointFormatError, OSError) as e:
                 raise FwmValidationError(f"invalid checkpoint {file}: {e}")
             _check_against_trace(trace, file, header)
-
-            info = infos.get(n)
-            weight = simpoint_weight
-            if weight is None and info is not None:
-                weight = info.weight
-            if weight is None:
-                weight = decode_simpoint_weight(n)
-            if weight is not None and not 0 <= weight <= 1:
-                raise FwmValidationError(f"the SimPoint weight {weight} of '{n}' is not in [0, 1]")
+            simpoint = info.checkpoints[n] if info is not None else None
             new.append(_NewCheckpoint(
                 file=file, name=n, staged_dir=staged_dir, header=header, csr_counts=csr_counts,
-                content_sha256=content_sha256, simpoint_weight=weight,
-                simpoint_index=info.simpoint_index if info else None, simpoint_interval=info.interval if info else None,
-                requested_count=requested.get(n)))
+                content_sha256=content_sha256, simpoint_weight=simpoint.weight if simpoint else None,
+                simpoint_index=simpoint.index if simpoint else None,
+                simpoint_interval=info.interval if info else None, simpoint_max_k=info.maxK if info else None,
+                requested_count=count))
 
         with repo.importing() as place:
             if DecoupledTrace.get_or_none(DecoupledTrace.uuid == trace.uuid) is None:
@@ -260,8 +236,8 @@ def add_checkpoints(repo: Repo, trace_ref: str, files: Sequence[str], name: Opti
                     trace=trace, name=c.name, file_catalog=save_catalog(create_catalog(DIGEST_ALGO, c.staged_dir)),
                     format_version=c.header.format_version, content_sha256=c.content_sha256,
                     simpoint_weight=c.simpoint_weight, simpoint_index=c.simpoint_index,
-                    simpoint_interval=c.simpoint_interval, requested_count=c.requested_count,
-                    sim_version=sim_version, description=description)
+                    simpoint_interval=c.simpoint_interval, simpoint_max_k=c.simpoint_max_k,
+                    requested_count=c.requested_count, sim_version=sim_version, description=description)
                 for hart, csr_count in zip(c.header.harts, c.csr_counts):
                     CheckpointHart.create(checkpoint=ckpt, hart_id=hart.hart_id,
                                           recording_sha256=hart.recording_sha256, cmd_index=hart.cmd_index,
@@ -271,14 +247,6 @@ def add_checkpoints(repo: Repo, trace_ref: str, files: Sequence[str], name: Opti
                 place(os.path.join(c.staged_dir, c.name), os.path.join(final_dir, c.name))
                 result[c.name] = ckpt
     return [result[n] for n in names]
-
-
-def add_checkpoint(repo: Repo, trace_ref: str, file: str, name: Optional[str] = None,
-                   simpoint_weight: Optional[float] = None, description: Optional[str] = None,
-                   exist_ok: bool = False, sim_version: Optional[str] = None) -> DecoupledCheckpoint:
-    """Import one checkpoint created from a trace; see add_checkpoints()."""
-    return add_checkpoints(repo, trace_ref, [file], name=name, simpoint_weight=simpoint_weight,
-                           description=description, exist_ok=exist_ok, sim_version=sim_version)[0]
 
 
 def verify_checkpoint(repo: Repo, ckpt: DecoupledCheckpoint) -> List[FailedDetail]:

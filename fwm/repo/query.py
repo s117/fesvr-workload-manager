@@ -114,6 +114,7 @@ def checkpoint_view(repo: Repo, ckpt: DecoupledCheckpoint) -> View:
         "simpoint_weight": ckpt.simpoint_weight,
         "simpoint_index": ckpt.simpoint_index,
         "simpoint_interval": ckpt.simpoint_interval,
+        "simpoint_max_k": ckpt.simpoint_max_k,
         "requested_count": ckpt.requested_count,
         "validation": {
             "status": ckpt.validation_status,

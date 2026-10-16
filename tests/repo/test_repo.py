@@ -8,7 +8,7 @@ from fwm.database.schema import (
     Sysroot, Workload, NativeEntry, DecoupledTrace, TraceHart, DecoupledCheckpoint, CheckpointHart, TreeCatalog
 )
 from fwm.repo import remove as rm
-from fwm.repo.checkpoint import add_checkpoint, resolve_checkpoint, decode_simpoint_weight, verify_checkpoint
+from fwm.repo.checkpoint import resolve_checkpoint, verify_checkpoint
 from fwm.repo.entry import add_entry, entry_metadata, set_entry_metadata
 from fwm.repo.errors import AlreadyExistsError, FwmValidationError, NotFoundError, RepoUnusableError
 from fwm.repo.repo import Repo
@@ -19,7 +19,7 @@ from tests.fesvr_files import (
     write_recording, write_checkpoint, Command, exit_command, recording_sha256, CheckpointHart as CkptHart,
     encode_hart_state, default_hart_state_entries
 )
-from tests.conftest import mode
+from tests.conftest import import_checkpoint, mode
 
 COMMANDS = [Command(), Command(), exit_command(0)]
 OTHER_COMMANDS = [Command(payload=0x2000), exit_command(0)]
@@ -394,41 +394,19 @@ def make_checkpoint(tmp_path, name, rec_sha=None, cmd_index=1, count=1000, **kwa
     return str(path)
 
 
-@pytest.mark.parametrize("name, weight", [
-    ("e.3.0.25", 0.25), ("e.0.1.00", 1.0), ("astar.1G", None), ("e.1.5", None), ("e.x.0.25", None)
-])
-def test_decode_simpoint_weight(name, weight):
-    assert decode_simpoint_weight(name) == weight
-
-
-def test_add_checkpoint(repo, trace, tmp_path):
+def test_import_checkpoint(repo, trace, tmp_path):
     file = make_checkpoint(tmp_path, "e.3.0.25", cmd_index=2, count=777)
-    ckpt = add_checkpoint(repo, "e", file, description="c")
+    ckpt = import_checkpoint(repo, "e", file, description="c")
     assert ckpt.name == "e.3.0.25"
-    assert ckpt.simpoint_weight == 0.25
+    # a name is just a name: no SimPoint weight is decoded from it
+    assert (ckpt.simpoint_weight, ckpt.simpoint_index, ckpt.simpoint_interval, ckpt.simpoint_max_k) == (None,) * 4
+    assert ckpt.requested_count == 777
     assert ckpt.format_version == 1
     assert len(ckpt.content_sha256) == 64
     assert [(h.hart_id, h.cmd_index, h.csr_count, h.hart_state_version) for h in ckpt.harts] == [(0, 2, 777, 1)]
     stored = repo.checkpoint_path(trace.uuid, "e.3.0.25")
     assert mode(stored) == 0o444
     assert verify_checkpoint(repo, ckpt) == []
-
-
-def test_add_checkpoint_name_and_weight(repo, trace, tmp_path):
-    file = make_checkpoint(tmp_path, "e.3.0.25")
-    ckpt = add_checkpoint(repo, "e", file, name="custom", simpoint_weight=0.5)
-    assert ckpt.name == "custom"
-    assert ckpt.simpoint_weight == 0.5
-    assert add_checkpoint(repo, "e", file, name="no-weight").simpoint_weight is None
-
-
-@pytest.mark.parametrize("kwargs, match", [
-    ({"name": "a/b"}, "invalid checkpoint name"),
-    ({"simpoint_weight": 1.5}, r"not in \[0, 1\]"),
-])
-def test_add_checkpoint_bad_args(repo, trace, tmp_path, kwargs, match):
-    with pytest.raises(FwmValidationError, match=match):
-        add_checkpoint(repo, "e", make_checkpoint(tmp_path, "c"), **kwargs)
 
 
 @pytest.mark.parametrize("ckpt_kwargs, match", [
@@ -438,35 +416,35 @@ def test_add_checkpoint_bad_args(repo, trace, tmp_path, kwargs, match):
 ])
 def test_add_checkpoint_wrong_trace(repo, trace, tmp_path, ckpt_kwargs, match):
     with pytest.raises(FwmValidationError, match=match):
-        add_checkpoint(repo, "e", make_checkpoint(tmp_path, "c", **ckpt_kwargs))
+        import_checkpoint(repo, "e", make_checkpoint(tmp_path, "c", **ckpt_kwargs))
     assert DecoupledCheckpoint.select().count() == 0
 
 
 def test_add_checkpoint_corrupt(repo, trace, tmp_path):
     file = make_checkpoint(tmp_path, "c", trailing=b"junk")
     with pytest.raises(FwmValidationError, match="invalid checkpoint"):
-        add_checkpoint(repo, "e", file)
+        import_checkpoint(repo, "e", file)
 
 
 def test_add_checkpoint_duplicate(repo, trace, tmp_path):
     file = make_checkpoint(tmp_path, "c")
-    ckpt = add_checkpoint(repo, "e", file)
+    ckpt = import_checkpoint(repo, "e", file)
     with pytest.raises(AlreadyExistsError, match="already has a checkpoint"):
-        add_checkpoint(repo, "e", file)
-    assert add_checkpoint(repo, "e", file, exist_ok=True).content_sha256 == ckpt.content_sha256
+        import_checkpoint(repo, "e", file)
+    assert import_checkpoint(repo, "e", file, exist_ok=True).content_sha256 == ckpt.content_sha256
     other = make_checkpoint(tmp_path / "other", "c", count=2000)
     with pytest.raises(AlreadyExistsError, match="different content"):
-        add_checkpoint(repo, "e", other, exist_ok=True)
+        import_checkpoint(repo, "e", other, exist_ok=True)
 
 
 def test_add_checkpoint_sim_version(repo, trace, tmp_path):
-    ckpt = add_checkpoint(repo, "e", make_checkpoint(tmp_path, "c"), sim_version=SPIKE_VERSION)
+    ckpt = import_checkpoint(repo, "e", make_checkpoint(tmp_path, "c"), sim_version=SPIKE_VERSION)
     assert DecoupledCheckpoint.get_by_id(ckpt.id).sim_version == SPIKE_VERSION
 
 
 def test_resolve_checkpoint(repo, entry, trace, tmp_path):
     file = make_checkpoint(tmp_path, "c")
-    add_checkpoint(repo, "e", file)
+    import_checkpoint(repo, "e", file)
     assert resolve_checkpoint("c").trace.uuid == trace.uuid
     assert resolve_checkpoint(f"{trace.uuid}:c").name == "c"
 
@@ -474,7 +452,7 @@ def test_resolve_checkpoint(repo, entry, trace, tmp_path):
     rec2 = tmp_path / "rec2"
     write_recording(str(rec2), harts=[OTHER_COMMANDS])
     trace2 = add_trace(repo, "e", str(rec2))
-    add_checkpoint(repo, str(trace2.uuid), make_checkpoint(tmp_path / "other", "c",
+    import_checkpoint(repo, str(trace2.uuid), make_checkpoint(tmp_path / "other", "c",
                                                            rec_sha=recording_sha256(OTHER_COMMANDS)))
     with pytest.raises(FwmValidationError, match="give it as <trace>:<name>"):
         resolve_checkpoint("c")
@@ -487,7 +465,7 @@ def test_resolve_checkpoint(repo, entry, trace, tmp_path):
 
 
 def test_remove_checkpoint(repo, trace, tmp_path):
-    add_checkpoint(repo, "e", make_checkpoint(tmp_path, "c"))
+    import_checkpoint(repo, "e", make_checkpoint(tmp_path, "c"))
     rm.remove_checkpoint(repo, "c")
     assert DecoupledCheckpoint.select().count() == 0
     assert CheckpointHart.select().count() == 0
@@ -495,7 +473,7 @@ def test_remove_checkpoint(repo, trace, tmp_path):
 
 
 def test_remove_trace(repo, trace, tmp_path):
-    add_checkpoint(repo, "e", make_checkpoint(tmp_path, "c"))
+    import_checkpoint(repo, "e", make_checkpoint(tmp_path, "c"))
     with pytest.raises(FwmValidationError, match="has 1 checkpoint"):
         rm.remove_trace(repo, "e")
     rm.remove_trace(repo, "e", recursive=True)
@@ -518,7 +496,7 @@ def test_remove_entry_and_its_workload(repo, trace, sysroot_src, write_entry_poi
 
 
 def test_remove_sysroot(repo, trace, tmp_path):
-    add_checkpoint(repo, "e", make_checkpoint(tmp_path, "c"))
+    import_checkpoint(repo, "e", make_checkpoint(tmp_path, "c"))
     with pytest.raises(FwmValidationError, match="has 1 entry point"):
         rm.remove_sysroot(repo, "sr")
     rm.remove_sysroot(repo, "sr", recursive=True)
@@ -529,7 +507,7 @@ def test_remove_sysroot(repo, trace, tmp_path):
 
 
 def test_remove_rolls_back(repo, trace, tmp_path, monkeypatch):
-    add_checkpoint(repo, "e", make_checkpoint(tmp_path, "c"))
+    import_checkpoint(repo, "e", make_checkpoint(tmp_path, "c"))
 
     def fail(*args):
         raise RuntimeError("injected")

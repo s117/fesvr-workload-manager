@@ -1,3 +1,5 @@
+import json
+
 import pytest
 from click.testing import CliRunner
 
@@ -37,7 +39,27 @@ def populated(run, sysroot_src, write_entry_point, tmp_path):
     code, out, _ = run("repo", "add", "trace", "e", str(rec), "--final-state", str(final_state))
     assert code == 0
     trace_uuid = out.strip()
-    ckpt = tmp_path / "e.2.0.40"
-    write_checkpoint(str(ckpt), [CheckpointHart(recording_sha256(COMMANDS), cmd_index=1)])
-    assert run("repo", "add", "checkpoint", trace_uuid[:8], str(ckpt))[:2] == (0, f"{trace_uuid}:e.2.0.40\n")
+    assert run("repo", "add", "checkpoint", trace_uuid[:8], *write_checkpoints(tmp_path / "ckpt-run", "e.2.0.40"),
+               "--simpoint-info", str(write_simpoint_info(tmp_path, {"e.2.0.40": (2, 0.4)})))[:2] == \
+        (0, f"{trace_uuid}:e.2.0.40\n")
     return trace_uuid
+
+
+def write_checkpoints(run_dir, *names, commands=COMMANDS):
+    """Checkpoints as a create-checkpoints run leaves them, each taken at 1000 instructions: return the paths of the
+    description file and of the checkpoint directory."""
+    checkpoints = run_dir / "checkpoints"
+    checkpoints.mkdir(parents=True)
+    for name in names:
+        write_checkpoint(str(checkpoints / name), [CheckpointHart(recording_sha256(commands), cmd_index=1)])
+    desc = run_dir / "ckpt.desc"
+    desc.write_text("".join(f"{name}: 1000\n" for name in names))
+    return str(desc), str(checkpoints)
+
+
+def write_simpoint_info(directory, checkpoints, interval=1000):
+    """A SimPoint information file of checkpoints {name: (index, weight)}."""
+    path = directory / "simpoints.json"
+    path.write_text(json.dumps({"interval": interval, "maxK": 5, "checkpoints": {
+        name: {"index": index, "weight": weight} for name, (index, weight) in checkpoints.items()}}))
+    return path

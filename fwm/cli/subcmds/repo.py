@@ -125,32 +125,31 @@ def add_trace_cmd(ctx, entry, recording_dir, final_state, description, sim_versi
 
 @add.command("checkpoint")
 @click.argument("trace", shell_complete=complete_trace)
-@click.argument("files", metavar="FILE...", nargs=-1, required=True, type=click.Path(exists=True, dir_okay=False))
-@click.option("--desc", type=click.Path(exists=True, dir_okay=False),
-              help="The description file the checkpoints were created from (+create-checkpoint). The files must be "
-                   "exactly the checkpoints it lists; their requested instruction counts are kept.")
+@click.argument("desc", type=click.Path(exists=True, dir_okay=False))
+@click.argument("checkpoint_dir", type=click.Path(exists=True, file_okay=False))
 @click.option("--simpoint-info", type=click.Path(exists=True, dir_okay=False),
-              help='A JSON file of SimPoint information by checkpoint name: '
-                   '{"<name>": {"simpoint_index": 3, "interval": 100000000, "weight": 0.2531}}.')
-@click.option("--name", help="The checkpoint's name, instead of the file name (one FILE only).")
-@click.option("--simpoint-weight", type=float,
-              help="Its SimPoint weight (one FILE only). Without a weight from here or --simpoint-info, it is decoded "
-                   "from a name of the form <entry>.<simpoint index>.<weight>.")
+              help='A JSON file of the SimPoint analysis: {"interval": 100000000, "maxK": 10, "checkpoints": '
+                   '{"<name>": {"index": 3, "weight": 0.2531}, ...}}, naming exactly the checkpoints of DESC.')
 @click.option("--description", "-d", help="A description of the checkpoints.")
 @_sim_version_option
 @_exist_ok_option
 @click.pass_context
-def add_checkpoint_cmd(ctx, trace, files, desc, simpoint_info, name, simpoint_weight, description, sim_version_file,
-                       exist_ok):
+def add_checkpoint_cmd(ctx, trace, desc, checkpoint_dir, simpoint_info, description, sim_version_file, exist_ok):
     """
-    Import checkpoints created from TRACE (a trace UUID or prefix, or an entry point with one trace), in one
-    transaction.
+    Import the checkpoints that DESC, a description file, created from TRACE (a trace UUID or prefix, or an entry
+    point with one trace) in CHECKPOINT_DIR, in one transaction.
 
-    Prints each checkpoint as <trace UUID>:<name>, in the order of the files.
+    \b
+    For a run directory R that created checkpoints:
+      fwm repo add checkpoint <trace> R/ckpt.desc R/checkpoints
+
+    Each checkpoint DESC lists must be in CHECKPOINT_DIR, which catches one spike didn't create (it creates none at or
+    after the program's exit); other files there are ignored. The requested instruction counts are kept.
+
+    Prints each checkpoint as <trace UUID>:<name>, in the order of DESC.
     """
-    ckpts = add_checkpoints(open_repo(ctx, write=True), trace, files, name=name, simpoint_weight=simpoint_weight,
-                            simpoint_info=simpoint_info, desc=desc, description=description, exist_ok=exist_ok,
-                            sim_version=_read_sim_version(sim_version_file))
+    ckpts = add_checkpoints(open_repo(ctx, write=True), trace, desc, checkpoint_dir, simpoint_info=simpoint_info,
+                            description=description, exist_ok=exist_ok, sim_version=_read_sim_version(sim_version_file))
     for ckpt in ckpts:
         click.echo(f"{ckpt.trace.uuid}:{ckpt.name}")
 

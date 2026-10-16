@@ -7,7 +7,8 @@ from click.testing import CliRunner
 
 from fwm.cli.completion import _natural_key
 from fwm.cli.fwm import cli
-from tests.fesvr_files import write_recording, write_checkpoint, CheckpointHart, Command, exit_command, recording_sha256
+from tests.cli.conftest import write_checkpoints
+from tests.fesvr_files import write_recording, Command, exit_command
 
 
 @pytest.fixture
@@ -46,9 +47,8 @@ def add_trace(run, tmp_path, entry, name):
 
 
 def add_checkpoint(run, tmp_path, trace, name, commands):
-    file = tmp_path / name
-    write_checkpoint(str(file), [CheckpointHart(recording_sha256(commands), cmd_index=1)])
-    assert run("repo", "add", "checkpoint", trace, str(file))[0] == 0
+    desc, checkpoints = write_checkpoints(tmp_path / f"r3-{trace}-{name}", name, commands=commands)
+    assert run("repo", "add", "checkpoint", trace, desc, checkpoints)[0] == 0
 
 
 def test_names(complete, run, populated, write_entry_point):

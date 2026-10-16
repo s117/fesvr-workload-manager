@@ -9,13 +9,13 @@ import uuid
 from click.testing import CliRunner
 
 from fwm.cli.fwm import cli
-from fwm.repo.checkpoint import add_checkpoint
 from fwm.repo.entry import add_entry
 from fwm.repo.gc import collect_garbage, find_leftovers
 from fwm.repo.remove import remove_sysroot
 from fwm.repo.repo import STAGING_DIR, CHECKPOINTS_DIR, TRACES_DIR
 from fwm.repo.sysroot import add_sysroot
 from fwm.repo.trace import add_trace
+from tests.conftest import import_checkpoint
 from tests.fesvr_files import write_recording, write_checkpoint, Command, exit_command, recording_sha256, CheckpointHart
 
 COMMANDS = [Command(), exit_command(0)]
@@ -107,7 +107,7 @@ def test_untracked(repo, sysroot_src, write_entry_point, tmp_path, monkeypatch):
     trace = add_trace(repo, "e", str(rec))
     ckpt = tmp_path / "e.0.0.50"
     write_checkpoint(str(ckpt), [CheckpointHart(recording_sha256(COMMANDS))])
-    add_checkpoint(repo, "e", str(ckpt))
+    import_checkpoint(repo, "e", str(ckpt))
     assert find_leftovers(repo, min_age=0) == []
 
     # what interrupted commands can leave: a sysroot removed but not deleted (here: read-only, like all content)...
