@@ -128,7 +128,7 @@ Exit status:
 
 `fwm show <kind> <id> --json` prints one object; `fwm list <kinds> --json` prints a list of the same objects. Times are ISO 8601 with a timezone, and absent values are `null`.
 
-- **workload:** `name`, `description`, `creation_time`, `entries` (names).
+- **workload:** `name`, `creation_time`, `entries` (names). A workload has no description: describe it in its entry points' `metadata`.
 - **sysroot:** `name`, `description`, `creation_time`, `path`, `num_files`, `num_links`, `num_dirs`, `size_bytes`, `entries`.
 - **entry:** `name`, `workload`, `sysroot`, `description`, `creation_time`, `command`, `working_directory`, `stdin_file`, `boot_elf`, `mem_mb`, `nprocs`, `metadata` (the object given, or `null`), `traces` (UUIDs).
 - **trace:**

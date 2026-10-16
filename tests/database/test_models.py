@@ -52,7 +52,8 @@ def make_trace(entry: NativeEntry) -> DecoupledTrace:
 
 def make_checkpoint(trace: DecoupledTrace, name: str = "ckpt") -> DecoupledCheckpoint:
     ckpt = DecoupledCheckpoint.create(trace=trace, name=name, file_catalog=save_catalog(make_catalog(1)),
-                                      format_version=1, content_sha256=SHA_A, simpoint_weight=0.5)
+                                      format_version=1, content_sha256=SHA_A, simpoint_weight=0.5,
+                                      requested_count=500)
     CheckpointHart.create(checkpoint=ckpt, hart_id=0, recording_sha256=SHA_B, cmd_index=5, hart_state_version=1,
                           csr_count=500)
     return ckpt
@@ -205,7 +206,12 @@ def test_provenance_and_simpoint_fields(db):
     assert trace.fwm_version == fwm_version()
     ckpt = DecoupledCheckpoint.create(name="c", trace=trace, file_catalog=catalog, format_version=1,
                                       content_sha256="0" * 64, simpoint_index=3, simpoint_interval=100000000,
-                                      requested_count=300000017)
+                                      simpoint_max_k=10, requested_count=300000017)
     ckpt = DecoupledCheckpoint.get_by_id(ckpt.id)
-    assert (ckpt.simpoint_index, ckpt.simpoint_interval, ckpt.requested_count) == (3, 100000000, 300000017)
+    assert (ckpt.simpoint_index, ckpt.simpoint_interval, ckpt.simpoint_max_k, ckpt.requested_count) == \
+        (3, 100000000, 10, 300000017)
     assert (ckpt.validation_status, ckpt.validation_time, ckpt.validation_detail) == (None, None, None)
+    # every checkpoint is imported from its description file, which gives the count it was requested at
+    with pytest.raises(pw.IntegrityError, match="requested_count"):
+        DecoupledCheckpoint.create(name="d", trace=trace, file_catalog=catalog, format_version=1,
+                                   content_sha256="0" * 64)

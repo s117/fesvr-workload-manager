@@ -84,13 +84,11 @@ class CatalogDir(BaseModel):
 class Workload(BaseModel):
     """
     A workload groups the entry points running the same program, possibly on different sysroots. It is created by its
-    first entry point and removed with its last one.
+    first entry point and removed with its last one, so it has no description of its own: describe a workload in its
+    entry points' metadata.
     """
     # Unique name of the workload.
     name = pw.CharField(unique=True, index=True)
-
-    # Optional description.
-    description = pw.TextField(null=True)
 
     # Creation time.
     creation_time = TimestampTzField(default=now_tz)
@@ -261,7 +259,7 @@ class DecoupledCheckpoint(BaseModel):
 
     # The instruction count it was requested at, in the description file it was created from. Where it was actually
     # taken is CheckpointHart.csr_count, which can differ slightly.
-    requested_count = pw.BigIntegerField(null=True)
+    requested_count = pw.BigIntegerField()
 
     # The `spike --version` output of the simulator that created it, if given at import.
     sim_version = pw.TextField(null=True)

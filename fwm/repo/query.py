@@ -36,7 +36,6 @@ def sim_version_view(text: Optional[str]) -> Optional[View]:
 def workload_view(workload: Workload) -> View:
     return {
         "name": workload.name,
-        "description": workload.description,
         "creation_time": _time(workload.creation_time),
         "entries": sorted(e.name for e in workload.entries),
     }
