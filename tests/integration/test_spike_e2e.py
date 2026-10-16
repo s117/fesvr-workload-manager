@@ -49,6 +49,11 @@ def instret(run_dir) -> int:
         return json.load(f)["hart_state"][0]["instret"]
 
 
+def run_json(run_dir) -> dict:
+    with open(os.path.join(run_dir, "run.json")) as f:
+        return json.load(f)
+
+
 def fwm_status(env, *args) -> int:
     return subprocess.run([sys.executable, "-m", "fwm", *args], env=env, capture_output=True, check=False).returncode
 
@@ -61,6 +66,9 @@ def test_record_replay_checkpoint(env, tmp_path):
     fwm(env, "repo", "init", str(base / "repo"))
     fwm(env, "repo", "add", "sysroot", str(SYSROOT), "sr")
     fwm(env, "repo", "add", "entry", "sr", "wl", "e", str(ENTRY_POINT))
+    metadata = {"suite": "Toolchain test", "language": ["C"]}
+    (base / "metadata.json").write_text(json.dumps(metadata))
+    fwm(env, "repo", "set-metadata", "e", str(base / "metadata.json"))
     fwm(env, "repo", "verify")
     version = base / "sim-version.txt"
     version.write_bytes(subprocess.run([SPIKE, "--version"], check=True, capture_output=True).stdout)
@@ -71,6 +79,9 @@ def test_record_replay_checkpoint(env, tmp_path):
     assert make(r1, "SIM_FLAGS_EXTRA=-s1000000") == 0
     assert (r1 / "trace" / "boot.elf").is_file()
     assert (r1 / "bbv_proc_0.bb.gz").is_file()
+    described = run_json(r1)
+    assert (described["kind"], described["sysroot"]["name"], described["entry"]["metadata"]) == ("record", "sr",
+                                                                                                  metadata)
     total = instret(r1)
     add_trace = ("repo", "add", "trace", "e", str(r1 / "trace"), "--final-state", str(r1 / "final-state.json"),
                  "--sim-version", str(version))
@@ -87,6 +98,7 @@ def test_record_replay_checkpoint(env, tmp_path):
     fwm(env, "mkgen", "replay", trace, "-o", str(r2))
     assert make(r2) == 0
     assert instret(r2) == total
+    assert run_json(r2)["trace"]["uuid"] == trace
 
     # create checkpoints at 1/3 and 2/3 of the run
     desc = base / "d.txt"
@@ -124,6 +136,11 @@ def test_record_replay_checkpoint(env, tmp_path):
     fwm(env, "mkgen", "load", "e.0.0.40", "-o", str(r4))
     assert make(r4) == 0
     assert instret(r4) == total
+    described = run_json(r4)
+    assert (described["kind"], described["trace"]["uuid"], described["checkpoint"]["name"]) == ("load", trace,
+                                                                                                 "e.0.0.40")
+    assert described["checkpoint"]["simpoint_weight"] == 0.4012
+    assert described["entry"]["metadata"] == metadata
     assert fwm(env, "repo", "record-validation", "e.0.0.40", str(r4)).startswith("passed")
     assert make(r4, "SIM_FLAGS_EXTRA=-e1000") == 2  # spike exits 1 when -e stops it, so make fails
     assert fwm_status(env, "repo", "record-validation", "e.0.0.40", str(r4)) == 4
