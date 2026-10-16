@@ -1,6 +1,5 @@
 import json
 import os
-import re
 import shutil
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
@@ -19,8 +18,6 @@ from fwm.repo.repo import Repo, DIGEST_ALGO, REPO_PERM_MASK
 from fwm.repo.trace import resolve_trace, trace_harts
 from fwm.utils.file_catalog import create_catalog, verify_catalog, FailedDetail
 
-# The checkpoint names FESVR accepts in a checkpoint description file (riscv-fesvr/fesvr/ckpt_desc_reader.cc)
-CHECKPOINT_NAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 
 def resolve_checkpoint(ref: str) -> DecoupledCheckpoint:
     """
@@ -105,12 +102,6 @@ def _check_against_trace(trace: DecoupledTrace, file: str, header: CheckpointHea
                            f"{rec_hart.num_commands}")
 
 
-def _check_name(name: str) -> None:
-    if not CHECKPOINT_NAME_RE.match(name) or name in (".", ".."):
-        raise FwmValidationError(
-            f"invalid checkpoint name '{name}': a name may contain only letters, digits, '.', '_' and '-'")
-
-
 def _requested_checkpoints(desc: str, checkpoint_dir: str) -> List[Tuple[str, int, str]]:
     """
     The checkpoints a description file lists, with the instruction count each was requested at, and its file in the
@@ -127,8 +118,6 @@ def _requested_checkpoints(desc: str, checkpoint_dir: str) -> List[Tuple[str, in
         raise FwmValidationError(f"invalid checkpoint description {desc}: {e}")
     if not os.path.isdir(checkpoint_dir):
         raise NotFoundError(f"{checkpoint_dir} is not a directory")
-    for name, _ in requested:
-        _check_name(name)
     missing = [(name, count) for name, count in requested
                if not os.path.isfile(os.path.join(checkpoint_dir, name))]
     if missing:
