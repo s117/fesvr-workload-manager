@@ -1,6 +1,6 @@
 import json
 import shlex
-from typing import Optional, Set
+from typing import Any, Dict, Optional, Set
 
 import pydantic
 
@@ -20,6 +20,15 @@ def get_entry(name: str) -> NativeEntry:
     if entry is None:
         raise NotFoundError(f"no entry point named '{name}'")
     return entry
+
+
+def entry_metadata(entry: NativeEntry) -> Optional[Dict[str, Any]]:
+    """The entry point's metadata, or None if it has none."""
+    return json.loads(entry.metadata) if entry.metadata is not None else None
+
+
+def _metadata_text(metadata: Optional[Dict[str, Any]]) -> Optional[str]:
+    return json.dumps(metadata) if metadata is not None else None
 
 
 def entry_target_cwd(entry: NativeEntry) -> str:
@@ -70,7 +79,7 @@ def _check_paths(entry: WorkloadEntry, catalog: FileCatalog) -> None:
 def _existing_entry(existing: NativeEntry, sysroot_name: str, workload_name: str, entry: WorkloadEntry,
                     exist_ok: bool) -> NativeEntry:
     """The answer to adding an entry point under a name already used: that entry point with --exist-ok, if it is the
-    same (its description aside), else an error."""
+    same (its description and metadata aside), else an error."""
     what = f"an entry point named '{existing.name}' already exists"
     if not exist_ok:
         raise AlreadyExistsError(what)
@@ -80,6 +89,10 @@ def _existing_entry(existing: NativeEntry, sysroot_name: str, workload_name: str
              entry.mem_mb, entry.nprocs)
     if stored != given:
         raise AlreadyExistsError(f"{what}, and differs from this one")
+    if entry_metadata(existing) != entry.metadata:
+        Logger.get_logger().warning(
+            f"entry point '{existing.name}' keeps its metadata, which differs from this one: change it with "
+            f"`fwm repo set-metadata`")
     return existing
 
 
@@ -88,7 +101,7 @@ def add_entry(repo: Repo, sysroot_name: str, workload_name: str, entry_name: str
     """
     Add an entry point: how to launch a workload in a sysroot. The paths are checked against the sysroot's catalog.
 
-    :param exist_ok: If the same entry point exists (its description aside), return it instead of failing.
+    :param exist_ok: If the same entry point exists (its description and metadata aside), return it instead of failing.
     :raise AlreadyExistsError: An entry point of this name exists.
     """
     check_name("entry point", entry_name)
@@ -123,4 +136,25 @@ def add_entry(repo: Repo, sysroot_name: str, workload_name: str, entry_name: str
         return NativeEntry.create(
             name=entry_name, workload=workload, sysroot=sysroot, command=entry.command,
             working_directory=entry.working_directory, stdin_file=entry.stdin_file, boot_elf=entry.boot_elf,
-            mem_mb=entry.mem_mb, nprocs=entry.nprocs, description=description)
+            mem_mb=entry.mem_mb, nprocs=entry.nprocs, metadata=_metadata_text(entry.metadata), description=description)
+
+
+def set_entry_metadata(repo: Repo, entry_name: str, metadata_json: str) -> NativeEntry:
+    """
+    Replace the metadata of an entry point, keeping its traces.
+
+    :param metadata_json: A file holding a JSON object, or null to remove the metadata.
+    :raise FwmValidationError: The file can't be read, or doesn't hold an object or null.
+    """
+    try:
+        with open(metadata_json) as f:
+            metadata = json.load(f)
+    except (OSError, ValueError) as e:
+        raise FwmValidationError(f"cannot read the metadata {metadata_json}: {e}")
+    if metadata is not None and not isinstance(metadata, dict):
+        raise FwmValidationError(f"the metadata {metadata_json} is not a JSON object, nor null")
+    with repo.db.atomic():
+        entry = get_entry(entry_name)
+        entry.metadata = _metadata_text(metadata)
+        entry.save()
+    return entry

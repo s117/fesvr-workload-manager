@@ -80,6 +80,36 @@ def test_list_filters(run, populated, write_entry_point):
     assert run("list", "traces", "--workload", "wl")[0] == 2
 
 
+def test_metadata(run, populated, sysroot_src, write_entry_point, tmp_path):
+    metadata = {"suite": "Toolchain test", "description": "A helloworld.", "language": ["C"],
+                "auxiliary": {"validator": {"verify": [{"cmd": "diff a b", "stdout": "a.cmp"}]}}}
+    assert run("repo", "add", "entry", "sr", "wl", "m", write_entry_point(metadata=metadata))[0] == 0
+    assert json.loads(run("show", "entry", "m", "--json")[1])["metadata"] == metadata
+    code, out, _ = run("show", "entry", "m")
+    assert code == 0
+    assert "metadata:\n  suite: Toolchain test\n" in out
+    assert "language: C\n" in out
+    assert "cmd: diff a b" in out
+    assert json.loads(run("show", "entry", "e", "--json")[1])["metadata"] is None
+
+    # replaced, and removed, keeping the traces
+    new = tmp_path / "metadata.json"
+    new.write_text('{"suite": "GAPBS"}')
+    assert run("repo", "set-metadata", "e", str(new))[:2] == (0, "e\n")
+    view = json.loads(run("show", "entry", "e", "--json")[1])
+    assert (view["metadata"], view["traces"]) == ({"suite": "GAPBS"}, [populated])
+    new.write_text("null")
+    assert run("repo", "set-metadata", "e", str(new))[0] == 0
+    assert json.loads(run("show", "entry", "e", "--json")[1])["metadata"] is None
+
+    for bad in ('["GAPBS"]', '{"suite": '):
+        new.write_text(bad)
+        code, _, err = run("repo", "set-metadata", "e", str(new))
+        assert code == 4, err
+    new.write_text("{}")
+    assert run("repo", "set-metadata", "missing", str(new))[0] == 3
+
+
 def test_exit_codes(run, populated, write_entry_point, tmp_path):
     # not found
     code, _, err = run("show", "entry", "missing")

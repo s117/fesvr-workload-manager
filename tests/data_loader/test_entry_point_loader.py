@@ -94,4 +94,29 @@ def test_entry_point_normal(fs, entry):
     with open(test_file_path, "w") as fp:
         json.dump(entry, fp)
 
-    assert load_entry_point(test_file_path).model_dump() == entry
+    assert load_entry_point(test_file_path).model_dump() == {**entry, "metadata": None}
+
+
+METADATA = {"suite": "GAPBS v1.5-0-gb5e3e19", "description": "BFS on 'road'.", "language": ["C++"],
+            "auxiliary": {"validator": {"stdout": "x.out", "verify": [{"cmd": "diff a b"}]}}}
+
+
+@pytest.mark.parametrize("metadata", [None, {}, METADATA])
+def test_entry_point_metadata(fs, metadata):
+    with open("/entry_point.json", "w") as fp:
+        json.dump({**create_test_entry(), "metadata": metadata}, fp)
+    assert load_entry_point("/entry_point.json").metadata == metadata
+
+
+@pytest.mark.parametrize("metadata", ["GAPBS", ["C++"], 1])
+def test_entry_point_metadata_not_object(metadata):
+    with pytest.raises(ValidationError) as ex:
+        WorkloadEntry(**create_test_entry(), metadata=metadata)
+    assert [error['loc'][0] for error in ex.value.errors()] == ["metadata"]
+
+
+def test_entry_point_not_object(fs):
+    with open("/entry_point.json", "w") as fp:
+        json.dump([create_test_entry()], fp)
+    with pytest.raises(ValidationError):
+        load_entry_point("/entry_point.json")

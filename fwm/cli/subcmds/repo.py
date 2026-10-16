@@ -10,7 +10,7 @@ from fwm.data_loader.sim_version import read_sim_version, SimVersionError
 from fwm.database.schema import Sysroot, DecoupledTrace, DecoupledCheckpoint
 from fwm.repo import remove as rm
 from fwm.repo.checkpoint import add_checkpoints, resolve_checkpoint, verify_checkpoint
-from fwm.repo.entry import add_entry
+from fwm.repo.entry import add_entry, set_entry_metadata
 from fwm.repo.errors import FwmValidationError
 from fwm.repo.gc import collect_garbage, find_leftovers
 from fwm.repo.repo import Repo
@@ -93,8 +93,11 @@ def add_entry_cmd(ctx, sysroot_name, workload_name, entry_point_name, entry_poin
     \b
     ENTRY_POINT_JSON holds the launch fields, e.g.
       {"command": "bfs -f road.sg -n64", "working_directory": "/app", "envs": null,
-       "stdin_file": null, "boot_elf": "/boot/pk", "mem_mb": 2048, "nprocs": 1}
-    In paths, "/" is the sysroot's root and "." the working directory.
+       "stdin_file": null, "boot_elf": "/boot/pk", "mem_mb": 2048, "nprocs": 1,
+       "metadata": {"suite": "GAPBS", "language": ["C++"]}}
+    In paths, "/" is the sysroot's root and "." the working directory. "metadata" is optional and free-form: any JSON
+    object, kept and shown by fwm. With --exist-ok, an entry point that differs only in its metadata or description
+    is the same one, and keeps its own; change its metadata with `fwm repo set-metadata`.
     """
     click.echo(add_entry(open_repo(ctx, write=True), sysroot_name, workload_name, entry_point_name, entry_point_json,
                          description, exist_ok).name)
@@ -150,6 +153,19 @@ def add_checkpoint_cmd(ctx, trace, files, desc, simpoint_info, name, simpoint_we
                             sim_version=_read_sim_version(sim_version_file))
     for ckpt in ckpts:
         click.echo(f"{ckpt.trace.uuid}:{ckpt.name}")
+
+
+@repo.command("set-metadata")
+@click.argument("entry", shell_complete=complete_entry)
+@click.argument("metadata_json", metavar="FILE", type=click.Path(exists=True, dir_okay=False))
+@click.pass_context
+def set_metadata_cmd(ctx, entry, metadata_json):
+    """
+    Replace the metadata of the entry point ENTRY with FILE, a JSON object, or null to remove it. Its traces are kept.
+
+    Prints the name of the entry point.
+    """
+    click.echo(set_entry_metadata(open_repo(ctx, write=True), entry, metadata_json).name)
 
 
 @repo.command("remove")

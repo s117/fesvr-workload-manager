@@ -1,5 +1,5 @@
 import json
-from typing import Annotated, Optional, Dict, Literal
+from typing import Annotated, Any, Optional, Dict, Literal
 
 import pydantic
 from annotated_types import Gt
@@ -35,9 +35,13 @@ class WorkloadEntry(pydantic.BaseModel):
     # Number of processors to simulate. Only 1 is supported, as checkpoints can be created for a single hart only.
     nprocs: Literal[1]
 
+    # Optional free-form information about the workload, e.g. {"suite": ..., "description": ..., "language": [...]}.
+    # fwm keeps it and shows it, but doesn't interpret it.
+    metadata: Optional[Dict[str, Any]] = None
+
 
 def load_entry_point(path: str) -> WorkloadEntry:
     with open(path, "r") as f:
         entry = json.load(f)
 
-    return WorkloadEntry(**entry)
+    return WorkloadEntry.model_validate(entry)

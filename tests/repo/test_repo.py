@@ -9,7 +9,7 @@ from fwm.database.schema import (
 )
 from fwm.repo import remove as rm
 from fwm.repo.checkpoint import add_checkpoint, resolve_checkpoint, decode_simpoint_weight, verify_checkpoint
-from fwm.repo.entry import add_entry
+from fwm.repo.entry import add_entry, entry_metadata, set_entry_metadata
 from fwm.repo.errors import AlreadyExistsError, FwmValidationError, NotFoundError, RepoUnusableError
 from fwm.repo.repo import Repo
 from fwm.repo.sysroot import add_sysroot, verify_sysroot, spawn_sysroot
@@ -166,6 +166,7 @@ def test_workloads_and_sysroots_many_to_many(repo, sysroot_src, write_entry_poin
     ({"command": "  "}, "the command is empty"),
     ({"nprocs": 2}, "invalid entry point"),
     ({"proxy_kernel": "/boot/pk"}, "invalid entry point"),
+    ({"metadata": "GAPBS"}, "invalid entry point"),
 ])
 def test_add_entry_invalid(repo, sysroot_src, write_entry_point, overrides, match):
     add_sysroot(repo, str(sysroot_src), "sr")
@@ -194,6 +195,43 @@ def test_add_entry_duplicate(repo, sysroot_src, write_entry_point):
         add_entry(repo, "sr", "wl", "e", write_entry_point(mem_mb=2), exist_ok=True)
     with pytest.raises(AlreadyExistsError, match="differs"):
         add_entry(repo, "sr", "other-wl", "e", write_entry_point(), exist_ok=True)
+
+
+def test_entry_metadata(repo, sysroot_src, write_entry_point, caplog):
+    add_sysroot(repo, str(sysroot_src), "sr")
+    metadata = {"suite": "GAPBS", "language": ["C++"], "auxiliary": {"validator": {"stdout": "x.out"}}}
+    assert entry_metadata(add_entry(repo, "sr", "wl", "e", write_entry_point(metadata=metadata))) == metadata
+    assert entry_metadata(NativeEntry.get(NativeEntry.name == "e")) == metadata
+    assert entry_metadata(add_entry(repo, "sr", "wl", "plain", write_entry_point())) is None
+
+    # metadata doesn't make an entry point different: the stored one is kept, with a warning
+    again = add_entry(repo, "sr", "wl", "e", write_entry_point(metadata={"suite": "other"}), exist_ok=True)
+    assert entry_metadata(again) == metadata
+    assert "set-metadata" in caplog.text
+    caplog.clear()
+    add_entry(repo, "sr", "wl", "e", write_entry_point(metadata=metadata), exist_ok=True)
+    assert "set-metadata" not in caplog.text
+
+
+def test_set_entry_metadata(repo, sysroot_src, write_entry_point, tmp_path):
+    add_sysroot(repo, str(sysroot_src), "sr")
+    add_entry(repo, "sr", "wl", "e", write_entry_point(metadata={"suite": "a"}))
+    path = tmp_path / "metadata.json"
+    path.write_text('{"suite": "b", "language": ["C"]}')
+    assert entry_metadata(set_entry_metadata(repo, "e", str(path))) == {"suite": "b", "language": ["C"]}
+    assert entry_metadata(NativeEntry.get(NativeEntry.name == "e")) == {"suite": "b", "language": ["C"]}
+    path.write_text("null")
+    assert entry_metadata(set_entry_metadata(repo, "e", str(path))) is None
+
+    for bad, match in [("[1]", "not a JSON object"), ("{", "cannot read"), ("", "cannot read")]:
+        path.write_text(bad)
+        with pytest.raises(FwmValidationError, match=match):
+            set_entry_metadata(repo, "e", str(path))
+    with pytest.raises(FwmValidationError, match="cannot read"):
+        set_entry_metadata(repo, "e", str(tmp_path / "missing.json"))
+    path.write_text("{}")
+    with pytest.raises(NotFoundError):
+        set_entry_metadata(repo, "nope", str(path))
 
 
 def test_add_entry_missing_sysroot(repo, write_entry_point):

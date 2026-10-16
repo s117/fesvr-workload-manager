@@ -11,6 +11,7 @@ from fwm.database.schema import (
     Workload, Sysroot, NativeEntry, DecoupledTrace, DecoupledCheckpoint, CatalogFile, CatalogLink, CatalogDir
 )
 from fwm.repo.checkpoint import checkpoint_harts
+from fwm.repo.entry import entry_metadata
 from fwm.repo.repo import Repo
 from fwm.repo.trace import trace_harts
 
@@ -71,6 +72,7 @@ def entry_view(entry: NativeEntry) -> View:
         "boot_elf": entry.boot_elf,
         "mem_mb": entry.mem_mb,
         "nprocs": entry.nprocs,
+        "metadata": entry_metadata(entry),
         "traces": [str(t.uuid) for t in entry.traces.order_by(DecoupledTrace.creation_time)],
     }
 

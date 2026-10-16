@@ -151,6 +151,9 @@ class NativeEntry(BaseModel):
     # Number of processors to simulate.
     nprocs = pw.IntegerField()
 
+    # Optional free-form metadata: a JSON object, as text (see WorkloadEntry.metadata).
+    metadata = pw.TextField(null=True)
+
     # Optional description.
     description = pw.TextField(null=True)
 
