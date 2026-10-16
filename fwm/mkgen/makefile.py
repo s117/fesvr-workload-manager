@@ -151,7 +151,7 @@ def _write_makefile(repo: Repo, run_dir: str, body_template: str, values: Dict[s
 
 
 def _sysroot_run_values(repo: Repo, entry: NativeEntry) -> Dict[str, str]:
-    """The values of a Makefile that runs an entry point in a fresh copy of its sysroot."""
+    """The values of a Makefile that runs an entry point in a fresh spawn of its sysroot."""
     stdin_file = entry_target_path(entry, entry.stdin_file) if entry.stdin_file is not None else ""
     return {
         "ENTRY": entry.name,

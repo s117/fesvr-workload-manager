@@ -71,6 +71,7 @@ def entry_view(entry: NativeEntry) -> View:
         "boot_elf": entry.boot_elf,
         "mem_mb": entry.mem_mb,
         "nprocs": entry.nprocs,
+        "copy_spawn": entry.copy_spawn,
         "metadata": entry_metadata(entry),
         "traces": [str(t.uuid) for t in entry.traces.order_by(DecoupledTrace.creation_time)],
     }

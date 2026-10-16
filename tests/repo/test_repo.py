@@ -12,7 +12,7 @@ from fwm.repo.checkpoint import resolve_checkpoint, verify_checkpoint
 from fwm.repo.entry import add_entry, entry_metadata, set_entry_metadata
 from fwm.repo.errors import AlreadyExistsError, FwmValidationError, NotFoundError, RepoUnusableError
 from fwm.repo.repo import Repo
-from fwm.repo.sysroot import add_sysroot, verify_sysroot, spawn_sysroot
+from fwm.repo.sysroot import add_sysroot, verify_sysroot
 from fwm.repo.trace import add_trace, resolve_trace, verify_trace
 from tests.data_loader.test_sim_version import SPIKE_VERSION
 from tests.fesvr_files import (
@@ -106,39 +106,6 @@ def test_verify_sysroot_tampered(repo, sysroot_src):
     problems = verify_sysroot(repo, sysroot)
     assert [p[0] for p in problems] == ["app/input.txt"]
     assert "SHA256 mismatch" in problems[0][1]
-
-
-def test_spawn_sysroot(repo, sysroot_src, tmp_path):
-    add_sysroot(repo, str(sysroot_src), "sr")
-    dest = tmp_path / "run" / "sysroot"
-    dest.parent.mkdir()
-    spawn_sysroot(repo, "sr", str(dest))
-    # the catalog's permissions are back
-    assert mode(dest / "app" / "prog.rv64") == 0o750
-    assert mode(dest / "app" / "data") == 0o700
-    assert mode(dest / "app") == mode(sysroot_src / "app")
-    (dest / "app" / "output.txt").write_text("written by the program")
-
-    with pytest.raises(FwmValidationError, match="already exists"):
-        spawn_sysroot(repo, "sr", str(dest))
-    spawn_sysroot(repo, "sr", str(dest), force=True)
-    assert not (dest / "app" / "output.txt").exists()
-
-
-def test_spawn_damaged_sysroot(repo, sysroot_src, tmp_path):
-    """A sysroot whose stored files no longer match its catalog isn't handed out: the copy is verified."""
-    add_sysroot(repo, str(sysroot_src), "sr")
-    stored = os.path.join(repo.sysroot_dir("sr"), "app", "input.txt")
-    os.chmod(stored, 0o644)
-    with open(stored, "w") as f:
-        f.write("damaged\n")
-    with pytest.raises(FwmValidationError, match=r"doesn't match its catalog:\n  app/input.txt: "):
-        spawn_sysroot(repo, "sr", str(tmp_path / "copy"))
-
-
-def test_spawn_missing_sysroot(repo, tmp_path):
-    with pytest.raises(NotFoundError):
-        spawn_sysroot(repo, "nope", str(tmp_path / "x"))
 
 
 # --- entry points
@@ -584,11 +551,3 @@ def test_fifo_in_trace(repo, entry, tmp_path):
     os.mkfifo(rec / "fifo")
     with pytest.raises(FwmValidationError, match="neither a file nor symlink"):
         add_trace(repo, "e", str(rec))
-
-
-def test_spawn_refuses_repository(repo, sysroot_src):
-    add_sysroot(repo, str(sysroot_src), "sr")
-    for dest in (repo.sysroot_dir("sr"), os.path.join(repo.path, "elsewhere")):
-        with pytest.raises(FwmValidationError, match="inside the repository"):
-            spawn_sysroot(repo, "sr", dest, force=True)
-    assert os.path.isfile(os.path.join(repo.sysroot_dir("sr"), "boot", "pk"))

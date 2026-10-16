@@ -84,9 +84,9 @@ def _existing_entry(existing: NativeEntry, sysroot_name: str, workload_name: str
     if not exist_ok:
         raise AlreadyExistsError(what)
     stored = (existing.sysroot.name, existing.workload.name, existing.command, existing.working_directory,
-              existing.stdin_file, existing.boot_elf, existing.mem_mb, existing.nprocs)
+              existing.stdin_file, existing.boot_elf, existing.mem_mb, existing.nprocs, existing.copy_spawn)
     given = (sysroot_name, workload_name, entry.command, entry.working_directory, entry.stdin_file, entry.boot_elf,
-             entry.mem_mb, entry.nprocs)
+             entry.mem_mb, entry.nprocs, entry.copy_spawn)
     if stored != given:
         raise AlreadyExistsError(f"{what}, and differs from this one")
     if entry_metadata(existing) != entry.metadata:
@@ -136,7 +136,8 @@ def add_entry(repo: Repo, sysroot_name: str, workload_name: str, entry_name: str
         return NativeEntry.create(
             name=entry_name, workload=workload, sysroot=sysroot, command=entry.command,
             working_directory=entry.working_directory, stdin_file=entry.stdin_file, boot_elf=entry.boot_elf,
-            mem_mb=entry.mem_mb, nprocs=entry.nprocs, metadata=_metadata_text(entry.metadata), description=description)
+            mem_mb=entry.mem_mb, nprocs=entry.nprocs, copy_spawn=entry.copy_spawn,
+            metadata=_metadata_text(entry.metadata), description=description)
 
 
 def set_entry_metadata(repo: Repo, entry_name: str, metadata_json: str) -> NativeEntry:

@@ -3,13 +3,13 @@ from typing import List, Optional
 
 from fwm.database.catalog_store import save_catalog, load_catalog
 from fwm.database.schema import Sysroot
-from fwm.repo.errors import AlreadyExistsError, FwmValidationError, NotFoundError
+from fwm.repo.errors import AlreadyExistsError, NotFoundError
 from fwm.repo.repo import Repo, catalog_of, check_name, copy_source, REPO_PERM_MASK
 from fwm.data_loader.file_catalog import FileCatalog
 from fwm.utils.file_catalog import (
     verify_catalog, find_absolute_links, catalog_differences, FailedDetail
 )
-from fwm.utils.fs import copy_tree, set_tree_writable, remove_tree
+from fwm.utils.fs import set_tree_writable
 from fwm.utils.log import Logger
 
 
@@ -85,39 +85,3 @@ def verify_sysroot(repo: Repo, sysroot: Sysroot) -> List[FailedDetail]:
     file_problems, link_problems, dir_problems = verify_catalog(
         load_catalog(sysroot.file_catalog), repo.sysroot_dir(sysroot.name), perm_mask=REPO_PERM_MASK)
     return sorted(file_problems + link_problems + dir_problems)
-
-
-def spawn_sysroot(repo: Repo, name: str, dest: str, force: bool = False) -> None:
-    """
-    Make a working copy of a sysroot for a recording run: copy it, give it back the permissions of its catalog, and
-    verify it.
-
-    :param force: Replace dest if it exists.
-    """
-    sysroot = get_sysroot(name)
-    dest = os.path.abspath(dest)
-    repo_path = os.path.realpath(repo.path)
-    if os.path.commonpath([os.path.realpath(dest), repo_path]) == repo_path:
-        raise FwmValidationError(f"{dest} is inside the repository: spawn the sysroot somewhere else")
-    if os.path.lexists(dest):
-        if not force:
-            raise FwmValidationError(f"{dest} already exists")
-        remove_tree(dest)
-
-    copy_tree(repo.sysroot_dir(name), dest)
-    catalog = load_catalog(sysroot.file_catalog)
-
-    # the root itself is not in the catalog
-    os.chmod(dest, 0o755)
-    # files first, then directories deepest first, so that no directory loses its search permission too early
-    for file in catalog.files:
-        os.chmod(os.path.join(dest, file.path), file.perm)
-    for d in sorted(catalog.dirs, key=lambda d: d.path.count("/"), reverse=True):
-        os.chmod(os.path.join(dest, d.path), d.perm)
-
-    file_problems, link_problems, dir_problems = verify_catalog(catalog, dest)
-    problems = sorted(file_problems + link_problems + dir_problems)
-    if problems:
-        raise FwmValidationError(
-            f"the copy of sysroot '{name}' at {dest} doesn't match its catalog:\n" +
-            "\n".join(f"  {path}: {reason}" for path, reason in problems))

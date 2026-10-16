@@ -157,10 +157,17 @@ def test_remove(run, populated, tmp_path):
 
 def test_spawn(run, populated, tmp_path):
     dest = tmp_path / "copy"
-    assert run("spawn", "sr", str(dest))[0] == 0
-    assert (dest / "app" / "prog.rv64").is_file()
-    assert run("spawn", "sr", str(dest))[0] == 4
-    assert run("spawn", "--force", "sr", str(dest))[0] == 0
+    code, _, err = run("spawn", "e", str(dest))
+    assert code == 0
+    assert "(copy)" in err
+    assert (dest / "app" / "prog.rv64").is_file() and not (dest / "app" / "prog.rv64").is_symlink()
+    assert run("spawn", "e", str(dest))[0] == 4
+    code, _, err = run("spawn", "--force", "--mode", "link", "e", str(dest))
+    assert code == 0
+    assert "(link)" in err
+    assert (dest / "app" / "prog.rv64").is_symlink()
+    assert run("spawn", "--mode", "other", "e", str(dest))[0] == 2
+    assert run("spawn", "sr", str(tmp_path / "x"))[0] == 3  # an entry point, not a sysroot
 
 
 def run_kind(run_dir) -> str:

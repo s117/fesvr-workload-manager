@@ -55,7 +55,7 @@ def test_record(repo, entry, tmp_path):
     assert makefile == str(run / MAKEFILE)
     commands = make_dry_run(run)
     assert f"rm -rf {run}/trace {run}/final-state.json {run}/console.stdout {run}/console.stderr" in commands
-    assert f"--repo-path {repo.path} spawn --force sr {run}/sysroot" in commands
+    assert f"--repo-path {repo.path} spawn --force e {run}/sysroot" in commands
     sim_line = next(line for line in commands.splitlines() if "+chroot=" in line)
     assert sim_line.startswith(f"cd {run} && spike -m1 -p1 ")
     for part in (f"+chroot={run}/sysroot", "+target-cwd=/app", f"+dev-traffic-record={run}/trace",
@@ -166,7 +166,7 @@ def test_from_sysroot(repo, entry, tmp_path):
     generate_from_sysroot(repo, "e", str(run))
     commands = make_dry_run(run, "SIM_FLAGS_EXTRA=-e100", "APP_CMD_EXTRA=extra")
     assert f"rm -rf {run}/final-state.json {run}/console.stdout {run}/console.stderr" in commands
-    assert f"--repo-path {repo.path} spawn --force sr {run}/sysroot" in commands
+    assert f"--repo-path {repo.path} spawn --force e {run}/sysroot" in commands
     sim_line = next(line for line in commands.splitlines() if "+chroot=" in line)
     assert sim_line.startswith(f"cd {run} && spike -m1 -p1 -e100 ")
     for part in (f"+chroot={run}/sysroot", "+target-cwd=/app", f"+final-state-dump={run}/final-state.json",

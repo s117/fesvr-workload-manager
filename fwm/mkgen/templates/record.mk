@@ -1,9 +1,10 @@
-# Record a run of entry point @ENTRY@ in a fresh copy of sysroot @SYSROOT_NAME@.
+# Record a run of entry point @ENTRY@ in a fresh spawn of sysroot @SYSROOT_NAME@: a copy, or links to the
+# repository's files, as the entry point's copy_spawn says.
 # Outputs: trace/ (the recording), final-state.json, console.stdout, console.stderr, and the post-run sysroot/.
 
 FWM ?= @FWM@
 REPO := @REPO@
-SYSROOT_NAME := @SYSROOT_NAME@
+ENTRY := @ENTRY@
 SYSROOT := $(RUN)/sysroot
 
 MEM := @MEM@
@@ -19,7 +20,7 @@ APP_CMD_EXTRA ?=
 .PHONY: run
 run:
 	rm -rf $(RUN)/trace $(RUN)/final-state.json $(RUN)/console.stdout $(RUN)/console.stderr
-	$(FWM) --repo-path $(REPO) spawn --force $(SYSROOT_NAME) $(SYSROOT)
+	$(FWM) --repo-path $(REPO) spawn --force $(ENTRY) $(SYSROOT)
 	mkdir $(RUN)/trace
 	cd $(RUN) && $(SIM) -m$(MEM) -p$(NPROCS) $(SIM_FLAGS_EXTRA) \
 	    +chroot=$(SYSROOT) +target-cwd=$(CWD) +dev-traffic-record=$(RUN)/trace \

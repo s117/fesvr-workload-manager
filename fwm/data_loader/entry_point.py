@@ -35,6 +35,11 @@ class WorkloadEntry(pydantic.BaseModel):
     # Number of processors to simulate. Only 1 is supported, as checkpoints can be created for a single hart only.
     nprocs: Literal[1]
 
+    # How `fwm spawn` checks the sysroot out for a run of the program (e.g. a record run): true makes a copy; false
+    # makes symbolic links to the repository's read-only files, which is fast, but the program can't open them for
+    # writing, and stat() reports them read-only. Like riscv-simenv's copy_spawn.
+    copy_spawn: bool = True
+
     # Optional free-form information about the workload, e.g. {"suite": ..., "description": ..., "language": [...]}.
     # fwm keeps it and shows it, but doesn't interpret it.
     metadata: Optional[Dict[str, Any]] = None

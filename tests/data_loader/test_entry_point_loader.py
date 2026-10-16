@@ -94,7 +94,20 @@ def test_entry_point_normal(fs, entry):
     with open(test_file_path, "w") as fp:
         json.dump(entry, fp)
 
-    assert load_entry_point(test_file_path).model_dump() == {**entry, "metadata": None}
+    assert load_entry_point(test_file_path).model_dump() == {**entry, "copy_spawn": True, "metadata": None}
+
+
+@pytest.mark.parametrize("copy_spawn", [True, False])
+def test_entry_point_copy_spawn(fs, copy_spawn):
+    with open("/entry_point.json", "w") as fp:
+        json.dump({**create_test_entry(), "copy_spawn": copy_spawn}, fp)
+    assert load_entry_point("/entry_point.json").copy_spawn is copy_spawn
+
+
+def test_entry_point_copy_spawn_is_a_boolean():
+    with pytest.raises(ValidationError) as ex:
+        WorkloadEntry(**create_test_entry(), copy_spawn="link")
+    assert [error['loc'][0] for error in ex.value.errors()] == ["copy_spawn"]
 
 
 METADATA = {"suite": "GAPBS v1.5-0-gb5e3e19", "description": "BFS on 'road'.", "language": ["C++"],

@@ -92,6 +92,25 @@ def test_record_replay_checkpoint(env, tmp_path):
     # the same recording is not imported twice
     assert fwm_status(env, *add_trace) == 5
     assert fwm(env, *add_trace, "--exist-ok") == trace
+    # the check a batch job runs on the node that recorded
+    checked = json.loads(fwm(env, "check", "recording", str(r1 / "trace"), "--final-state",
+                             str(r1 / "final-state.json"), "--json"))
+    assert (checked["exit_status"], checked["harts"][0]["instret"]) == (view["exit_status"], total)
+
+    # a record run in a linked spawn (copy_spawn false): the same console and instruction count, and the repository's
+    # sysroot is untouched
+    linked = base / "linked.json"
+    linked.write_text(json.dumps({**json.loads(open(ENTRY_POINT).read()), "copy_spawn": False}))
+    fwm(env, "repo", "add", "entry", "sr", "wl", "e-linked", str(linked))
+    r1l = base / "r1-linked"
+    fwm(env, "repo", "bootstrap", "record", "e-linked", "-o", str(r1l))
+    assert make(r1l) == 0
+    boot_elf = json.loads(linked.read_text())["boot_elf"].lstrip("/")
+    assert (r1l / "sysroot" / boot_elf).is_symlink()
+    assert instret(r1l) == total
+    assert (r1l / "console.stdout").read_bytes() == (r1 / "console.stdout").read_bytes()
+    fwm(env, "check", "recording", str(r1l / "trace"), "--final-state", str(r1l / "final-state.json"))
+    fwm(env, "repo", "verify")
 
     # a run from the sysroot: the same console and instruction count, and no recording
     r0 = base / "r0"

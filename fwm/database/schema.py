@@ -153,6 +153,9 @@ class NativeEntry(BaseModel):
     # Number of processors to simulate.
     nprocs = pw.IntegerField()
 
+    # Whether `fwm spawn` copies the sysroot for its runs (true), or links to the repository's files (false).
+    copy_spawn = pw.BooleanField(default=True)
+
     # Optional free-form metadata: a JSON object, as text (see WorkloadEntry.metadata).
     metadata = pw.TextField(null=True)
 

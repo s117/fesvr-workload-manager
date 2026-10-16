@@ -68,13 +68,14 @@ fwm repo add entry road.sg bfs bfs-road-n64 bfs-road-n64.json
 
 ```json
 { "command": "bfs -f road.sg -n64", "working_directory": "/app",
-  "envs": null, "stdin_file": null, "boot_elf": "/boot/pk", "mem_mb": 2048, "nprocs": 1,
+  "envs": null, "stdin_file": null, "boot_elf": "/boot/pk", "mem_mb": 2048, "nprocs": 1, "copy_spawn": false,
   "metadata": { "suite": "GAPBS", "description": "Breadth-First Search on 'road'", "language": ["C++"] } }
 ```
 
 - `envs` must be `null` or `{}`: FESVR passes no environment to the program.
 - `nprocs` must be 1: checkpoints can be created for a single HART only.
 - `boot_elf` and `stdin_file` must be regular files of the sysroot, not symlinks.
+- `copy_spawn` (optional, default `true`) is how a run of the program gets its sysroot (see `fwm spawn`): a copy, or, when `false`, links to the repository's read-only files. Linking takes no time or space, even for gigabytes of input, but the program can't open its files for writing, `stat` reports them read-only, and `lstat` and `readlink` see links into the repository. Use `false` only for a program that just reads the files it finds.
 - `metadata` is optional and free-form: any JSON object, such as a riscv-simenv suite's `index.yaml` metadata. fwm shows it and copies it into each run's `run.json`. Change it later with `fwm repo set-metadata`.
 
 Record a run, and import the recording as a trace, with the `spike --version` output for provenance:
@@ -143,7 +144,7 @@ make -C d run SIM=/path/to/721sim                  # make reports "Error 1": spi
 | `fwm repo gc [--dry-run]` | Remove the leftovers of interrupted commands. |
 | `fwm list [workloads\|sysroots\|entries\|traces\|checkpoints] [filter] [--json]` | List. |
 | `fwm show {workload\|sysroot\|entry\|trace\|checkpoint} <id> [--json]` | Show the details. |
-| `fwm spawn [--force] <sysroot> <dest>` | Make a working copy of a sysroot (the `from-sysroot` and record Makefiles do it). |
+| `fwm spawn [--force] [--mode auto\|copy\|link] <entry> <dest>` | Make a working copy of an entry point's sysroot: copied, or linked to the repository's files; `auto`, the default, follows its `copy_spawn` (the `from-sysroot` and record Makefiles do it). |
 | `fwm mkgen {from-sysroot <entry> \| from-fesvr-trace <trace> \| from-checkpoint <ckpt> \| from-simpoint <ckpt>} [-o dir]` | Generate a run directory that begins a simulation. |
 | `fwm completion {bash\|zsh\|fish}` | Print the shell completion script. |
 

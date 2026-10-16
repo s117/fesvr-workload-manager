@@ -36,7 +36,8 @@ The database uses SQLite's rollback journal, not WAL, so it can sit on a shared 
     fwm repo record-validation <uuid>:<name> R4                          -> exit 0 passed, 4 failed   controller
 ```
 
-- **Step 2: `entry.json`** holds the entry point's launch fields: `command`, `working_directory`, `envs` (`null` or `{}`), `stdin_file` (or `null`), `boot_elf`, `mem_mb`, and `nprocs` (must be 1). In paths, `/` is the sysroot's root and `.` the working directory. `boot_elf` and `stdin_file` must be regular files of the sysroot, not symlinks.
+- **Step 2: `entry.json`** holds the entry point's launch fields: `command`, `working_directory`, `envs` (`null` or `{}`), `stdin_file` (or `null`), `boot_elf`, `mem_mb`, `nprocs` (must be 1), and optionally `copy_spawn` (default `true`). In paths, `/` is the sysroot's root and `.` the working directory. `boot_elf` and `stdin_file` must be regular files of the sysroot, not symlinks.
+- **Step 2's `copy_spawn`** decides how the record run gets the sysroot (`fwm spawn --mode auto`): `true` copies it; `false` links each file to the repository's read-only file, which takes no time or space, but the program can't open those files for writing, and `stat` reports them read-only. It is a launch field: `--exist-ok` compares it.
 - **Step 2's metadata.** `entry.json` may also hold `metadata`, any JSON object: put the suite's `index.yaml` `metadata` there (and its `auxiliary` data, if runs need it). fwm keeps it, shows it, and copies it into every `run.json`, but doesn't interpret it. `--exist-ok` doesn't compare it, so a rerun keeps the stored metadata and warns if it differs; `fwm repo set-metadata` replaces it (or removes it, with a file holding `null`) without touching the traces.
 - **Step 3** is the only step that needs the sysroot, and it must run on Linux. Steps 6 and 8 need only the trace and its checkpoints, so they can also run on ARM64 Linux or macOS.
 - **Step 3's check.** `fwm check recording` runs the checks of `repo add trace` on the compute node, without a repository. A run cut short by the job's time limit fails there (spike stopped by SIGTERM writes its final state and exits 0), so the job can be retried with more time, instead of failing later in the import on the controller.
@@ -133,7 +134,7 @@ Exit status:
 
 - **workload:** `name`, `creation_time`, `entries` (names). A workload has no description: describe it in its entry points' `metadata`.
 - **sysroot:** `name`, `description`, `creation_time`, `path`, `num_files`, `num_links`, `num_dirs`, `size_bytes`, `entries`.
-- **entry:** `name`, `workload`, `sysroot`, `description`, `creation_time`, `command`, `working_directory`, `stdin_file`, `boot_elf`, `mem_mb`, `nprocs`, `metadata` (the object given, or `null`), `traces` (UUIDs).
+- **entry:** `name`, `workload`, `sysroot`, `description`, `creation_time`, `command`, `working_directory`, `stdin_file`, `boot_elf`, `mem_mb`, `nprocs`, `copy_spawn`, `metadata` (the object given, or `null`), `traces` (UUIDs).
 - **trace:**
   - `uuid`, `entry`, `description`, `creation_time`, `path`;
   - `mem_mb`, `num_harts`, `boot_elf_sha256`;
@@ -159,7 +160,7 @@ Every `repo add` takes `--exist-ok`, so a rule can simply be rerun:
 | Adding | With `--exist-ok`, succeeds and prints the existing item when |
 | --- | --- |
 | a sysroot | the tree has the same files, links, directories, permissions and digests |
-| an entry point | its sysroot, workload and launch fields are the same (the description and metadata may differ; the stored ones are kept) |
+| an entry point | its sysroot, workload and launch fields (including `copy_spawn`) are the same (the description and metadata may differ; the stored ones are kept) |
 | a trace | the recording is the same (per-HART SHA-256) and so is the final state |
 | a checkpoint | the trace has a checkpoint of that name with the same content digest |
 

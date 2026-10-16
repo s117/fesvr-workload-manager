@@ -55,7 +55,7 @@ def test_names(complete, run, populated, write_entry_point):
     trace_uuid = populated
     assert run("repo", "add", "entry", "sr", "other-wl", "e2", write_entry_point())[0] == 0
 
-    assert complete("spawn") == [("sr", "2 entry points")]
+    assert complete("spawn") == [("e", "wl @ sr"), ("e2", "other-wl @ sr")]
     assert complete("list", "--sysroot") == [("sr", "2 entry points")]
     assert complete("repo", "add", "entry") == [("sr", "2 entry points")]
     assert complete("repo", "add", "entry", "sr") == [("other-wl", "1 entry point"), ("wl", "1 entry point")]
