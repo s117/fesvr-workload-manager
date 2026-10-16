@@ -46,8 +46,8 @@ def _judge(ckpt: DecoupledCheckpoint, run_dir: str) -> Tuple[bool, str]:
 
 def record_validation(repo: Repo, ckpt_ref: str, run_dir: str) -> DecoupledCheckpoint:
     """
-    Judge a run of a checkpoint to the end (a `fwm mkgen from-checkpoint` run directory, run without -e), and record the result
-    with the checkpoint.
+    Judge a run of a checkpoint to the end (a `fwm mkgen from-checkpoint` run directory, run without -e), and record
+    the result with the checkpoint.
 
     :return: The checkpoint, with its validation_status (PASSED or FAILED), validation_time and validation_detail.
     :raise FwmValidationError: The run directory isn't a run of that checkpoint, or the trace's final instruction
@@ -58,7 +58,8 @@ def record_validation(repo: Repo, ckpt_ref: str, run_dir: str) -> DecoupledCheck
     expected_info = {"kind": "from-checkpoint", "trace": str(ckpt.trace.uuid), "checkpoint": ckpt.name}
     if run_info != expected_info:
         raise FwmValidationError(
-            f"{run_dir} is not a run directory of checkpoint {ckpt.trace.uuid}:{ckpt.name} (made by `fwm mkgen from-checkpoint`)")
+            f"{run_dir} is not a run directory of checkpoint {ckpt.trace.uuid}:{ckpt.name} (made by "
+            f"`fwm mkgen from-checkpoint`)")
     if any(h.instret is None for h in trace_harts(ckpt.trace)):
         raise FwmValidationError(
             f"trace {ckpt.trace.uuid} has no final instruction count to compare with: it was imported without "

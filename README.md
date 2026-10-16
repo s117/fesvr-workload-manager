@@ -157,7 +157,7 @@ Exit status: 0 success, 1 unexpected error, 2 usage error or unusable repository
 
 ## Generated Makefiles
 
-Every Makefile has a single target, `run`. It first removes that run's previous outputs, so it can be run again.
+Every Makefile has a single target, `run`. It first removes that run's previous outputs, so it can be run again. A run directory can be generated again for the same kind of run, but not for another kind, whose Makefile wouldn't remove the former outputs.
 
 Next to it, `run.json` describes what the run uses: the sysroot, workload, entry point (with its metadata), trace and checkpoint, as `fwm show --json` shows them when the Makefile is generated. Its `kind` is the command that generated it, e.g. `from-simpoint` or `record`. A create-checkpoints run also lists the checkpoints it requests. See [docs/fwm-bootstrap-interface.md](docs/fwm-bootstrap-interface.md#runjson).
 

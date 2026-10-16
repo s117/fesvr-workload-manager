@@ -203,8 +203,8 @@ def remove_cmd(ctx, kind, id, recursive):
 @click.pass_context
 def record_validation_cmd(ctx, checkpoint, run_dir):
     """
-    Judge RUN_DIR, a run of CHECKPOINT to the end of the program (`fwm mkgen from-checkpoint`, run without -e), and record the
-    result with the checkpoint.
+    Judge RUN_DIR, a run of CHECKPOINT to the end of the program (`fwm mkgen from-checkpoint`, run without -e), and
+    record the result with the checkpoint.
 
     It passes when every HART's final instruction count equals the trace's. Prints "passed" or "failed" and why;
     fails with status 4 if the checkpoint failed.

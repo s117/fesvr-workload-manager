@@ -107,8 +107,8 @@ def test_missing_paths(repo, trace, tmp_path):
         add_checkpoints(repo, "e", write_desc(tmp_path, "a: 1000\n"), str(tmp_path / "missing"))
 
 
-SIMPOINT_INFO = {"interval": 100000000, "maxK": 10,
-                 "checkpoints": {"e.3.0.25": {"index": 3, "weight": 0.2531}, "e.5.0.75": {"index": 5, "weight": 0.7469}}}
+SIMPOINT_INFO = {"interval": 100000000, "maxK": 10, "checkpoints": {"e.3.0.25": {"index": 3, "weight": 0.2531},
+                                                                    "e.5.0.75": {"index": 5, "weight": 0.7469}}}
 
 
 def test_simpoint_info(repo, trace, tmp_path):

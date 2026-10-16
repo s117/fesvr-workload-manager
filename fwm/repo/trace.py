@@ -160,8 +160,8 @@ def _import_trace(repo: Repo, entry: NativeEntry, recording_dir: str, staged: st
         # -e leaves the final state empty; spike stopped by SIGTERM or SIGINT writes it, where it stopped, and exits 0
         raise FwmValidationError(
             f"the recording {recording_dir} is truncated (the program never exited), but its run wrote the final state "
-            f"{final_state}: spike was stopped by a signal, e.g. a job's time limit. Record it again, or import it as a "
-            f"truncated recording without --final-state.")
+            f"{final_state}: spike was stopped by a signal, e.g. a job's time limit. Record it again, or import it as "
+            f"a truncated recording without --final-state.")
 
     log = Logger.get_logger()
     if recording.exit_status is None:
