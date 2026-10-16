@@ -6,7 +6,7 @@ fwm-bootstrap is the workload preparation pipeline (Snakemake) that turns a work
 
 | Where | What runs there |
 | --- | --- |
-| One host, e.g. the Snakemake controller (`localrules`) | Commands that change the repository: `fwm repo init`, `repo add`, `repo remove`, `repo gc`, `repo record-validation`. |
+| One host, e.g. the Snakemake controller (`localrules`) | Commands that change the repository: `fwm repo init`, `repo add`, `repo set-metadata`, `repo remove`, `repo gc`, `repo record-validation`. |
 | Any compute node | The generated Makefiles (`make -C <run dir> run`). Only a record run opens the database, read-only, when `fwm spawn` checks the sysroot out. |
 | Anywhere, even without write permission | `fwm list`, `show`, `verify`, `mkgen`, `spawn`, shell completion. |
 
@@ -17,6 +17,7 @@ The database uses SQLite's rollback journal, not WAL, so it can sit on a shared 
 ```
  1. fwm repo add sysroot <dir> <sysroot> --exist-ok                                   controller
  2. fwm repo add entry <sysroot> <workload> <entry> <entry.json> --exist-ok           controller
+    fwm repo set-metadata <entry> <metadata.json>         (only if the metadata changed)
  3. spike --version > V                                                                compute
     fwm mkgen record <entry> -o R1
     make -C R1 run SIM_FLAGS_EXTRA=-s<interval> || true
@@ -35,6 +36,7 @@ The database uses SQLite's rollback journal, not WAL, so it can sit on a shared 
 ```
 
 - **Step 2: `entry.json`** holds the entry point's launch fields: `command`, `working_directory`, `envs` (`null` or `{}`), `stdin_file` (or `null`), `boot_elf`, `mem_mb`, and `nprocs` (must be 1). In paths, `/` is the sysroot's root and `.` the working directory. `boot_elf` and `stdin_file` must be regular files of the sysroot, not symlinks.
+- **Step 2's metadata.** `entry.json` may also hold `metadata`, any JSON object: put the suite's `index.yaml` `metadata` there (and its `auxiliary` data, if runs need it). fwm keeps it, shows it, and copies it into every `run.json`, but doesn't interpret it. `--exist-ok` doesn't compare it, so a rerun keeps the stored metadata and warns if it differs; `fwm repo set-metadata` replaces it (or removes it, with a file holding `null`) without touching the traces.
 - **Step 3** is the only step that needs the sysroot, and it must run on Linux. Steps 6 and 8 need only the trace and its checkpoints, so they can also run on ARM64 Linux or macOS.
 - **Step 3's SimPoint profile.** `-s<interval>` makes spike write `bbv_proc_<hart>.bb.gz` in the run directory. Taking it in the record run saves a full replay; a replay with `-s` gives the same profile. It needs a spike built without `NO_SIMPOINT`.
 - **Step 5's description file.** A checkpoint's instruction count is the number of instructions retired before it. spike's BBV intervals are not exactly `<interval>` long (the first was 1,000,005 for a 1,000,000 interval), and spike drops the last partial interval. So the count of the interval with index `i` must be the sum of the sizes of intervals `0 … i-1`, not `i × interval`. Name a SimPoint checkpoint `<entry>.<simpoint index>.<weight>` with the weight to 2 decimals, e.g. `bfs-road-n64.3.0.25`, as riscv-simenv did; the full-precision weight goes in the SimPoint info file.
@@ -42,7 +44,7 @@ The database uses SQLite's rollback journal, not WAL, so it can sit on a shared 
 
 ## Running a Makefile
 
-`fwm mkgen ... -o <dir>` writes `<dir>/Makefile` and prints its path on stdout. The directory must be new, empty, or a run directory fwm generated before. Each Makefile has a single target, `run`, which removes that run's previous outputs, prepares what spike needs, and runs spike.
+`fwm mkgen ... -o <dir>` writes `<dir>/Makefile` and `<dir>/run.json` (below), and prints the Makefile's path on stdout. The directory must be new, empty, or a run directory fwm generated before. Each Makefile has a single target, `run`, which removes that run's previous outputs, prepares what spike needs, and runs spike.
 
 | Makefile | Outputs |
 | --- | --- |
@@ -65,6 +67,18 @@ The database uses SQLite's rollback journal, not WAL, so it can sit on a shared 
 
 Each Makefile also starts with a line `# fwm-run: {...}` saying what the run is for, e.g. `{"kind": "load", "trace": "<uuid>", "checkpoint": "<name>"}`. `record-validation` uses it to check that a run directory belongs to the checkpoint.
 
+### run.json
+
+**`run.json` describes what the run uses,** so its results can be decoded without the repository. The Makefile's `run` target leaves it alone. It is a snapshot taken when `mkgen` ran: a later validation or `set-metadata` shows in `fwm show`, not here. It holds:
+- **`kind`:** `record`, `replay`, `create-checkpoints` or `load`.
+- **`generated`:** `time`, `command` (the `fwm mkgen` command line), `fwm_version`, `repo` (the repository path) and `sim` (the Makefile's default `SIM`).
+- **`sysroot`, `workload`, `entry`:** always. The entry point's `metadata` is here.
+- **`trace`:** for every kind but `record`.
+- **`checkpoint`:** for `load`.
+- **`requested_checkpoints`:** for `create-checkpoints`, a list of `{name, count}`, the lines of `ckpt.desc`.
+
+The sections are the objects of `fwm show --json` (see JSON below), without their lists of other items: the sysroot's and workload's `entries`, the entry point's `traces` and the trace's `checkpoints`.
+
 ## Names
 
 | Name | Characters | Unique within |
@@ -82,7 +96,7 @@ Each Makefile also starts with a line `# fwm-run: {...}` saying what the run is 
 | Command | stdout |
 | --- | --- |
 | `fwm repo init <path>` | the repository path |
-| `fwm repo add sysroot` / `add entry` | the name |
+| `fwm repo add sysroot` / `add entry`, `repo set-metadata` | the name |
 | `fwm repo add trace` | the trace UUID |
 | `fwm repo add checkpoint` | `<trace UUID>:<name>`, one line per checkpoint, in the order of the files |
 | `fwm repo record-validation` | `passed: <why>` or `failed: <why>` |
@@ -108,7 +122,7 @@ Exit status:
 
 - **workload:** `name`, `description`, `creation_time`, `entries` (names).
 - **sysroot:** `name`, `description`, `creation_time`, `path`, `num_files`, `num_links`, `num_dirs`, `size_bytes`, `entries`.
-- **entry:** `name`, `workload`, `sysroot`, `description`, `creation_time`, `command`, `working_directory`, `stdin_file`, `boot_elf`, `mem_mb`, `nprocs`, `traces` (UUIDs).
+- **entry:** `name`, `workload`, `sysroot`, `description`, `creation_time`, `command`, `working_directory`, `stdin_file`, `boot_elf`, `mem_mb`, `nprocs`, `metadata` (the object given, or `null`), `traces` (UUIDs).
 - **trace:**
   - `uuid`, `entry`, `description`, `creation_time`, `path`;
   - `mem_mb`, `num_harts`, `boot_elf_sha256`;
@@ -134,7 +148,7 @@ Every `repo add` takes `--exist-ok`, so a rule can simply be rerun:
 | Adding | With `--exist-ok`, succeeds and prints the existing item when |
 | --- | --- |
 | a sysroot | the tree has the same files, links, directories, permissions and digests |
-| an entry point | its sysroot, workload and launch fields are the same (the description may differ) |
+| an entry point | its sysroot, workload and launch fields are the same (the description and metadata may differ; the stored ones are kept) |
 | a trace | the recording is the same (per-HART SHA-256) and so is the final state |
 | a checkpoint | the trace has a checkpoint of that name with the same content digest |
 

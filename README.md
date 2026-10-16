@@ -21,7 +21,7 @@ sysroot ──(entry point)──> record ──> trace ──> replay + create 
 | --- | --- |
 | **sysroot** | A directory tree the program sees as `/`, imported read-only into the repository with a catalog (every file's permissions and SHA-256). |
 | **workload** | A name grouping the entry points that run the same program. |
-| **entry point** | How to launch a workload in a sysroot: the command, working directory, boot ELF (usually pk), stdin file, memory size and processor count. A workload can have entry points on several sysroots, and a sysroot can serve several workloads. |
+| **entry point** | How to launch a workload in a sysroot: the command, working directory, boot ELF (usually pk), stdin file, memory size and processor count, with optional free-form metadata. A workload can have entry points on several sysroots, and a sysroot can serve several workloads. |
 | **trace** | A recording (`+dev-traffic-record`) of a run of an entry point, identified by a UUID. It is *complete* if the program exited, or *truncated* if the run was stopped first (e.g. by `-e`). |
 | **checkpoint** | A snapshot taken while replaying a trace. It loads only with that trace. A SimPoint checkpoint carries its SimPoint index, interval and weight. |
 
@@ -64,12 +64,14 @@ fwm repo add entry road.sg bfs bfs-road-n64 bfs-road-n64.json
 
 ```json
 { "command": "bfs -f road.sg -n64", "working_directory": "/app",
-  "envs": null, "stdin_file": null, "boot_elf": "/boot/pk", "mem_mb": 2048, "nprocs": 1 }
+  "envs": null, "stdin_file": null, "boot_elf": "/boot/pk", "mem_mb": 2048, "nprocs": 1,
+  "metadata": { "suite": "GAPBS", "description": "Breadth-First Search on 'road'", "language": ["C++"] } }
 ```
 
 - `envs` must be `null` or `{}`: FESVR passes no environment to the program.
 - `nprocs` must be 1: checkpoints can be created for a single HART only.
 - `boot_elf` and `stdin_file` must be regular files of the sysroot, not symlinks.
+- `metadata` is optional and free-form: any JSON object, such as a riscv-simenv suite's `index.yaml` metadata. fwm shows it and copies it into each run's `run.json`. Change it later with `fwm repo set-metadata`.
 
 Record a run, and import the recording as a trace, with the `spike --version` output for provenance:
 
@@ -105,6 +107,7 @@ make -C run4 run SIM=/path/to/721sim SIM_FLAGS_EXTRA=-e100000000
 | `fwm repo init <path>` | Create a repository. |
 | `fwm repo add sysroot <dir> <name>` | Import a sysroot. |
 | `fwm repo add entry <sysroot> <workload> <name> <entry_point.json>` | Add an entry point. |
+| `fwm repo set-metadata <entry> <file.json>` | Replace an entry point's metadata (`null` removes it), keeping its traces. |
 | `fwm repo add trace <entry> <recording-dir> [--final-state f.json] [--sim-version f]` | Import a recording; prints its UUID. |
 | `fwm repo add checkpoint <trace> <file>... [--desc d] [--simpoint-info j] [--sim-version f]` | Import checkpoints in one transaction; prints `<uuid>:<name>` for each. |
 | `fwm repo record-validation <checkpoint> <run-dir>` | Judge a `mkgen load` run to the end, and record passed or failed. |
@@ -122,13 +125,17 @@ How to name things:
 - **A checkpoint** is `<trace>:<name>`, or just its name when no other trace has a checkpoint of that name.
 - **A checkpoint's SimPoint weight** comes from `--simpoint-info` or `--simpoint-weight`. Without either, it is decoded from a name following the riscv-simenv convention `<entry>.<simpoint index>.<weight>`, e.g. `bfs-road-n64.3.0.25`.
 
-Every `repo add` takes `--exist-ok`: if the same item is already in the repository, it prints it and succeeds. Without it, adding what exists fails with status 5. A recording that already is a trace of the entry point counts as existing, so a rerun never creates a second trace.
+Every `repo add` takes `--exist-ok`: if the same item is already in the repository, it prints it and succeeds. An entry point that differs only in its description or metadata is the same; it keeps its own. Without it, adding what exists fails with status 5. A recording that already is a trace of the entry point counts as existing, so a rerun never creates a second trace.
 
 Exit status: 0 success, 1 unexpected error, 2 usage error or unusable repository, 3 not found, 4 failed check, 5 already exists.
 
 ## Generated Makefiles
 
-Every Makefile has a single target, `run`. It first removes that run's previous outputs, so it can be run again. Override variables on the make command line:
+Every Makefile has a single target, `run`. It first removes that run's previous outputs, so it can be run again.
+
+Next to it, `run.json` describes what the run uses: the sysroot, workload, entry point (with its metadata), trace and checkpoint, as `fwm show --json` shows them when the Makefile is generated. A create-checkpoints run also lists the checkpoints it requests. See [docs/fwm-bootstrap-interface.md](docs/fwm-bootstrap-interface.md#runjson).
+
+Override variables on the make command line:
 
 | Variable | Use |
 | --- | --- |
