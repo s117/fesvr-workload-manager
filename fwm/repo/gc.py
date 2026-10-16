@@ -97,10 +97,8 @@ def _untracked(repo: Repo) -> Iterator[Leftover]:
         if name not in traces:
             yield Leftover(path, "no trace of this UUID")
             continue
-        files = sorted(os.listdir(path))
-        if not files and name not in checkpoints:
-            yield Leftover(path, "an empty checkpoint directory")
-        for file in files:
+        # the directory of a trace's checkpoints stays when its last checkpoint is removed, for the next import
+        for file in sorted(os.listdir(path)):
             if file not in checkpoints.get(name, set()):
                 yield Leftover(os.path.join(path, file), "no checkpoint of this name")
 

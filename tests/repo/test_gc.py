@@ -11,7 +11,7 @@ from click.testing import CliRunner
 from fwm.cli.fwm import cli
 from fwm.repo.entry import add_entry
 from fwm.repo.gc import collect_garbage, find_leftovers
-from fwm.repo.remove import remove_sysroot
+from fwm.repo.remove import remove_checkpoint, remove_sysroot
 from fwm.repo.repo import STAGING_DIR, CHECKPOINTS_DIR, TRACES_DIR
 from fwm.repo.sysroot import add_sysroot
 from fwm.repo.trace import add_trace
@@ -97,6 +97,32 @@ def test_read_only_repo(repo, sysroot_src, tmp_path):
             os.chmod(p, mode)
     assert result.exit_code == 4, result.output
     assert result.stdout.count("leftover ") == 2
+
+
+def test_trace_without_checkpoints(repo, sysroot_src, write_entry_point, tmp_path):
+    """Removing a trace's last checkpoint leaves its empty checkpoint directory, which is no leftover."""
+    add_sysroot(repo, str(sysroot_src), "sr")
+    add_entry(repo, "sr", "wl", "e", write_entry_point())
+    rec = tmp_path / "rec"
+    write_recording(str(rec), harts=[COMMANDS])
+    trace = add_trace(repo, "e", str(rec))
+    ckpt = tmp_path / "c"
+    write_checkpoint(str(ckpt), [CheckpointHart(recording_sha256(COMMANDS))])
+    import_checkpoint(repo, "e", str(ckpt))
+    remove_checkpoint(repo, "c")
+    assert os.listdir(repo.checkpoint_dir(trace.uuid)) == []
+    assert find_leftovers(repo, min_age=0) == []
+    import_checkpoint(repo, "e", str(ckpt))  # and the next import uses it
+
+
+def test_staging_without_lock(repo):
+    """Staging without its lock file (e.g. copied in by hand, or a crash between the two) has no owner."""
+    staged = os.path.join(repo.path, STAGING_DIR, uuid.uuid4().hex)
+    os.mkdir(staged)
+    make_old(staged)
+    assert [(f.path, f.reason) for f in find_leftovers(repo, min_age=0)] == [(staged, "staging without an owner")]
+    collect_garbage(repo, min_age=0)
+    assert staging_entries(repo) == []
 
 
 def test_untracked(repo, sysroot_src, write_entry_point, tmp_path, monkeypatch):
