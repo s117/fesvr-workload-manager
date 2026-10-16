@@ -272,6 +272,15 @@ def test_add_trace(repo, entry, tmp_path):
     assert verify_trace(repo, trace) == []
 
 
+def test_add_trace_nonzero_exit(repo, entry, tmp_path, caplog):
+    """A program that exits with an error status is a complete trace; the status is kept, with a warning."""
+    rec = tmp_path / "rec"
+    write_recording(str(rec), harts=[[Command(), exit_command(3)]])
+    trace = add_trace(repo, "e", str(rec), final_state=write_final_state(tmp_path, 900))
+    assert trace.exit_status == 3
+    assert "exited with status 3" in caplog.text
+
+
 def test_add_truncated_trace(repo, entry, tmp_path, caplog):
     rec = tmp_path / "rec"
     write_recording(str(rec), harts=[[Command(), Command()]])
@@ -417,6 +426,22 @@ def test_import_checkpoint(repo, trace, tmp_path):
 def test_add_checkpoint_wrong_trace(repo, trace, tmp_path, ckpt_kwargs, match):
     with pytest.raises(FwmValidationError, match=match):
         import_checkpoint(repo, "e", make_checkpoint(tmp_path, "c", **ckpt_kwargs))
+    assert DecoupledCheckpoint.select().count() == 0
+
+
+def test_add_checkpoint_other_system(repo, trace, tmp_path):
+    """A checkpoint of a system of another size or HART count doesn't belong to the trace."""
+    harts = [CkptHart(recording_sha256(COMMANDS), cmd_index=1)]
+    bigger = str(tmp_path / "bigger" / "c")
+    os.makedirs(os.path.dirname(bigger))
+    write_checkpoint(bigger, harts, mem_mb=2)
+    with pytest.raises(FwmValidationError, match="it is of a 2 MB system, the trace of a 1 MB one"):
+        import_checkpoint(repo, "e", bigger)
+    two_harts = str(tmp_path / "two" / "c")
+    os.makedirs(os.path.dirname(two_harts))
+    write_checkpoint(two_harts, harts * 2, mem_mb=1)
+    with pytest.raises(FwmValidationError, match=r"it has 2 HART\(s\), the trace has 1"):
+        import_checkpoint(repo, "e", two_harts)
     assert DecoupledCheckpoint.select().count() == 0
 
 
