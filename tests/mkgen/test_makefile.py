@@ -10,6 +10,7 @@ from fwm.mkgen.makefile import (
     generate_from_sysroot, generate_from_fesvr_trace, generate_from_checkpoint, generate_from_simpoint, generate_record,
     generate_create_checkpoints, prepare_run_dir, make_escape, shell_value, read_run_info, MAKEFILE
 )
+from fwm.database.schema import DecoupledTrace
 from fwm.mkgen.run_json import RUN_JSON
 from fwm.repo import query
 from fwm.repo.repo import Repo
@@ -144,6 +145,15 @@ def test_create_checkpoints_invalid(repo, trace, tmp_path, text, match):
     with pytest.raises(FwmValidationError, match=match):
         generate_create_checkpoints(repo, "e", str(desc), str(tmp_path / "run"))
     assert not (tmp_path / "run").exists()
+
+
+def test_create_checkpoints_of_several_harts(repo, trace, tmp_path):
+    """FESVR creates checkpoints of a single HART only. (No trace has several yet: entry points have one processor.)"""
+    DecoupledTrace.update(num_harts=2).where(DecoupledTrace.uuid == trace.uuid).execute()
+    desc = tmp_path / "d.txt"
+    desc.write_text("c: 10\n")
+    with pytest.raises(FwmValidationError, match="has 2 HARTs: FESVR creates checkpoints of a single HART only"):
+        generate_create_checkpoints(repo, "e", str(desc), str(tmp_path / "run"))
 
 
 def test_create_checkpoints_missing_desc(repo, trace, tmp_path):

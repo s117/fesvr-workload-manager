@@ -125,6 +125,17 @@ def test_spawn_sysroot(repo, sysroot_src, tmp_path):
     assert not (dest / "app" / "output.txt").exists()
 
 
+def test_spawn_damaged_sysroot(repo, sysroot_src, tmp_path):
+    """A sysroot whose stored files no longer match its catalog isn't handed out: the copy is verified."""
+    add_sysroot(repo, str(sysroot_src), "sr")
+    stored = os.path.join(repo.sysroot_dir("sr"), "app", "input.txt")
+    os.chmod(stored, 0o644)
+    with open(stored, "w") as f:
+        f.write("damaged\n")
+    with pytest.raises(FwmValidationError, match=r"doesn't match its catalog:\n  app/input.txt: "):
+        spawn_sysroot(repo, "sr", str(tmp_path / "copy"))
+
+
 def test_spawn_missing_sysroot(repo, tmp_path):
     with pytest.raises(NotFoundError):
         spawn_sysroot(repo, "nope", str(tmp_path / "x"))
@@ -164,6 +175,7 @@ def test_workloads_and_sysroots_many_to_many(repo, sysroot_src, write_entry_poin
     ({"working_directory": "/nope"}, "not a directory of the sysroot"),
     ({"working_directory": "/app/abs-link"}, "is a symlink"),
     ({"command": "  "}, "the command is empty"),
+    ({"command": 'prog "unclosed'}, "cannot split the command"),
     ({"nprocs": 2}, "invalid entry point"),
     ({"proxy_kernel": "/boot/pk"}, "invalid entry point"),
     ({"metadata": "GAPBS"}, "invalid entry point"),

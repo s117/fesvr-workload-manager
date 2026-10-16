@@ -144,6 +144,11 @@ def test_verify(run, populated, tmp_path):
 def test_remove(run, populated, tmp_path):
     trace_uuid = populated
     assert run("repo", "remove", "checkpoint", "e.2.0.40")[0] == 0
+    # empty after its last checkpoint, which is fine
+    assert run("repo", "verify")[0] == 0
+    assert run("repo", "remove", "trace", trace_uuid)[0] == 0
+    assert run("repo", "remove", "entry", "e")[0] == 0
+    assert json.loads(run("list", "workloads", "--json")[1]) == []  # gone with its last entry point
     assert run("repo", "remove", "sysroot", "sr", "--recursive")[0] == 0
     for kind in ("workloads", "sysroots", "entries", "traces", "checkpoints"):
         assert json.loads(run("list", kind, "--json")[1]) == []
