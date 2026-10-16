@@ -19,7 +19,8 @@ def _done(makefile: str) -> None:
 @click.group()
 def mkgen():
     """
-    Generate the Makefile of a simulation run in a run directory.
+    Generate the Makefile of a simulation run in a run directory, and run.json, which describes what the run uses:
+    its sysroot, workload, entry point (with its metadata), trace and checkpoint, as `fwm show --json` shows them.
 
     \b
     Override its variables on the make command line, e.g.

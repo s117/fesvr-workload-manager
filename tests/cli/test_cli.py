@@ -187,6 +187,7 @@ def test_read_only_repo(run, populated, tmp_path, write_entry_point):
         assert run("show", "trace", populated, "--json")[0] == 0
         assert run("repo", "verify")[0] == 0
         assert run("mkgen", "replay", populated, "-o", str(tmp_path / "run"))[0] == 0
+        assert json.loads((tmp_path / "run" / "run.json").read_text())["trace"]["uuid"] == populated
         # no journal or other file is left behind by reading
         assert sorted(os.listdir(repo_path)) == [".staging", "checkpoints", "fwm.db", "sysroots", "traces"]
 

@@ -1,3 +1,4 @@
+import json
 import os
 import re
 import stat
@@ -9,11 +10,13 @@ from fwm.mkgen.makefile import (
     generate_record, generate_replay, generate_load, prepare_run_dir, make_escape, shell_value, read_run_info,
     MAKEFILE
 )
+from fwm.mkgen.run_json import RUN_JSON
+from fwm.repo import query
 from fwm.repo.repo import Repo
-from fwm.repo.checkpoint import add_checkpoint
-from fwm.repo.entry import add_entry
+from fwm.repo.checkpoint import add_checkpoint, resolve_checkpoint
+from fwm.repo.entry import add_entry, get_entry, set_entry_metadata
 from fwm.repo.errors import FwmValidationError, NotFoundError
-from fwm.repo.sysroot import add_sysroot
+from fwm.repo.sysroot import add_sysroot, get_sysroot
 from fwm.repo.trace import add_trace
 from tests.fesvr_files import (
     write_recording, write_checkpoint, Command, exit_command, recording_sha256, CheckpointHart
@@ -268,3 +271,66 @@ def test_run_info(repo, trace, tmp_path):
     generate_load(repo, "c", str(tmp_path / "load"))
     assert read_run_info(str(tmp_path / "load")) == {"kind": "load", "trace": str(trace.uuid), "checkpoint": "c"}
     assert read_run_info(str(tmp_path)) is None
+
+
+def read_run_json(run_dir) -> dict:
+    with open(os.path.join(run_dir, RUN_JSON)) as f:
+        return json.load(f)
+
+
+def test_run_json(repo, trace, tmp_path, monkeypatch):
+    """run.json holds the views of `fwm show --json` of what each run uses, without their lists of other items."""
+    monkeypatch.setenv("FWM_SIM_CMD", "/opt/spike")
+    metadata = tmp_path / "metadata.json"
+    metadata.write_text('{"suite": "GAPBS", "language": ["C++"]}')
+    set_entry_metadata(repo, "e", str(metadata))
+    file = tmp_path / "c"
+    write_checkpoint(str(file), [CheckpointHart(recording_sha256(COMMANDS))])
+    add_checkpoint(repo, "e", str(file))
+    desc = tmp_path / "d.txt"
+    desc.write_text("a: 10\nb: 20\n")
+
+    entry = get_entry("e")
+    sysroot = {k: v for k, v in query.sysroot_view(repo, get_sysroot("sr")).items() if k != "entries"}
+    workload = {k: v for k, v in query.workload_view(entry.workload).items() if k != "entries"}
+    entry_view = {k: v for k, v in query.entry_view(entry).items() if k != "traces"}
+    trace_view = {k: v for k, v in query.trace_view(repo, trace).items() if k != "checkpoints"}
+    ckpt_view = query.checkpoint_view(repo, resolve_checkpoint("c"))
+    assert entry_view["metadata"] == {"suite": "GAPBS", "language": ["C++"]}
+    common = {"sysroot": sysroot, "workload": workload, "entry": entry_view}
+
+    generate_record(repo, "e", str(tmp_path / "record"))
+    generate_replay(repo, "e", str(tmp_path / "replay"))
+    generate_replay(repo, "e", str(tmp_path / "create"), ckpt_desc=str(desc))
+    generate_load(repo, "c", str(tmp_path / "load"))
+    expected = {
+        "record": {"kind": "record", **common},
+        "replay": {"kind": "replay", **common, "trace": trace_view},
+        "create": {"kind": "create-checkpoints", **common, "trace": trace_view,
+                   "requested_checkpoints": [{"name": "a", "count": 10}, {"name": "b", "count": 20}]},
+        "load": {"kind": "load", **common, "trace": trace_view, "checkpoint": ckpt_view},
+    }
+    for run, sections in expected.items():
+        described = read_run_json(tmp_path / run)
+        generated = described.pop("generated")
+        assert described == sections, run
+        assert list(described) == list(sections), run  # in this order
+        assert set(generated) == {"time", "command", "fwm_version", "repo", "sim"}
+        assert (generated["repo"], generated["sim"]) == (repo.path, "/opt/spike")
+        # the Makefile says when and how it was generated, like run.json
+        with open(tmp_path / run / MAKEFILE) as f:
+            assert generated["time"] in f.readline()
+            assert f.readline().strip() == "#   " + generated["command"]
+
+
+def test_run_json_regenerated(repo, entry, tmp_path):
+    """Generating again in a run directory replaces run.json, and running the Makefile leaves it alone."""
+    run = tmp_path / "run"
+    generate_record(repo, "e", str(run))
+    assert read_run_json(run)["entry"]["metadata"] is None
+    metadata = tmp_path / "metadata.json"
+    metadata.write_text('{"suite": "x"}')
+    set_entry_metadata(repo, "e", str(metadata))
+    generate_record(repo, "e", str(run))
+    assert read_run_json(run)["entry"]["metadata"] == {"suite": "x"}
+    assert RUN_JSON not in make_dry_run(run)
