@@ -1,4 +1,5 @@
 import gzip
+import hashlib
 import os
 import struct
 
@@ -168,3 +169,44 @@ def test_exit_status_like_spike(tmp_path, status, expected):
     # spike's process exits with the low 8 bits of the program's status
     write_recording(str(tmp_path), harts=[[Command(), exit_command(status)]])
     assert read_recording(str(tmp_path)).exit_status == expected
+
+
+def write_raw_hart(rec_dir, packets: bytes, offsets):
+    """Replace HART 0's files with this .packets stream and index, with a matching SHA256, uncompressed."""
+    for ext, data in (("packets", packets),
+                      ("index", struct.pack("<I", 0x38834639) + b"".join(struct.pack("<Q", o) for o in offsets)),
+                      ("sha256", struct.pack("<I", 0x38833478) + hashlib.sha256(packets).digest())):
+        with open(hart_file(str(rec_dir), 0, ext), "wb") as f:
+            f.write(data)
+
+
+MAGIC = struct.pack("<I", 0x38837587)
+BEGIN = struct.pack("<iBBQ", 0, 0, 0, 0x1000)  # COMMAND_BEGIN
+ACCESS = struct.pack("<iQIB", 1, 0x1000, 4, 0) + b"data"  # PHYSICAL_MEMORY_ACCESS of 4 bytes
+END = struct.pack("<iBQqI", 128, 1, 1, 0, 0)  # COMMAND_END
+
+
+@pytest.mark.parametrize("packets, offsets, match", [
+    (MAGIC + BEGIN + END, [8], "doesn't start at the first packet"),
+    (MAGIC + BEGIN + ACCESS + END, [4, 4 + len(BEGIN)], "doesn't point to a COMMAND_BEGIN"),
+    (MAGIC + BEGIN + b"\0\0", [4], "unexpected end of stream"),
+    (MAGIC + BEGIN + ACCESS[:7], [4], "unexpected end of stream"),
+    (MAGIC + BEGIN + struct.pack("<i", 7) + b"\0" * 8, [4], "unexpected packet type 7"),
+    (MAGIC + BEGIN + END + b"\0", [4], "COMMAND_END is not the end of the stream"),
+    (MAGIC + BEGIN + END, [], "holds packets, but its index lists no command"),
+    (b"", [], "bad magic number"),
+])
+def test_malformed_packets(tmp_path, packets, offsets, match):
+    write_recording(str(tmp_path), compress=False)
+    write_raw_hart(tmp_path, packets, offsets)
+    with pytest.raises(RecordingFormatError, match=match):
+        read_recording(str(tmp_path))
+
+
+def test_no_hart(tmp_path):
+    write_recording(str(tmp_path))
+    with open(tmp_path / "target_spec.data", "r+b") as f:
+        f.seek(4)
+        f.write(struct.pack("<I", 0))
+    with pytest.raises(RecordingFormatError, match="records a system with no HART"):
+        read_recording(str(tmp_path))

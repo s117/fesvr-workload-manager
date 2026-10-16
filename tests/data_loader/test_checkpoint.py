@@ -150,3 +150,34 @@ def test_content_sha256_matches_digest_script(tmp_path):
     output = subprocess.run([sys.executable, os.path.join(SPIKE_SRC, "scripts", "checkpoint-digest.py"), path],
                             check=True, capture_output=True).stdout
     assert checkpoint_content_sha256(path) == hashlib.sha256(output).hexdigest()
+
+
+HEADER_SIZE = 48  # magic, version, number of HARTs, memory size, boot ELF SHA256
+HART_RECORD_SIZE = 32 + 8 + 4 + 8192  # recording SHA256, command index, state size, state storage
+
+
+def test_hart_state_larger_than_its_storage(tmp_path):
+    path = tmp_path / "ckpt"
+    write_checkpoint(str(path), [CheckpointHart(REC_SHA)])
+    with open(path, "r+b") as f:
+        f.seek(HEADER_SIZE + 32 + 8)
+        f.write((8193).to_bytes(4, "little"))
+    with pytest.raises(CheckpointFormatError, match="the state of HART 0 is 8193 bytes, more than its storage"):
+        read_checkpoint_header(str(path))
+
+
+def test_corrupt_memory_image(tmp_path):
+    path = tmp_path / "ckpt"
+    write_checkpoint(str(path), [CheckpointHart(REC_SHA)])
+    with open(path, "r+b") as f:
+        f.seek(HEADER_SIZE + HART_RECORD_SIZE + 2)  # past the zlib header, into the first block
+        f.write(b"\xff" * 16)
+    with pytest.raises(CheckpointFormatError, match="corrupt memory image"):
+        checkpoint_digest_lines(str(path))
+
+
+def test_digest_names_unknown_state_entries(tmp_path):
+    path = str(tmp_path / "ckpt")
+    entries = default_hart_state_entries() + [(0x1234, 7)]
+    write_checkpoint(path, [CheckpointHart(REC_SHA, state=encode_hart_state(entries))])
+    assert any(line.split()[0] == "id" and "0x1234" in line for line in checkpoint_digest_lines(path))
