@@ -6,7 +6,7 @@ repository is opened here from the parsed --repo-path (or FWM_REPO_PATH). Comple
 usable repository, or on any error, a callback offers nothing.
 """
 import re
-from typing import Callable, Dict, Iterable, List, Optional, Tuple, Union
+from typing import Callable, Dict, Iterable, Iterator, List, Optional, Tuple, Union
 
 import click
 from click.shell_completion import CompletionItem
@@ -95,7 +95,7 @@ def _checkpoint_help(ckpt: DecoupledCheckpoint) -> str:
     return f"{ckpt.trace.native_entry.name}{weight}"
 
 
-def _checkpoints(ctx: click.Context, incomplete: str) -> Candidates:
+def _checkpoint_refs(incomplete: str) -> Iterator[Tuple[str, DecoupledCheckpoint]]:
     """
     Checkpoints as resolve_checkpoint() accepts them, each once: by its name when the name is unique in the repository,
     otherwise as <trace UUID>:<name>.
@@ -107,7 +107,7 @@ def _checkpoints(ctx: click.Context, incomplete: str) -> Candidates:
         trace_ref = incomplete.split(":", 1)[0]
         trace = resolve_trace(trace_ref)
         for ckpt in trace.checkpoints:
-            yield f"{trace_ref}:{ckpt.name}", _checkpoint_help(ckpt)
+            yield f"{trace_ref}:{ckpt.name}", ckpt
         return
 
     by_name: Dict[str, List[DecoupledCheckpoint]] = {}
@@ -115,10 +115,20 @@ def _checkpoints(ctx: click.Context, incomplete: str) -> Candidates:
         by_name.setdefault(ckpt.name, []).append(ckpt)
     for name, ckpts in by_name.items():
         if len(ckpts) == 1:
-            yield name, _checkpoint_help(ckpts[0])
+            yield name, ckpts[0]
         else:
             for ckpt in ckpts:
-                yield f"{ckpt.trace.uuid}:{name}", _checkpoint_help(ckpt)
+                yield f"{ckpt.trace.uuid}:{name}", ckpt
+
+
+def _checkpoints(ctx: click.Context, incomplete: str) -> Candidates:
+    return ((ref, _checkpoint_help(ckpt)) for ref, ckpt in _checkpoint_refs(incomplete))
+
+
+def _simpoint_checkpoints(ctx: click.Context, incomplete: str) -> Candidates:
+    """The checkpoints that have SimPoint information (fwm mkgen from-simpoint)."""
+    return ((ref, _checkpoint_help(ckpt)) for ref, ckpt in _checkpoint_refs(incomplete)
+            if ckpt.simpoint_interval is not None)
 
 
 _BY_KIND: Dict[str, Callable[[click.Context, str], Candidates]] = {
@@ -152,5 +162,6 @@ complete_workload = _completer(_workloads)
 complete_entry = _completer(_entries)
 complete_trace = _completer(_traces)
 complete_checkpoint = _completer(_checkpoints)
+complete_simpoint_checkpoint = _completer(_simpoint_checkpoints)
 complete_by_kind = _completer(_by_kind)
 complete_list_filter = _completer(_list_filter)

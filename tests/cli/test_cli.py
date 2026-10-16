@@ -5,7 +5,7 @@ from click.testing import CliRunner
 
 from fwm.cli.fwm import cli
 from tests.data_loader.test_sim_version import SPIKE_VERSION
-from tests.cli.conftest import COMMANDS, write_simpoint_info
+from tests.cli.conftest import COMMANDS, write_checkpoints, write_simpoint_info
 from tests.fesvr_files import (
     write_recording, write_checkpoint, recording_sha256, Command, CheckpointHart, encode_hart_state,
     default_hart_state_entries, exit_command
@@ -158,20 +158,52 @@ def test_spawn(run, populated, tmp_path):
     assert run("spawn", "--force", "sr", str(dest))[0] == 0
 
 
-def test_mkgen(run, populated, tmp_path, caplog):
-    code, out, _ = run("mkgen", "record", "e", "-o", str(tmp_path / "r1"))
+def run_kind(run_dir) -> str:
+    return json.loads((run_dir / "run.json").read_text())["kind"]
+
+
+def test_mkgen(run, populated, tmp_path, caplog, write_entry_point):
+    code, out, _ = run("mkgen", "from-sysroot", "e", "-o", str(tmp_path / "r1"))
     assert (code, out) == (0, str(tmp_path / "r1" / "Makefile") + "\n")
     assert f"make -C {tmp_path / 'r1'} run" in caplog.text
+    assert run_kind(tmp_path / "r1") == "from-sysroot"
+    assert run("mkgen", "from-fesvr-trace", "e", "-o", str(tmp_path / "r2"))[0] == 0
+    assert run_kind(tmp_path / "r2") == "from-fesvr-trace"
 
-    assert run("mkgen", "replay", "e", "-o", str(tmp_path / "r2"))[0] == 0
+    # a SimPoint checkpoint: from-checkpoint suggests from-simpoint
+    caplog.clear()
+    assert run("mkgen", "from-checkpoint", "e.2.0.40", "-o", str(tmp_path / "r3"))[0] == 0
+    assert "fwm mkgen from-simpoint e.2.0.40" in caplog.text
+    assert run("mkgen", "from-simpoint", "e.2.0.40", "-o", str(tmp_path / "r4"))[0] == 0
+    assert "INTERVAL := 1000\n" in (tmp_path / "r4" / "Makefile").read_text()
+
+    # a checkpoint without SimPoint information
+    desc, checkpoints = write_checkpoints(tmp_path / "plain", "plain")
+    assert run("repo", "add", "checkpoint", "e", desc, checkpoints)[0] == 0
+    caplog.clear()
+    assert run("mkgen", "from-checkpoint", "plain", "-o", str(tmp_path / "r5"))[0] == 0
+    assert "from-simpoint" not in caplog.text
+    code, _, err = run("mkgen", "from-simpoint", "plain", "-o", str(tmp_path / "r6"))
+    assert code == 4
+    assert "no SimPoint information" in err
+
+    # the former commands are gone
+    for old in ("record", "replay", "load"):
+        assert run("mkgen", old, "e")[0] == 2
+
+
+def test_bootstrap(run, populated, tmp_path, caplog):
+    code, out, _ = run("repo", "bootstrap", "record", "e", "-o", str(tmp_path / "r1"))
+    assert (code, out) == (0, str(tmp_path / "r1" / "Makefile") + "\n")
+    assert run_kind(tmp_path / "r1") == "record"
     desc = tmp_path / "d.txt"
     desc.write_text("c: 100\n")
-    assert run("mkgen", "replay", "e", "--create-checkpoints", str(desc), "-o", str(tmp_path / "r3"))[0] == 0
-    assert (tmp_path / "r3" / "ckpt.desc").is_file()
-    assert run("mkgen", "load", "e.2.0.40", "-o", str(tmp_path / "r4"))[0] == 0
+    assert run("repo", "bootstrap", "create-checkpoints", "e", str(desc), "-o", str(tmp_path / "r2"))[0] == 0
+    assert (tmp_path / "r2" / "ckpt.desc").is_file()
+    assert run_kind(tmp_path / "r2") == "create-checkpoints"
 
     desc.write_text("c: 9000\n")
-    code, _, err = run("mkgen", "replay", "e", "--create-checkpoints", str(desc), "-o", str(tmp_path / "r5"))
+    code, _, err = run("repo", "bootstrap", "create-checkpoints", "e", str(desc), "-o", str(tmp_path / "r3"))
     assert code == 4
     assert "exits after 5000 instructions" in err
 
@@ -186,8 +218,11 @@ def test_read_only_repo(run, populated, tmp_path, write_entry_point):
         assert run("list", "--json")[0] == 0
         assert run("show", "trace", populated, "--json")[0] == 0
         assert run("repo", "verify")[0] == 0
-        assert run("mkgen", "replay", populated, "-o", str(tmp_path / "run"))[0] == 0
-        assert json.loads((tmp_path / "run" / "run.json").read_text())["trace"]["uuid"] == populated
+        for i, args in enumerate([("mkgen", "from-sysroot", "e"), ("mkgen", "from-fesvr-trace", populated),
+                                  ("mkgen", "from-checkpoint", "e.2.0.40"), ("mkgen", "from-simpoint", "e.2.0.40"),
+                                  ("repo", "bootstrap", "record", "e")]):
+            assert run(*args, "-o", str(tmp_path / f"run{i}"))[0] == 0, args
+        assert json.loads((tmp_path / "run1" / "run.json").read_text())["trace"]["uuid"] == populated
         # no journal or other file is left behind by reading
         assert sorted(os.listdir(repo_path)) == [".staging", "checkpoints", "fwm.db", "sysroots", "traces"]
 

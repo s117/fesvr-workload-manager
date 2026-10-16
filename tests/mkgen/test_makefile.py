@@ -7,8 +7,8 @@ import subprocess
 import pytest
 
 from fwm.mkgen.makefile import (
-    generate_record, generate_replay, generate_load, prepare_run_dir, make_escape, shell_value, read_run_info,
-    MAKEFILE
+    generate_from_sysroot, generate_from_fesvr_trace, generate_from_checkpoint, generate_from_simpoint, generate_record,
+    generate_create_checkpoints, prepare_run_dir, make_escape, shell_value, read_run_info, MAKEFILE
 )
 from fwm.mkgen.run_json import RUN_JSON
 from fwm.repo import query
@@ -111,7 +111,7 @@ def test_record_runs(repo, entry, tmp_path):
 
 def test_replay(repo, trace, tmp_path):
     run = tmp_path / "run"
-    generate_replay(repo, "e", str(run))
+    generate_from_fesvr_trace(repo, "e", str(run))
     commands = make_dry_run(run)
     assert f"rm -f {run}/final-state.json" in commands
     sim_line = next(line for line in commands.splitlines() if "+dev-traffic-replay=" in line)
@@ -124,7 +124,7 @@ def test_create_checkpoints(repo, trace, tmp_path):
     desc = tmp_path / "d.txt"
     desc.write_text("e.0.0.50: 1000\ne.1.0.50: 2000\n")
     run = tmp_path / "run"
-    generate_replay(repo, "e", str(run), ckpt_desc=str(desc))
+    generate_create_checkpoints(repo, "e", str(desc), str(run))
     assert (run / "ckpt.desc").read_text() == desc.read_text()
     commands = make_dry_run(run)
     assert f"rm -rf {run}/final-state.json {run}/checkpoints" in commands
@@ -142,21 +142,65 @@ def test_create_checkpoints_invalid(repo, trace, tmp_path, text, match):
     desc = tmp_path / "d.txt"
     desc.write_text(text)
     with pytest.raises(FwmValidationError, match=match):
-        generate_replay(repo, "e", str(tmp_path / "run"), ckpt_desc=str(desc))
+        generate_create_checkpoints(repo, "e", str(desc), str(tmp_path / "run"))
     assert not (tmp_path / "run").exists()
 
 
 def test_create_checkpoints_missing_desc(repo, trace, tmp_path):
     with pytest.raises(NotFoundError):
-        generate_replay(repo, "e", str(tmp_path / "run"), ckpt_desc=str(tmp_path / "missing"))
+        generate_create_checkpoints(repo, "e", str(tmp_path / "missing"), str(tmp_path / "run"))
 
 
-def test_load(repo, trace, tmp_path):
+def test_from_sysroot(repo, entry, tmp_path):
+    run = tmp_path / "run"
+    generate_from_sysroot(repo, "e", str(run))
+    commands = make_dry_run(run, "SIM_FLAGS_EXTRA=-e100", "APP_CMD_EXTRA=extra")
+    assert f"rm -rf {run}/final-state.json {run}/console.stdout {run}/console.stderr" in commands
+    assert f"--repo-path {repo.path} spawn --force sr {run}/sysroot" in commands
+    sim_line = next(line for line in commands.splitlines() if "+chroot=" in line)
+    assert sim_line.startswith(f"cd {run} && spike -m1 -p1 -e100 ")
+    for part in (f"+chroot={run}/sysroot", "+target-cwd=/app", f"+final-state-dump={run}/final-state.json",
+                 f"+std-dump={run}/console", f"/boot/pk prog.rv64 input.txt extra < {run}/sysroot/app/input.txt"):
+        assert part in sim_line
+    # it records nothing
+    assert "dev-traffic" not in commands
+    assert "trace" not in commands
+
+
+SIMPOINT_INFO = {"interval": 100000000, "maxK": 10, "checkpoints": {"c": {"index": 3, "weight": 0.25}}}
+
+
+def test_from_simpoint(repo, trace, tmp_path):
+    file = tmp_path / "c"
+    write_checkpoint(str(file), [CheckpointHart(recording_sha256(COMMANDS))])
+    import_checkpoint(repo, "e", str(file), simpoint_info=SIMPOINT_INFO)
+    run = tmp_path / "run"
+    generate_from_simpoint(repo, "c", str(run))
+    load = (f"+dev-traffic-replay={repo.trace_dir(trace.uuid)} +load-checkpoint={repo.checkpoint_path(trace.uuid, 'c')} "
+            f"+final-state-dump={run}/final-state.json")
+    assert f"cd {run} && spike -m1 -p1 -e100000000 {load}" in make_dry_run(run)
+    # the interval stays when other spike options are given, and INTERVAL changes it
+    assert f"spike -m1 -p1 -e100000000 -l {load}" in make_dry_run(run, "SIM_FLAGS_EXTRA=-l")
+    assert f"spike -m1 -p1 -e5000 {load}" in make_dry_run(run, "INTERVAL=5000")
+    with open(run / MAKEFILE) as f:
+        assert "at SimPoint 3 of\n# weight 0.25" in f.read()
+
+
+def test_from_simpoint_needs_simpoint_info(repo, trace, tmp_path):
+    file = tmp_path / "c"
+    write_checkpoint(str(file), [CheckpointHart(recording_sha256(COMMANDS))])
+    import_checkpoint(repo, "e", str(file))
+    with pytest.raises(FwmValidationError, match="has no SimPoint information.*from-checkpoint"):
+        generate_from_simpoint(repo, "c", str(tmp_path / "run"))
+    assert not (tmp_path / "run").exists()
+
+
+def test_from_checkpoint(repo, trace, tmp_path):
     file = tmp_path / "e.0.0.50"
     write_checkpoint(str(file), [CheckpointHart(recording_sha256(COMMANDS))])
     import_checkpoint(repo, "e", str(file))
     run = tmp_path / "run"
-    generate_load(repo, "e.0.0.50", str(run))
+    generate_from_checkpoint(repo, "e.0.0.50", str(run))
     commands = make_dry_run(run, "SIM_FLAGS_EXTRA=-e100000000")
     assert (f"cd {run} && spike -m1 -p1 -e100000000 +dev-traffic-replay={repo.trace_dir(trace.uuid)} "
             f"+load-checkpoint={repo.checkpoint_path(trace.uuid, 'e.0.0.50')} "
@@ -233,7 +277,7 @@ def test_awkward_paths(tmp_path, sysroot_src, write_entry_point):
         write_recording(str(rec), harts=[COMMANDS])
         trace = add_trace(repo, "e", str(rec))
         run = base / "replay run"
-        generate_replay(repo, "e", str(run))
+        generate_from_fesvr_trace(repo, "e", str(run))
         (run / "final-state.json").write_text("stale")
         subprocess.run(["make", "-C", str(run), "run", f"SIM={sim}"], check=True, capture_output=True)
         argv = (run / "argv.txt").read_text().splitlines()
@@ -260,17 +304,21 @@ def test_run_dir_with_newline(tmp_path):
 def test_run_info(repo, trace, tmp_path):
     generate_record(repo, "e", str(tmp_path / "record"))
     assert read_run_info(str(tmp_path / "record")) == {"kind": "record", "entry": "e"}
-    generate_replay(repo, "e", str(tmp_path / "replay"))
-    assert read_run_info(str(tmp_path / "replay")) == {"kind": "replay", "trace": str(trace.uuid)}
+    generate_from_fesvr_trace(repo, "e", str(tmp_path / "replay"))
+    assert read_run_info(str(tmp_path / "replay")) == {"kind": "from-fesvr-trace", "trace": str(trace.uuid)}
     desc = tmp_path / "d.txt"
     desc.write_text("c: 10\n")
-    generate_replay(repo, "e", str(tmp_path / "create"), ckpt_desc=str(desc))
+    generate_create_checkpoints(repo, "e", str(desc), str(tmp_path / "create"))
     assert read_run_info(str(tmp_path / "create")) == {"kind": "create-checkpoints", "trace": str(trace.uuid)}
+    generate_from_sysroot(repo, "e", str(tmp_path / "sysroot"))
+    assert read_run_info(str(tmp_path / "sysroot")) == {"kind": "from-sysroot", "entry": "e"}
     file = tmp_path / "c"
     write_checkpoint(str(file), [CheckpointHart(recording_sha256(COMMANDS))])
-    import_checkpoint(repo, "e", str(file))
-    generate_load(repo, "c", str(tmp_path / "load"))
-    assert read_run_info(str(tmp_path / "load")) == {"kind": "load", "trace": str(trace.uuid), "checkpoint": "c"}
+    import_checkpoint(repo, "e", str(file), simpoint_info=SIMPOINT_INFO)
+    for kind in ("from-checkpoint", "from-simpoint"):
+        generate = generate_from_checkpoint if kind == "from-checkpoint" else generate_from_simpoint
+        generate(repo, "c", str(tmp_path / kind))
+        assert read_run_info(str(tmp_path / kind)) == {"kind": kind, "trace": str(trace.uuid), "checkpoint": "c"}
     assert read_run_info(str(tmp_path)) is None
 
 
@@ -287,7 +335,7 @@ def test_run_json(repo, trace, tmp_path, monkeypatch):
     set_entry_metadata(repo, "e", str(metadata))
     file = tmp_path / "c"
     write_checkpoint(str(file), [CheckpointHart(recording_sha256(COMMANDS))])
-    import_checkpoint(repo, "e", str(file))
+    import_checkpoint(repo, "e", str(file), simpoint_info=SIMPOINT_INFO)
     desc = tmp_path / "d.txt"
     desc.write_text("a: 10\nb: 20\n")
 
@@ -300,16 +348,21 @@ def test_run_json(repo, trace, tmp_path, monkeypatch):
     assert entry_view["metadata"] == {"suite": "GAPBS", "language": ["C++"]}
     common = {"sysroot": sysroot, "workload": workload, "entry": entry_view}
 
+    generate_from_sysroot(repo, "e", str(tmp_path / "from-sysroot"))
+    generate_from_fesvr_trace(repo, "e", str(tmp_path / "from-fesvr-trace"))
+    generate_from_checkpoint(repo, "c", str(tmp_path / "from-checkpoint"))
+    generate_from_simpoint(repo, "c", str(tmp_path / "from-simpoint"))
     generate_record(repo, "e", str(tmp_path / "record"))
-    generate_replay(repo, "e", str(tmp_path / "replay"))
-    generate_replay(repo, "e", str(tmp_path / "create"), ckpt_desc=str(desc))
-    generate_load(repo, "c", str(tmp_path / "load"))
+    generate_create_checkpoints(repo, "e", str(desc), str(tmp_path / "create-checkpoints"))
+    assert ckpt_view["simpoint_interval"] == 100000000
     expected = {
+        "from-sysroot": {"kind": "from-sysroot", **common},
+        "from-fesvr-trace": {"kind": "from-fesvr-trace", **common, "trace": trace_view},
+        "from-checkpoint": {"kind": "from-checkpoint", **common, "trace": trace_view, "checkpoint": ckpt_view},
+        "from-simpoint": {"kind": "from-simpoint", **common, "trace": trace_view, "checkpoint": ckpt_view},
         "record": {"kind": "record", **common},
-        "replay": {"kind": "replay", **common, "trace": trace_view},
-        "create": {"kind": "create-checkpoints", **common, "trace": trace_view,
-                   "requested_checkpoints": [{"name": "a", "count": 10}, {"name": "b", "count": 20}]},
-        "load": {"kind": "load", **common, "trace": trace_view, "checkpoint": ckpt_view},
+        "create-checkpoints": {"kind": "create-checkpoints", **common, "trace": trace_view,
+                               "requested_checkpoints": [{"name": "a", "count": 10}, {"name": "b", "count": 20}]},
     }
     for run, sections in expected.items():
         described = read_run_json(tmp_path / run)

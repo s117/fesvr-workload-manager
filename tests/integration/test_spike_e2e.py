@@ -75,7 +75,7 @@ def test_record_replay_checkpoint(env, tmp_path):
 
     # record, with a SimPoint profile
     r1 = base / "r1"
-    fwm(env, "mkgen", "record", "e", "-o", str(r1))
+    fwm(env, "repo", "bootstrap", "record", "e", "-o", str(r1))
     assert make(r1, "SIM_FLAGS_EXTRA=-s1000000") == 0
     assert (r1 / "trace" / "boot.elf").is_file()
     assert (r1 / "bbv_proc_0.bb.gz").is_file()
@@ -93,9 +93,18 @@ def test_record_replay_checkpoint(env, tmp_path):
     assert fwm_status(env, *add_trace) == 5
     assert fwm(env, *add_trace, "--exist-ok") == trace
 
+    # a run from the sysroot: the same console and instruction count, and no recording
+    r0 = base / "r0"
+    fwm(env, "mkgen", "from-sysroot", "e", "-o", str(r0))
+    assert make(r0) == 0
+    assert instret(r0) == total
+    assert (r0 / "console.stdout").read_bytes() == (r1 / "console.stdout").read_bytes()
+    assert not (r0 / "trace").exists()
+    assert run_json(r0)["kind"] == "from-sysroot"
+
     # replay: the same instruction count
     r2 = base / "r2"
-    fwm(env, "mkgen", "replay", trace, "-o", str(r2))
+    fwm(env, "mkgen", "from-fesvr-trace", trace, "-o", str(r2))
     assert make(r2) == 0
     assert instret(r2) == total
     assert run_json(r2)["trace"]["uuid"] == trace
@@ -105,7 +114,7 @@ def test_record_replay_checkpoint(env, tmp_path):
     first, second = total // 3, 2 * total // 3
     desc.write_text(f"e.0.0.40: {first}\ne.1.0.60: {second}\n")
     r3 = base / "r3"
-    fwm(env, "mkgen", "replay", trace, "--create-checkpoints", str(desc), "-o", str(r3))
+    fwm(env, "repo", "bootstrap", "create-checkpoints", trace, str(desc), "-o", str(r3))
     assert make(r3) == 0
     assert sorted(os.listdir(r3 / "checkpoints")) == ["e.0.0.40", "e.1.0.60"]
     # a checkpoint of the description that wasn't created is caught at import
@@ -117,8 +126,9 @@ def test_record_replay_checkpoint(env, tmp_path):
     first_desc.write_text(f"e.0.0.40: {first}\n")
     second_desc.write_text(f"e.1.0.60: {second}\n")
     info = base / "simpoints.json"
-    info.write_text(json.dumps({"interval": 1000000, "maxK": 3, "checkpoints": {"e.0.0.40": {"index": 0,
-                                                                                           "weight": 0.4012}}}))
+    # (an interval far shorter than the rest of the program, so that from-simpoint stops before its end)
+    info.write_text(json.dumps({"interval": 1000, "maxK": 3, "checkpoints": {"e.0.0.40": {"index": 0,
+                                                                                        "weight": 0.4012}}}))
     fwm(env, "repo", "add", "checkpoint", trace, str(first_desc), str(r3 / "checkpoints"),
         "--simpoint-info", str(info), "--sim-version", str(version))
     fwm(env, "repo", "add", "checkpoint", trace, str(second_desc), str(r3 / "checkpoints"))
@@ -136,16 +146,24 @@ def test_record_replay_checkpoint(env, tmp_path):
 
     # validate a checkpoint by running it to the end, then simulate one interval
     r4 = base / "r4"
-    fwm(env, "mkgen", "load", "e.0.0.40", "-o", str(r4))
+    fwm(env, "mkgen", "from-checkpoint", "e.0.0.40", "-o", str(r4))
     assert make(r4) == 0
     assert instret(r4) == total
     described = run_json(r4)
-    assert (described["kind"], described["trace"]["uuid"], described["checkpoint"]["name"]) == ("load", trace,
-                                                                                                 "e.0.0.40")
+    assert (described["kind"], described["trace"]["uuid"], described["checkpoint"]["name"]) == (
+        "from-checkpoint", trace, "e.0.0.40")
     assert described["checkpoint"]["simpoint_weight"] == 0.4012
     assert described["entry"]["metadata"] == metadata
     assert fwm(env, "repo", "record-validation", "e.0.0.40", str(r4)).startswith("passed")
     assert make(r4, "SIM_FLAGS_EXTRA=-e1000") == 2  # spike exits 1 when -e stops it, so make fails
     assert fwm_status(env, "repo", "record-validation", "e.0.0.40", str(r4)) == 4
+
+    # one SimPoint interval: -e stops it (spike exits 1, so make fails), and final-state.json stays empty
+    r5 = base / "r5"
+    fwm(env, "mkgen", "from-simpoint", "e.0.0.40", "-o", str(r5))
+    assert "-e$(INTERVAL)" in (r5 / "Makefile").read_text()
+    assert make(r5) == 2
+    assert (r5 / "final-state.json").read_text() == ""
+    assert fwm_status(env, "mkgen", "from-simpoint", "e.1.0.60", "-o", str(base / "r6")) == 4
 
     fwm(env, "repo", "verify")

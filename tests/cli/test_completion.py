@@ -60,17 +60,20 @@ def test_names(complete, run, populated, write_entry_point):
     assert complete("repo", "add", "entry") == [("sr", "2 entry points")]
     assert complete("repo", "add", "entry", "sr") == [("other-wl", "1 entry point"), ("wl", "1 entry point")]
     assert complete("list", "--workload", incomplete="w") == [("wl", "1 entry point")]
-    assert complete("mkgen", "record") == [("e", "wl @ sr"), ("e2", "other-wl @ sr")]
+    assert complete("mkgen", "from-sysroot") == [("e", "wl @ sr"), ("e2", "other-wl @ sr")]
     assert complete("repo", "add", "trace", incomplete="e2") == [("e2", "other-wl @ sr")]
     # (the order of a random UUID and a name depends on the UUID)
-    assert complete("mkgen", "replay") == naturally_sorted([
+    assert complete("mkgen", "from-fesvr-trace") == naturally_sorted([
         (trace_uuid, "e, complete, 1 checkpoint"),
         ("e", f"its trace {trace_uuid}"),
     ])
     assert values(complete("repo", "add", "checkpoint", incomplete=trace_uuid[:4])) == [trace_uuid]
-    assert complete("mkgen", "load") == [("e.2.0.40", "e, weight 0.4")]
+    assert complete("mkgen", "from-checkpoint") == [("e.2.0.40", "e, weight 0.4")]
     assert values(complete("repo", "record-validation")) == ["e.2.0.40"]
     assert values(complete("repo", "set-metadata")) == ["e", "e2"]
+    assert complete("mkgen", "from-simpoint") == [("e.2.0.40", "e, weight 0.4")]
+    assert values(complete("repo", "bootstrap", "record")) == ["e", "e2"]
+    assert values(complete("repo", "bootstrap", "create-checkpoints", incomplete=trace_uuid[:4])) == [trace_uuid]
 
     # new names aren't completed
     assert complete("repo", "add", "entry", "sr", "wl") == []
@@ -101,7 +104,7 @@ def test_list_filter(complete, populated):
 
 def test_trace_entry_name_only_while_unique(complete, run, populated, tmp_path):
     second = add_trace(run, tmp_path, "e", "second")
-    assert sorted(values(complete("mkgen", "replay"))) == sorted([populated, second])
+    assert sorted(values(complete("mkgen", "from-fesvr-trace"))) == sorted([populated, second])
 
 
 def test_checkpoints(complete, run, populated, tmp_path):
@@ -111,19 +114,21 @@ def test_checkpoints(complete, run, populated, tmp_path):
     add_checkpoint(run, tmp_path, second, "e.10.0.60", other_commands("second"))
 
     # a name in two traces is offered with its trace
-    assert values(complete("mkgen", "load")) == values(naturally_sorted(
+    assert values(complete("mkgen", "from-checkpoint")) == values(naturally_sorted(
         [(f"{first}:e.2.0.40", None), (f"{second}:e.2.0.40", None), ("e.10.0.60", None)]))
 
     # after a ':', the checkpoints of that trace, with the prefix as typed
-    assert values(complete("mkgen", "load", incomplete=second[:8] + ":")) == [
+    assert values(complete("mkgen", "from-checkpoint", incomplete=second[:8] + ":")) == [
         f"{second[:8]}:e.2.0.40", f"{second[:8]}:e.10.0.60"]
-    assert values(complete("mkgen", "load", incomplete=second[:8] + ":e.1")) == [f"{second[:8]}:e.10.0.60"]
-    assert complete("mkgen", "load", incomplete="nothing:") == []
+    assert values(complete("mkgen", "from-checkpoint", incomplete=second[:8] + ":e.1")) == [f"{second[:8]}:e.10.0.60"]
+    assert complete("mkgen", "from-checkpoint", incomplete="nothing:") == []
+    # from-simpoint offers only the checkpoints with SimPoint information, named the same way
+    assert values(complete("mkgen", "from-simpoint")) == [f"{first}:e.2.0.40"]
 
 
 def test_repo_from_env(complete, populated, tmp_path, monkeypatch):
     monkeypatch.setenv("FWM_REPO_PATH", str(tmp_path / "repo"))
-    assert values(complete("mkgen", "record", repo=False)) == ["e"]
+    assert values(complete("mkgen", "from-sysroot", repo=False)) == ["e"]
 
 
 @pytest.mark.parametrize("setup", ["none", "not-a-repo", "other-schema"])
@@ -140,7 +145,7 @@ def test_no_usable_repo(complete, run, tmp_path, monkeypatch, capsys, setup):
         args = ["--repo-path", str(repo_path)]
     before = sorted(os.listdir(tmp_path))
 
-    assert complete(*args, "mkgen", "record", repo=False) == []
+    assert complete(*args, "mkgen", "from-sysroot", repo=False) == []
     assert complete(*args, "show", "trace", repo=False) == []
     assert capsys.readouterr() == ("", "")
     assert sorted(os.listdir(tmp_path)) == before

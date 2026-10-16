@@ -1,5 +1,6 @@
-# Load checkpoint @CHECKPOINT_NAME@ of trace @TRACE_UUID@ (entry point @ENTRY@), and simulate from it.
-# Simulate one interval with e.g. SIM_FLAGS_EXTRA=-e100000000.
+# Load checkpoint @CHECKPOINT_NAME@ of trace @TRACE_UUID@ (entry point @ENTRY@), and simulate from it to the end of
+# the program, or for n instructions with SIM_FLAGS_EXTRA=-e<n>. (`fwm mkgen from-simpoint` simulates a SimPoint
+# checkpoint's interval.)
 # Outputs: final-state.json
 
 TRACE := @TRACE_DIR@

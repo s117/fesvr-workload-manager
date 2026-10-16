@@ -6,7 +6,7 @@ from click.testing import CliRunner
 
 from fwm.cli.fwm import cli
 from fwm.database.schema import DecoupledCheckpoint
-from fwm.mkgen.makefile import generate_load, generate_replay
+from fwm.mkgen.makefile import generate_from_checkpoint, generate_from_fesvr_trace
 from fwm.repo.entry import add_entry
 from fwm.repo.errors import FwmValidationError
 from fwm.repo.sysroot import add_sysroot
@@ -36,7 +36,7 @@ def ckpt(repo, sysroot_src, write_entry_point, tmp_path):
 @pytest.fixture
 def load_run(repo, ckpt, tmp_path):
     run = tmp_path / "load"
-    generate_load(repo, ckpt, str(run))
+    generate_from_checkpoint(repo, ckpt, str(run))
     return run
 
 
@@ -77,11 +77,11 @@ def test_revalidation_overwrites(repo, load_run):
 
 def test_wrong_run_dir(repo, ckpt, tmp_path):
     other = tmp_path / "other"
-    generate_load(repo, "d", str(other))
+    generate_from_checkpoint(repo, "d", str(other))
     with pytest.raises(FwmValidationError, match="not a run directory of checkpoint"):
         record_validation(repo, "c", str(other))
     replay = tmp_path / "replay"
-    generate_replay(repo, "e", str(replay))
+    generate_from_fesvr_trace(repo, "e", str(replay))
     with pytest.raises(FwmValidationError, match="not a run directory of checkpoint"):
         record_validation(repo, "c", str(replay))
 
@@ -95,7 +95,7 @@ def test_trace_without_instret(repo, sysroot_src, write_entry_point, tmp_path):
     write_checkpoint(str(tmp_path / "c"), [CheckpointHart(recording_sha256(COMMANDS), cmd_index=1)])
     import_checkpoint(repo, "e", str(tmp_path / "c"))
     run = tmp_path / "load"
-    generate_load(repo, "c", str(run))
+    generate_from_checkpoint(repo, "c", str(run))
     final_state(run, 5000)
     with pytest.raises(FwmValidationError, match="no final instruction count"):
         record_validation(repo, "c", str(run))

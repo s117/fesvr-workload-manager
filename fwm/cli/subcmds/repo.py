@@ -6,6 +6,7 @@ from fwm.cli.completion import (
     complete_by_kind, complete_checkpoint, complete_entry, complete_sysroot, complete_trace, complete_workload
 )
 from fwm.cli.fwm import open_repo
+from fwm.cli.subcmds.bootstrap import bootstrap
 from fwm.data_loader.sim_version import read_sim_version, SimVersionError
 from fwm.database.schema import Sysroot, DecoupledTrace, DecoupledCheckpoint
 from fwm.repo import remove as rm
@@ -24,7 +25,13 @@ from fwm.utils.log import Logger
 def repo():
     """
     Create and change the workload repository.
+
+    `fwm repo bootstrap` generates the runs that record its traces and create its checkpoints, whose results
+    `fwm repo add trace` and `fwm repo add checkpoint` import.
     """
+
+
+repo.add_command(bootstrap)
 
 
 @repo.command()
@@ -140,7 +147,7 @@ def add_checkpoint_cmd(ctx, trace, desc, checkpoint_dir, simpoint_info, descript
     point with one trace) in CHECKPOINT_DIR, in one transaction.
 
     \b
-    For a run directory R that created checkpoints:
+    For a run directory R of `fwm repo bootstrap create-checkpoints`:
       fwm repo add checkpoint <trace> R/ckpt.desc R/checkpoints
 
     Each checkpoint DESC lists must be in CHECKPOINT_DIR, which catches one spike didn't create (it creates none at or
@@ -196,7 +203,7 @@ def remove_cmd(ctx, kind, id, recursive):
 @click.pass_context
 def record_validation_cmd(ctx, checkpoint, run_dir):
     """
-    Judge RUN_DIR, a run of CHECKPOINT to the end of the program (`fwm mkgen load`, run without -e), and record the
+    Judge RUN_DIR, a run of CHECKPOINT to the end of the program (`fwm mkgen from-checkpoint`, run without -e), and record the
     result with the checkpoint.
 
     It passes when every HART's final instruction count equals the trace's. Prints "passed" or "failed" and why;
