@@ -5,7 +5,7 @@ from datetime import datetime
 import peewee as pw
 
 # Bumped on any change to the tables in schema.py. A repository whose database has another version is refused.
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 # How long a command waits for another one to release the database, in milliseconds
 BUSY_TIMEOUT_MS = 30000

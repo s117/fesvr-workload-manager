@@ -10,7 +10,7 @@ from fwm.database.catalog_store import save_catalog, load_catalog, delete_catalo
 from fwm.database.db import open_db, SchemaVersionError, SCHEMA_VERSION
 from fwm.database.schema import (
     SchemaInfo, TreeCatalog, CatalogFile, CatalogLink, CatalogDir, Workload, Sysroot, NativeEntry, DecoupledTrace,
-    TraceHart, DecoupledCheckpoint, CheckpointHart
+    TraceHart, DecoupledCheckpoint, CheckpointHart, ALL_MODELS
 )
 from fwm.version import fwm_version
 
@@ -215,3 +215,23 @@ def test_provenance_and_simpoint_fields(db):
     with pytest.raises(pw.IntegrityError, match="requested_count"):
         DecoupledCheckpoint.create(name="d", trace=trace, file_catalog=catalog, format_version=1,
                                    content_sha256="0" * 64)
+
+
+def test_no_redundant_index(db):
+    """No index is the leading columns of another index of its table: that one serves its lookups already."""
+    indexes = {}
+    for model in ALL_MODELS:
+        table = model._meta.table_name  # type: ignore[attr-defined]
+        for (name,) in db.execute_sql(f'SELECT name FROM pragma_index_list("{table}")').fetchall():
+            columns = [c for (c,) in db.execute_sql(f'SELECT name FROM pragma_index_info("{name}")').fetchall()]
+            indexes[name] = (table, columns)
+    assert indexes  # the query found them
+    for name, (table, columns) in indexes.items():
+        for other, (other_table, other_columns) in indexes.items():
+            if other != name and other_table == table:
+                assert other_columns[:len(columns)] != columns, f"{name} {columns} is redundant with {other}"
+
+
+def test_catalog_lookup_uses_unique_index(db):
+    plan = db.execute_sql("EXPLAIN QUERY PLAN SELECT * FROM catalogfile WHERE catalog_id = 1 ORDER BY path").fetchall()
+    assert "catalogfile_catalog_id_path" in plan[-1][-1]

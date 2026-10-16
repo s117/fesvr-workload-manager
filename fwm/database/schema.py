@@ -9,6 +9,10 @@ from fwm.version import fwm_version
 # Length of a hex SHA256 digest (passed positionally: the peewee stubs don't accept max_length= for FixedCharField)
 SHA256_HEX_LEN = 64
 
+# A foreign key that is the first column of its model's unique index in Meta.indexes is declared with index=False: that
+# index already serves the lookups by the parent and the ON DELETE CASCADE, so one of its own would be written to on
+# every insert but never read.
+
 
 class SchemaInfo(BaseModel):
     """
@@ -31,7 +35,7 @@ class TreeCatalog(BaseModel):
 
 class CatalogFile(BaseModel):
     # Belongs to which TreeCatalog.
-    catalog = pw.ForeignKeyField(TreeCatalog, backref='files', on_delete='CASCADE')
+    catalog = pw.ForeignKeyField(TreeCatalog, backref='files', on_delete='CASCADE', index=False)
 
     # File path, relative to the tree root.
     path = pw.CharField()
@@ -52,7 +56,7 @@ class CatalogFile(BaseModel):
 
 class CatalogLink(BaseModel):
     # Belongs to which TreeCatalog.
-    catalog = pw.ForeignKeyField(TreeCatalog, backref='links', on_delete='CASCADE')
+    catalog = pw.ForeignKeyField(TreeCatalog, backref='links', on_delete='CASCADE', index=False)
 
     # Link path, relative to the tree root.
     path = pw.CharField()
@@ -69,7 +73,7 @@ class CatalogLink(BaseModel):
 
 class CatalogDir(BaseModel):
     # Belongs to which TreeCatalog.
-    catalog = pw.ForeignKeyField(TreeCatalog, backref='dirs', on_delete='CASCADE')
+    catalog = pw.ForeignKeyField(TreeCatalog, backref='dirs', on_delete='CASCADE', index=False)
 
     # Dir path, relative to the tree root.
     path = pw.CharField()
@@ -209,7 +213,7 @@ class TraceHart(BaseModel):
     The per-HART part of a trace.
     """
     # Belongs to which trace.
-    trace = pw.ForeignKeyField(DecoupledTrace, backref='harts', on_delete='CASCADE')
+    trace = pw.ForeignKeyField(DecoupledTrace, backref='harts', on_delete='CASCADE', index=False)
 
     # HART ID.
     hart_id = pw.IntegerField()
@@ -235,7 +239,7 @@ class DecoupledCheckpoint(BaseModel):
     name = pw.CharField()
 
     # Which trace is required to load this checkpoint?
-    trace = pw.ForeignKeyField(DecoupledTrace, backref='checkpoints')
+    trace = pw.ForeignKeyField(DecoupledTrace, backref='checkpoints', index=False)
 
     # File catalog (relative to the checkpoint folder).
     file_catalog = pw.ForeignKeyField(TreeCatalog)
@@ -290,7 +294,7 @@ class CheckpointHart(BaseModel):
     The per-HART part of a checkpoint, from its header.
     """
     # Belongs to which checkpoint.
-    checkpoint = pw.ForeignKeyField(DecoupledCheckpoint, backref='harts', on_delete='CASCADE')
+    checkpoint = pw.ForeignKeyField(DecoupledCheckpoint, backref='harts', on_delete='CASCADE', index=False)
 
     # HART ID.
     hart_id = pw.IntegerField()
