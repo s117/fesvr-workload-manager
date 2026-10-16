@@ -2,15 +2,19 @@
 
 fwm manages RISC-V simulation workloads for the custom spike in `riscv-isa-sim`, and replaces riscv-simenv.
 
-That spike's front-end server (FESVR) can **record** the device traffic of a run: every proxied system call, with the memory it read and wrote. It can then **replay** that recording without the original environment, and create and load **checkpoints** on top of a replay (see `riscv-isa-sim/docs/fesvr-checkpoint-and-traffic-replay.md`). fwm keeps the pieces of that workflow in a repository and generates the Makefiles that run them:
+That spike's front-end server (FESVR) can **record** the device traffic of a run: every proxied system call, with the memory it read and wrote. It can then **replay** that recording without the original environment, and create and load **checkpoints** on top of a replay (see `riscv-isa-sim/docs/fesvr-checkpoint-and-traffic-replay.md`). fwm keeps the pieces of that workflow in a repository and generates the Makefiles that run them.
+
+**The repository's creator** builds its content with `fwm repo`:
 
 ```
-sysroot ──(entry point)──> record ──> trace ──> replay + create checkpoints ──> load a checkpoint
+sysroot ──(entry point)──> bootstrap record ──> trace ──> bootstrap create-checkpoints ──> checkpoints
 ```
+
+**Its users,** who may have read access only, begin simulations with `fwm mkgen`: from a sysroot, from a FESVR trace, from a checkpoint, or for one SimPoint interval.
 
 ## How it differs from riscv-simenv
 
-- **The sysroot is needed once.** Only the recording run executes system calls on the host. A replay, or a run from a checkpoint, needs only the trace (which keeps a copy of the boot ELF as `boot.elf`), the checkpoint and the same `-m`/`-p`. There is no simenv to spawn and verify before every run.
+- **The sysroot is needed once.** Only the recording run (and `mkgen from-sysroot`, which runs the program for real) executes system calls on the host. A replay, or a run from a checkpoint, needs only the trace (which keeps a copy of the boot ELF as `boot.elf`), the checkpoint and the same `-m`/`-p`. There is no simenv to spawn and verify before every run.
 - **A replay prints nothing and writes no file.** Console output and output files exist only in the recording run. A replay checks that the program computes the same data, byte for byte, and stops at the first difference.
 - **Restore cost doesn't grow with the syscall history.** Loading a checkpoint seeks in the recording instead of re-executing it.
 - **Traces and checkpoints are portable.** They replay and load on any little-endian host (x86-64 or ARM64 Linux, macOS). Recording must be done on Linux.
@@ -23,7 +27,7 @@ sysroot ──(entry point)──> record ──> trace ──> replay + create 
 | **workload** | A name grouping the entry points that run the same program. |
 | **entry point** | How to launch a workload in a sysroot: the command, working directory, boot ELF (usually pk), stdin file, memory size and processor count, with optional free-form metadata. A workload can have entry points on several sysroots, and a sysroot can serve several workloads. |
 | **trace** | A recording (`+dev-traffic-record`) of a run of an entry point, identified by a UUID. It is *complete* if the program exited, or *truncated* if the run was stopped first (e.g. by `-e`). |
-| **checkpoint** | A snapshot taken while replaying a trace. It loads only with that trace. A SimPoint checkpoint carries its SimPoint index, interval and weight. |
+| **checkpoint** | A snapshot taken while replaying a trace. It loads only with that trace. A SimPoint checkpoint carries its SimPoint index, interval, weight and the analysis's maxK. |
 
 ## Install
 
@@ -77,28 +81,48 @@ Record a run, and import the recording as a trace, with the `spike --version` ou
 
 ```
 spike --version > sim-version.txt
-fwm mkgen record bfs-road-n64 -o run1 && make -C run1 run
+fwm repo bootstrap record bfs-road-n64 -o run1 && make -C run1 run SIM_FLAGS_EXTRA=-s100000000   # with a BBV
 fwm repo add trace bfs-road-n64 run1/trace --final-state run1/final-state.json --sim-version sim-version.txt
 # prints the trace UUID
 ```
 
-Replay it, and create checkpoints from a description file of `<name>: <instruction count>` lines. Then import them in one transaction. `--desc` checks that every checkpoint of the description was created, and `--simpoint-info` adds their SimPoint index, interval and weight:
+Create checkpoints from a description file of `<name>: <instruction count>` lines (e.g. the SimPoints of the BBV), and import them in one transaction:
 
 ```
-fwm mkgen replay bfs-road-n64 -o run2 && make -C run2 run                         # final-state.json: same instret
-fwm mkgen replay bfs-road-n64 --create-checkpoints ckpts.txt -o run3 && make -C run3 run
-fwm repo add checkpoint bfs-road-n64 run3/checkpoints/* --desc run3/ckpt.desc --simpoint-info simpoints.json \
+fwm repo bootstrap create-checkpoints bfs-road-n64 ckpts.txt -o run3 && make -C run3 run
+fwm repo add checkpoint bfs-road-n64 run3/ckpt.desc run3/checkpoints --simpoint-info simpoints.json \
     --sim-version sim-version.txt
 ```
 
-Validate a checkpoint by running it to the end, and simulate one interval from it:
+- **Every checkpoint of the description must be in `run3/checkpoints`,** which catches one spike didn't create: it creates none at or after the program's exit, without a word. Other files there are ignored.
+- **`--simpoint-info`** gives the SimPoint analysis, naming exactly the checkpoints of the description:
+  ```json
+  {"interval": 100000000, "maxK": 10,
+   "checkpoints": {"bfs-road-n64.3.0.25": {"index": 3, "weight": 0.2531}, "bfs-road-n64.7.0.75": {"index": 7, "weight": 0.7469}}}
+  ```
+
+Validate a checkpoint by running it to the end:
 
 ```
-fwm mkgen load bfs-road-n64.3.0.25 -o run4
+fwm mkgen from-checkpoint bfs-road-n64.3.0.25 -o run4
 make -C run4 run; fwm repo record-validation bfs-road-n64.3.0.25 run4      # passed or failed, recorded
-make -C run4 run SIM_FLAGS_EXTRA=-e100000000     # make reports "Error 1": spike exits 1 when -e stops it
-make -C run4 run SIM=/path/to/721sim SIM_FLAGS_EXTRA=-e100000000
 ```
+
+## Running workloads
+
+`fwm mkgen` generates a run directory that begins a simulation; run it with `make -C <dir> run`:
+
+```
+fwm mkgen from-sysroot bfs-road-n64 -o a           # the real program in a fresh copy of its sysroot (Linux only)
+fwm mkgen from-fesvr-trace bfs-road-n64 -o b       # replay its trace from the start: any host, no output
+fwm mkgen from-checkpoint bfs-road-n64.3.0.25 -o c # from a checkpoint to the end of the program
+fwm mkgen from-simpoint bfs-road-n64.3.0.25 -o d   # one SimPoint interval from a SimPoint checkpoint
+make -C d run SIM=/path/to/721sim                  # make reports "Error 1": spike exits 1 when -e stops it
+```
+
+- **`from-sysroot`** does the program's real system calls, so it prints its console (also saved to `console.stdout` and `console.stderr`) and writes its files in `sysroot/`.
+- **`from-fesvr-trace`, `from-checkpoint` and `from-simpoint`** replay the trace: the program prints nothing and writes no file.
+- **`from-simpoint`** stops after the checkpoint's SimPoint interval (`-e$(INTERVAL)`, overridable with `INTERVAL=<n>`); weigh its results by the checkpoint's `simpoint_weight`.
 
 ## Commands
 
@@ -109,21 +133,23 @@ make -C run4 run SIM=/path/to/721sim SIM_FLAGS_EXTRA=-e100000000
 | `fwm repo add entry <sysroot> <workload> <name> <entry_point.json>` | Add an entry point. |
 | `fwm repo set-metadata <entry> <file.json>` | Replace an entry point's metadata (`null` removes it), keeping its traces. |
 | `fwm repo add trace <entry> <recording-dir> [--final-state f.json] [--sim-version f]` | Import a recording; prints its UUID. |
-| `fwm repo add checkpoint <trace> <file>... [--desc d] [--simpoint-info j] [--sim-version f]` | Import checkpoints in one transaction; prints `<uuid>:<name>` for each. |
-| `fwm repo record-validation <checkpoint> <run-dir>` | Judge a `mkgen load` run to the end, and record passed or failed. |
+| `fwm repo add checkpoint <trace> <desc> <checkpoint-dir> [--simpoint-info j] [--sim-version f]` | Import the checkpoints of a description in one transaction; prints `<uuid>:<name>` for each. |
+| `fwm repo bootstrap record <entry> [-o dir]` | Generate a run directory that records a run of an entry point. |
+| `fwm repo bootstrap create-checkpoints <trace> <desc> [-o dir]` | Generate a run directory that creates the checkpoints of a description. |
+| `fwm repo record-validation <checkpoint> <run-dir>` | Judge a `mkgen from-checkpoint` run to the end, and record passed or failed. |
 | `fwm repo remove {sysroot\|entry\|trace\|checkpoint} <id> [--recursive]` | Remove, with what depends on it when `--recursive`. |
 | `fwm repo verify [{sysroot\|trace\|checkpoint} <id>]` | Check the repository content against its catalogs, and for leftovers. |
 | `fwm repo gc [--dry-run]` | Remove the leftovers of interrupted commands. |
 | `fwm list [workloads\|sysroots\|entries\|traces\|checkpoints] [filter] [--json]` | List. |
 | `fwm show {workload\|sysroot\|entry\|trace\|checkpoint} <id> [--json]` | Show the details. |
-| `fwm spawn [--force] <sysroot> <dest>` | Make a working copy of a sysroot (the record Makefile does it). |
-| `fwm mkgen {record <entry> \| replay <trace> [--create-checkpoints f] \| load <ckpt>} [-o dir]` | Generate a run directory's Makefile. |
+| `fwm spawn [--force] <sysroot> <dest>` | Make a working copy of a sysroot (the `from-sysroot` and record Makefiles do it). |
+| `fwm mkgen {from-sysroot <entry> \| from-fesvr-trace <trace> \| from-checkpoint <ckpt> \| from-simpoint <ckpt>} [-o dir]` | Generate a run directory that begins a simulation. |
 | `fwm completion {bash\|zsh\|fish}` | Print the shell completion script. |
 
 How to name things:
 - **A trace** is its UUID (a unique prefix is enough), or the name of an entry point that has one trace.
 - **A checkpoint** is `<trace>:<name>`, or just its name when no other trace has a checkpoint of that name.
-- **A checkpoint's SimPoint weight** comes from `--simpoint-info` or `--simpoint-weight`. Without either, it is decoded from a name following the riscv-simenv convention `<entry>.<simpoint index>.<weight>`, e.g. `bfs-road-n64.3.0.25`.
+- **A checkpoint's name** is just a name: its SimPoint data comes only from `--simpoint-info`.
 
 Every `repo add` takes `--exist-ok`: if the same item is already in the repository, it prints it and succeeds. An entry point that differs only in its description or metadata is the same; it keeps its own. Without it, adding what exists fails with status 5. A recording that already is a trace of the entry point counts as existing, so a rerun never creates a second trace.
 
@@ -133,7 +159,7 @@ Exit status: 0 success, 1 unexpected error, 2 usage error or unusable repository
 
 Every Makefile has a single target, `run`. It first removes that run's previous outputs, so it can be run again.
 
-Next to it, `run.json` describes what the run uses: the sysroot, workload, entry point (with its metadata), trace and checkpoint, as `fwm show --json` shows them when the Makefile is generated. A create-checkpoints run also lists the checkpoints it requests. See [docs/fwm-bootstrap-interface.md](docs/fwm-bootstrap-interface.md#runjson).
+Next to it, `run.json` describes what the run uses: the sysroot, workload, entry point (with its metadata), trace and checkpoint, as `fwm show --json` shows them when the Makefile is generated. Its `kind` is the command that generated it, e.g. `from-simpoint` or `record`. A create-checkpoints run also lists the checkpoints it requests. See [docs/fwm-bootstrap-interface.md](docs/fwm-bootstrap-interface.md#runjson).
 
 Override variables on the make command line:
 
@@ -142,14 +168,15 @@ Override variables on the make command line:
 | `SIM` | The simulator (default: `FWM_SIM_CMD` when generated, else `spike`). |
 | `SIM_FLAGS_EXTRA` | spike options such as `-e<n>` or `-s<interval>`. They come before the FESVR options. |
 | `FESVR_FLAGS_EXTRA` | FESVR options such as `+verbose`. |
-| `BOOT_ELF_FLAGS_EXTRA`, `APP_CMD_EXTRA` | (record only) Options of the boot ELF (pk), and extra program arguments. |
-| `FWM` | (record only) How to run fwm for `spawn` (default: the Python that generated the Makefile, so fwm needn't be on `PATH`). |
+| `BOOT_ELF_FLAGS_EXTRA`, `APP_CMD_EXTRA` | (from-sysroot, record) Options of the boot ELF (pk), and extra program arguments. |
+| `FWM` | (from-sysroot, record) How to run fwm for `spawn` (default: the Python that generated the Makefile, so fwm needn't be on `PATH`). |
+| `INTERVAL` | (from-simpoint) The instructions to simulate (default: the checkpoint's SimPoint interval). |
 
 spike's exit status:
 - **Without `-e`:** the program's exit status, or 0 after creating the last checkpoint.
 - **With `-e<n>`:** 1 when the run was stopped after `n` instructions, and 0 when the program ended first.
 
-**Don't judge a run by make's exit status; let fwm judge it.** A program that legitimately exits non-zero makes `make` fail, while spike stopped by SIGTERM (e.g. a job's time limit) exits 0. `fwm repo add trace --final-state` judges a record run, `fwm repo add checkpoint --desc` a checkpoint creation, and `fwm repo record-validation` a run from a checkpoint.
+**Don't judge a run by make's exit status; let fwm judge it.** A program that legitimately exits non-zero makes `make` fail, while spike stopped by SIGTERM (e.g. a job's time limit) exits 0. `fwm repo add trace --final-state` judges a record run, `fwm repo add checkpoint` a checkpoint creation, and `fwm repo record-validation` a run from a checkpoint.
 
 `final-state.json` is written when the simulation ends: normally (the program exited, or the last checkpoint was taken), or when spike is stopped by SIGTERM or SIGINT, with the instruction count where it stopped. It stays empty after an `-e` stop or a simulator error, e.g. a replay that diverged from its recording.
 
@@ -158,8 +185,8 @@ The Makefiles leave other simulator outputs, such as `bbv_proc_0.bb.gz` from `-s
 ## Clusters and shared repositories
 
 - **Commands that change the repository** (`repo init`, `add`, `remove`, `gc`, `record-validation`) should run on one host, e.g. a Snakemake controller. The database uses SQLite's rollback journal, which works on a shared filesystem, and they wait for each other.
-- **Compute jobs** run the generated Makefiles. Only a record run opens the database, read-only, when `fwm spawn` checks the sysroot out.
-- **Read-only use:** `list`, `show`, `verify`, `mkgen`, `spawn` and completion work in a repository you can't write to, e.g. one shared with your group.
+- **Compute jobs** run the generated Makefiles. Only the `from-sysroot` and record runs open the database, read-only, when `fwm spawn` checks the sysroot out.
+- **Read-only use:** `list`, `show`, `verify`, `mkgen`, `repo bootstrap`, `spawn` and completion work in a repository you can't write to, e.g. one shared with your group.
 - **Interrupted commands:** a command killed by its scheduler (SIGTERM) cleans up after itself. A harder kill can leave staging or files that no row refers to. `fwm repo verify` reports them and `fwm repo gc` removes them; it never leaves rows whose files are missing.
 
 ## Development
