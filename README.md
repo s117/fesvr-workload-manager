@@ -133,6 +133,7 @@ make -C d run SIM=/path/to/721sim                  # make reports "Error 1": spi
 | `fwm repo add entry <sysroot> <workload> <name> <entry_point.json>` | Add an entry point. |
 | `fwm repo set-metadata <entry> <file.json>` | Replace an entry point's metadata (`null` removes it), keeping its traces. |
 | `fwm repo add trace <entry> <recording-dir> [--final-state f.json] [--sim-version f]` | Import a recording; prints its UUID. |
+| `fwm check recording <recording-dir> [--final-state f.json] [--json]` | Check a recording as `repo add trace` would, without a repository: complete, well formed, agreeing with its final state. |
 | `fwm repo add checkpoint <trace> <desc> <checkpoint-dir> [--simpoint-info j] [--sim-version f]` | Import the checkpoints of a description in one transaction; prints `<uuid>:<name>` for each. |
 | `fwm repo bootstrap record <entry> [-o dir]` | Generate a run directory that records a run of an entry point. |
 | `fwm repo bootstrap create-checkpoints <trace> <desc> [-o dir]` | Generate a run directory that creates the checkpoints of a description. |

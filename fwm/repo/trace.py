@@ -2,7 +2,7 @@ import json
 import os
 import re
 import uuid
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 import peewee as pw
 import pydantic
@@ -65,6 +65,46 @@ def _read_instrets(final_state: Optional[str]) -> Optional[List[int]]:
         return read_final_state(final_state)
     except (OSError, json.JSONDecodeError, pydantic.ValidationError) as e:
         raise FwmValidationError(f"invalid final state {final_state}: {e}")
+
+
+def _judge_recording(recording: Recording, instrets: Optional[List[int]], recording_dir: str,
+                     final_state: Optional[str]) -> None:
+    """Check that a recording and the final state of its run agree."""
+    spec = recording.target_spec
+    if instrets is not None and len(instrets) != spec.num_harts:
+        raise FwmValidationError(
+            f"the final state {final_state} has {len(instrets)} HART(s), but the recording has {spec.num_harts}")
+    if instrets is not None and recording.exit_status is None:
+        # -e leaves the final state empty; spike stopped by SIGTERM or SIGINT writes it, where it stopped, and exits 0
+        raise FwmValidationError(
+            f"the recording {recording_dir} is truncated (the program never exited), but its run wrote the final state "
+            f"{final_state}: spike was stopped by a signal, e.g. a job's time limit. Record it again, or import it as "
+            f"a truncated recording without --final-state.")
+
+
+def check_recording(recording_dir: str, final_state: Optional[str] = None) -> Tuple[Recording, Optional[List[int]]]:
+    """
+    Check that a recording is complete and consistent, as `fwm repo add trace` would, without a repository: e.g. on the
+    node that ran it, so that a run cut short is caught there.
+
+    :param final_state: The +final-state-dump of the recording run.
+    :return: The recording, and the instret of each HART from the final state, if one is given.
+    :raise FwmValidationError: The recording is malformed, truncated (the program never exited), or doesn't agree with
+                               the final state.
+    """
+    if not os.path.isdir(recording_dir):
+        raise NotFoundError(f"{recording_dir} is not a directory")
+    instrets = _read_instrets(final_state)
+    try:
+        recording = read_recording(recording_dir)
+    except (RecordingFormatError, OSError, EOFError) as e:
+        raise FwmValidationError(f"invalid recording {recording_dir}: {e}")
+    _judge_recording(recording, instrets, recording_dir, final_state)
+    if recording.exit_status is None:
+        raise FwmValidationError(
+            f"the recording {recording_dir} is truncated: the program never exited (e.g. the run was stopped by -e, or "
+            f"by an error of the simulator)")
+    return recording, instrets
 
 
 def _source_recording_sha256s(recording_dir: str) -> Optional[List[str]]:
@@ -153,15 +193,7 @@ def _import_trace(repo: Repo, entry: NativeEntry, recording_dir: str, staged: st
             f"the recording booted an ELF of SHA256 {spec.boot_elf_sha256}, but the boot ELF {boot_elf} of entry "
             f"point '{entry.name}' in sysroot '{entry.sysroot.name}' has SHA256 {boot_elf_digest}")
 
-    if instrets is not None and len(instrets) != spec.num_harts:
-        raise FwmValidationError(
-            f"the final state {final_state} has {len(instrets)} HART(s), but the recording has {spec.num_harts}")
-    if instrets is not None and recording.exit_status is None:
-        # -e leaves the final state empty; spike stopped by SIGTERM or SIGINT writes it, where it stopped, and exits 0
-        raise FwmValidationError(
-            f"the recording {recording_dir} is truncated (the program never exited), but its run wrote the final state "
-            f"{final_state}: spike was stopped by a signal, e.g. a job's time limit. Record it again, or import it as "
-            f"a truncated recording without --final-state.")
+    _judge_recording(recording, instrets, recording_dir, final_state)
 
     log = Logger.get_logger()
     if recording.exit_status is None:

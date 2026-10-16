@@ -8,7 +8,7 @@ fwm-bootstrap is the workload preparation pipeline (Snakemake) that turns a work
 | --- | --- |
 | One host, e.g. the Snakemake controller (`localrules`) | Commands that change the repository: `fwm repo init`, `repo add`, `repo set-metadata`, `repo remove`, `repo gc`, `repo record-validation`. |
 | Any compute node | The generated Makefiles (`make -C <run dir> run`). Only the record and `from-sysroot` runs open the database, read-only, when `fwm spawn` checks the sysroot out. |
-| Anywhere, even without write permission | `fwm list`, `show`, `verify`, `mkgen`, `repo bootstrap`, `spawn`, shell completion. |
+| Anywhere, even without write permission | `fwm list`, `show`, `verify`, `mkgen`, `repo bootstrap`, `spawn`, shell completion; `fwm check`, which needs no repository at all. |
 
 The database uses SQLite's rollback journal, not WAL, so it can sit on a shared filesystem such as NFS and be read from several hosts. Commands that change it start their transaction with the write lock held and wait up to 30 seconds for each other. Keep them on one host anyway: SQLite's locking over a network filesystem is only as reliable as that filesystem's.
 
@@ -21,6 +21,7 @@ The database uses SQLite's rollback journal, not WAL, so it can sit on a shared 
  3. spike --version > V                                                                compute
     fwm repo bootstrap record <entry> -o R1
     make -C R1 run SIM_FLAGS_EXTRA=-s<interval> || true
+    fwm check recording R1/trace --final-state R1/final-state.json      -> exit 4: cut short
     -> validate R1's console and sysroot with the suite's validator
  4. fwm repo add trace <entry> R1/trace --final-state R1/final-state.json \
         --sim-version V --exist-ok                                       -> trace UUID   controller
@@ -38,6 +39,7 @@ The database uses SQLite's rollback journal, not WAL, so it can sit on a shared 
 - **Step 2: `entry.json`** holds the entry point's launch fields: `command`, `working_directory`, `envs` (`null` or `{}`), `stdin_file` (or `null`), `boot_elf`, `mem_mb`, and `nprocs` (must be 1). In paths, `/` is the sysroot's root and `.` the working directory. `boot_elf` and `stdin_file` must be regular files of the sysroot, not symlinks.
 - **Step 2's metadata.** `entry.json` may also hold `metadata`, any JSON object: put the suite's `index.yaml` `metadata` there (and its `auxiliary` data, if runs need it). fwm keeps it, shows it, and copies it into every `run.json`, but doesn't interpret it. `--exist-ok` doesn't compare it, so a rerun keeps the stored metadata and warns if it differs; `fwm repo set-metadata` replaces it (or removes it, with a file holding `null`) without touching the traces.
 - **Step 3** is the only step that needs the sysroot, and it must run on Linux. Steps 6 and 8 need only the trace and its checkpoints, so they can also run on ARM64 Linux or macOS.
+- **Step 3's check.** `fwm check recording` runs the checks of `repo add trace` on the compute node, without a repository. A run cut short by the job's time limit fails there (spike stopped by SIGTERM writes its final state and exits 0), so the job can be retried with more time, instead of failing later in the import on the controller.
 - **Step 3's SimPoint profile.** `-s<interval>` makes spike write `bbv_proc_<hart>.bb.gz` in the run directory. Taking it in the record run saves a full replay; a replay with `-s` gives the same profile. It needs a spike built without `NO_SIMPOINT`.
 - **Step 5's description file.** A checkpoint's instruction count is the number of instructions retired before it. spike's BBV intervals are not exactly `<interval>` long (the first was 1,000,005 for a 1,000,000 interval), and spike drops the last partial interval. So the count of the interval with index `i` must be the sum of the sizes of intervals `0 … i-1`, not `i × interval`.
 - **Step 5's names.** A checkpoint's name is just a name; fwm reads nothing from it. riscv-simenv's `<entry>.<simpoint index>.<weight>` (e.g. `bfs-road-n64.3.0.25`) stays readable. Leave out riscv-simenv's `.gz`: an fwm checkpoint isn't a gzip file (spike compresses the memory image inside it).
@@ -63,7 +65,7 @@ The database uses SQLite's rollback journal, not WAL, so it can sit on a shared 
 
 **What the calling script does:**
 - **Run `make -C <dir> run || true`, and let fwm judge the run,** not make's exit status. A program that legitimately exits non-zero makes `make` fail, while spike stopped by SIGTERM (e.g. a job's time limit) exits 0. fwm judges each kind of run from its outputs:
-  - a record run, by `fwm repo add trace --final-state`;
+  - a record run, by `fwm repo add trace --final-state`, or before that, on the node that ran it, by `fwm check recording --final-state`;
   - a create-checkpoints run, by `fwm repo add checkpoint`;
   - a run from a checkpoint, by `fwm repo record-validation`.
 - **Save `spike --version`** for provenance, and pass the file to `repo add trace` and `repo add checkpoint` with `--sim-version`. fwm checks it is build information. A recording replays reliably only with a spike of the same semantics, and this records which one made it.
@@ -106,6 +108,7 @@ The sections are the objects of `fwm show --json` (see JSON below), without thei
 | `fwm repo init <path>` | the repository path |
 | `fwm repo add sysroot` / `add entry`, `repo set-metadata` | the name |
 | `fwm repo add trace` | the trace UUID |
+| `fwm check recording` | `complete: …` with the exit status and instret; with `--json`, `{complete, exit_status, mem_mb, num_harts, boot_elf_sha256, harts: [{hart_id, recording_sha256, num_commands, instret}]}` |
 | `fwm repo add checkpoint` | `<trace UUID>:<name>`, one line per checkpoint, in the order of the description |
 | `fwm repo record-validation` | `passed: <why>` or `failed: <why>` |
 | `fwm repo verify` | one line per problem: `<kind> <id>: <path>: <reason>`, or `leftover <path>: <reason>` |
