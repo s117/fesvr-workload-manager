@@ -12,7 +12,6 @@ def bootstrap():
     Generate the runs that make the repository's traces and checkpoints, for its creator. Import their results with
     `fwm repo add trace` and `fwm repo add checkpoint`.
 
-    \b
     Like `fwm mkgen`, they generate a run directory (a Makefile and run.json) to run with `make -C <dir> run`, and
     only read the repository.
     """
@@ -26,8 +25,10 @@ def record(ctx, entry, out_dir):
     """
     Record a run of the entry point ENTRY in a fresh copy of its sysroot.
 
+    Outputs trace/, final-state.json, console.stdout and console.stderr.
+
     \b
-    Outputs trace/, final-state.json, console.stdout and console.stderr. Import the trace with
+    Import the trace with
       fwm repo add trace ENTRY <dir>/trace --final-state <dir>/final-state.json
     """
     done(generate_record(open_repo(ctx), entry, out_dir))
@@ -43,8 +44,10 @@ def create_checkpoints(ctx, trace, desc, out_dir):
     Replay TRACE (a trace UUID or prefix, or an entry point with one trace), and create the checkpoints of DESC, a
     description file of "<name>: <instruction count>" lines.
 
+    Outputs ckpt.desc (a copy of DESC), checkpoints/ and final-state.json.
+
     \b
-    Outputs ckpt.desc (a copy of DESC), checkpoints/ and final-state.json. Import the checkpoints with
+    Import the checkpoints with
       fwm repo add checkpoint TRACE <dir>/ckpt.desc <dir>/checkpoints
     """
     done(generate_create_checkpoints(open_repo(ctx), trace, desc, out_dir))

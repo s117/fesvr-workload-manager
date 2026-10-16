@@ -184,7 +184,7 @@ The Makefiles leave other simulator outputs, such as `bbv_proc_0.bb.gz` from `-s
 
 ## Clusters and shared repositories
 
-- **Commands that change the repository** (`repo init`, `add`, `remove`, `gc`, `record-validation`) should run on one host, e.g. a Snakemake controller. The database uses SQLite's rollback journal, which works on a shared filesystem, and they wait for each other.
+- **Commands that change the repository** (`repo init`, `add`, `set-metadata`, `remove`, `gc`, `record-validation`) should run on one host, e.g. a Snakemake controller. The database uses SQLite's rollback journal, which works on a shared filesystem, and they wait for each other.
 - **Compute jobs** run the generated Makefiles. Only the `from-sysroot` and record runs open the database, read-only, when `fwm spawn` checks the sysroot out.
 - **Read-only use:** `list`, `show`, `verify`, `mkgen`, `repo bootstrap`, `spawn` and completion work in a repository you can't write to, e.g. one shared with your group.
 - **Interrupted commands:** a command killed by its scheduler (SIGTERM) cleans up after itself. A harder kill can leave staging or files that no row refers to. `fwm repo verify` reports them and `fwm repo gc` removes them; it never leaves rows whose files are missing.
