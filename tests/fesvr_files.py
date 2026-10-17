@@ -2,6 +2,7 @@
 Writers of synthetic FESVR recordings and checkpoints for tests, in the on-disk formats of
 riscv-fesvr/fesvr/device_traffic_format.h and checkpoint_format.h.
 """
+import json
 import gzip
 import hashlib
 import os
@@ -124,3 +125,13 @@ def write_checkpoint(path: str, harts: Sequence[CheckpointHart], mem_mb: int = 1
                               hart.state)
     with open(path, "wb") as f:
         f.write(header + zlib.compress(memory, 9) + trailing)
+
+
+def final_state_json(*instrets: int, reason: str = "target_exit", exit_code: int = 0, **extra: str) -> str:
+    """A +final-state-dump, as FESVR writes it: why the run finished, and each HART's count unless it failed."""
+    state: dict = {"finish_reason": reason, **extra}
+    if reason == "target_exit":
+        state["exit_code"] = exit_code
+    if reason not in ("error", "unfinished"):
+        state["hart_state"] = [{"instret": i} for i in instrets]
+    return json.dumps(state)

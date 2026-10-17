@@ -5,6 +5,7 @@ from click.testing import CliRunner
 
 from fwm.cli.fwm import cli
 from tests.fesvr_files import (
+    final_state_json,
     write_recording, write_checkpoint, Command, exit_command, recording_sha256, CheckpointHart
 )
 
@@ -35,7 +36,7 @@ def populated(run, sysroot_src, write_entry_point, tmp_path):
     rec = tmp_path / "rec"
     write_recording(str(rec), harts=[COMMANDS])
     final_state = tmp_path / "final-state.json"
-    final_state.write_text('{"hart_state": [{"instret": 5000}]}')
+    final_state.write_text(final_state_json(5000))
     code, out, _ = run("repo", "add", "trace", "e", str(rec), "--final-state", str(final_state))
     assert code == 0
     trace_uuid = out.strip()

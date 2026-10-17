@@ -13,7 +13,7 @@ from fwm.repo.sysroot import add_sysroot
 from fwm.repo.trace import add_trace
 from fwm.repo.validation import record_validation, PASSED, FAILED
 from tests.conftest import import_checkpoint
-from tests.fesvr_files import write_recording, write_checkpoint, Command, exit_command, recording_sha256, CheckpointHart
+from tests.fesvr_files import final_state_json, write_recording, write_checkpoint, Command, exit_command, recording_sha256, CheckpointHart
 
 COMMANDS = [Command(), exit_command(0)]
 
@@ -25,7 +25,7 @@ def ckpt(repo, sysroot_src, write_entry_point, tmp_path):
     rec = tmp_path / "rec"
     write_recording(str(rec), harts=[COMMANDS])
     final_state = tmp_path / "final-state.json"
-    final_state.write_text('{"hart_state": [{"instret": 5000}]}')
+    final_state.write_text(final_state_json(5000))
     add_trace(repo, "e", str(rec), final_state=str(final_state))
     for name in ("c", "d"):
         write_checkpoint(str(tmp_path / name), [CheckpointHart(recording_sha256(COMMANDS), cmd_index=1)])
@@ -41,7 +41,7 @@ def load_run(repo, ckpt, tmp_path):
 
 
 def final_state(run, instret):
-    (run / "final-state.json").write_text(json.dumps({"hart_state": [{"instret": instret}]}))
+    (run / "final-state.json").write_text(final_state_json(instret))
 
 
 def test_passed(repo, load_run):
@@ -56,9 +56,16 @@ def test_passed(repo, load_run):
 
 @pytest.mark.parametrize("content, reason", [
     (None, "has no final-state.json"),
-    ("", "didn't end normally"),
-    ('{"hart_state": [{"instret": 4999}]}', r"ended at instret \[4999\], the trace at \[5000\]"),
-    ("{", "invalid"),
+    ("", "is empty: it was written by a spike older than"),
+    ('{"hart_state": [{"instret": 5000}]}', "has no finish_reason"),
+    (final_state_json(4999), r"ended at instret \[4999\], the trace at \[5000\]"),
+    (final_state_json(5000, exit_code=1), "exited with code 1, in the trace with status 0"),
+    (final_state_json(reason="error", error="the replay diverged"), "didn't end with the program's exit: the "
+                                                                    "simulator failed: the replay diverged"),
+    (final_state_json(4000, reason="interrupted", signal="SIGTERM"), r"SIGTERM stopped it .* at instret \[4000\]"),
+    (final_state_json(100, reason="instret_limit"), r"-e.* at instret \[100\]"),
+    (final_state_json(reason="unfinished"), "spike died"),
+    ("{", "not JSON"),
 ])
 def test_failed(repo, load_run, content, reason):
     if content is not None:
@@ -108,10 +115,10 @@ def test_cli(repo, load_run):
     assert result.exit_code == 0
     assert result.stdout.startswith("passed: ")
 
-    (load_run / "final-state.json").write_text("")
+    (load_run / "final-state.json").write_text(final_state_json(reason="error", error="the replay diverged"))
     result = runner.invoke(cli, ["--repo-path", repo.path, "repo", "record-validation", "c", str(load_run)])
     assert result.exit_code == 4
-    assert result.stdout.startswith("failed: the run didn't end normally")
+    assert result.stdout.startswith("failed: the run didn't end with the program's exit: the simulator failed")
 
     result = runner.invoke(cli, ["--repo-path", repo.path, "show", "checkpoint", "c", "--json"])
     assert json.loads(result.stdout)["validation"]["status"] == "failed"

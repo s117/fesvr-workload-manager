@@ -44,8 +44,8 @@ def mkgen():
     Then run `make -C <dir> run`, overriding its variables on the command line, e.g.
       make -C <dir> run SIM=/path/to/721sim SIM_FLAGS_EXTRA="-e100000000" FESVR_FLAGS_EXTRA=+verbose
     SIM defaults to spike, or to the environment variable FWM_SIM_CMD when generated. Every run writes
-    final-state.json, each HART's instruction count when the simulation ends; spike leaves it empty when -e stops
-    it.
+    final-state.json: why it finished (e.g. target_exit, instret_limit for -e, interrupted, error), and each HART's
+    instruction count there.
     """
 
 
@@ -106,6 +106,7 @@ def from_simpoint(ctx, checkpoint, out_dir):
     its SimPoint interval: the Makefile passes -e<interval> to the simulator (override it with INTERVAL=<n>).
 
     spike exits 1 when -e stops it, so make reports "Error 1": that is how this run normally ends, and
-    final-state.json then stays empty. Read the results from the simulator's own statistics.
+    final-state.json then says instret_limit, with the count at the interval's end. Read the results from the
+    simulator's own statistics.
     """
     done(generate_from_simpoint(open_repo(ctx), checkpoint, out_dir))

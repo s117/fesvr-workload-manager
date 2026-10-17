@@ -12,8 +12,10 @@ scripts/checkpoint-digest.py.
 import hashlib
 import json
 import os
+import signal
 import subprocess
 import sys
+import time
 
 import pytest
 
@@ -44,9 +46,16 @@ def make(run_dir, *args) -> int:
                           check=False).returncode
 
 
-def instret(run_dir) -> int:
+def final_state(run_dir) -> dict:
     with open(os.path.join(run_dir, "final-state.json")) as f:
-        return json.load(f)["hart_state"][0]["instret"]
+        return json.load(f)
+
+
+def instret(run_dir) -> int:
+    """The count where a run ended with the program's exit."""
+    state = final_state(run_dir)
+    assert state["finish_reason"] == "target_exit", state
+    return state["hart_state"][0]["instret"]
 
 
 def run_json(run_dir) -> dict:
@@ -112,6 +121,34 @@ def test_record_replay_checkpoint(env, tmp_path):
     fwm(env, "check", "recording", str(r1l / "trace"), "--final-state", str(r1l / "final-state.json"))
     fwm(env, "repo", "verify")
 
+    # a record run stopped by SIGTERM (e.g. a job's time limit): spike exits 0, but its final state says so
+    r1t = base / "r1-term"
+    fwm(env, "repo", "bootstrap", "record", "e", "-o", str(r1t))
+    proc = subprocess.Popen(["make", "-s", "-C", str(r1t), "run"], start_new_session=True,
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    # once spike runs the program: a signal while it starts up leaves the dump "unfinished"
+    for _ in range(600):
+        if subprocess.run(["pgrep", "-g", str(proc.pid), "-x", "spike"], capture_output=True).stdout:
+            break
+        time.sleep(0.05)
+    time.sleep(1)
+    # to make, which passes it on to spike (signalling the whole group gives spike two: see fwm-bootstrap's run_make)
+    os.kill(proc.pid, signal.SIGTERM)
+    proc.wait()
+    # make ends first: wait for spike, which writes its final state as it stops
+    for _ in range(600):
+        try:
+            os.killpg(proc.pid, 0)
+        except ProcessLookupError:
+            break
+        time.sleep(0.05)
+    state = final_state(r1t)
+    assert (state["finish_reason"], state["signal"]) == ("interrupted", "SIGTERM")
+    assert 0 < state["hart_state"][0]["instret"] < total
+    checked = subprocess.run([sys.executable, "-m", "fwm", "check", "recording", str(r1t / "trace"), "--final-state",
+                              str(r1t / "final-state.json")], env=env, capture_output=True, text=True)
+    assert checked.returncode == 4 and "SIGTERM stopped it" in checked.stderr
+
     # a run from the sysroot: the same console and instruction count, and no recording
     r0 = base / "r0"
     fwm(env, "mkgen", "from-sysroot", "e", "-o", str(r0))
@@ -175,14 +212,18 @@ def test_record_replay_checkpoint(env, tmp_path):
     assert described["entry"]["metadata"] == metadata
     assert fwm(env, "repo", "record-validation", "e.0.0.40", str(r4)).startswith("passed")
     assert make(r4, "SIM_FLAGS_EXTRA=-e1000") == 2  # spike exits 1 when -e stops it, so make fails
+    assert final_state(r4) == {"finish_reason": "instret_limit",
+                               "hart_state": [{"instret": ckpts["e.0.0.40"]["harts"][0]["csr_count"] + 1000}]}
     assert fwm_status(env, "repo", "record-validation", "e.0.0.40", str(r4)) == 4
+    assert "-e" in json.loads(fwm(env, "show", "checkpoint", "e.0.0.40", "--json"))["validation"]["detail"]
 
-    # one SimPoint interval: -e stops it (spike exits 1, so make fails), and final-state.json stays empty
+    # one SimPoint interval: -e stops it (spike exits 1, so make fails), and the final state says so, at its end
     r5 = base / "r5"
     fwm(env, "mkgen", "from-simpoint", "e.0.0.40", "-o", str(r5))
     assert "-e$(INTERVAL)" in (r5 / "Makefile").read_text()
     assert make(r5) == 2
-    assert (r5 / "final-state.json").read_text() == ""
+    assert final_state(r5) == {"finish_reason": "instret_limit",
+                               "hart_state": [{"instret": ckpts["e.0.0.40"]["harts"][0]["csr_count"] + 1000}]}
     assert fwm_status(env, "mkgen", "from-simpoint", "e.1.0.60", "-o", str(base / "r6")) == 4
 
     fwm(env, "repo", "verify")

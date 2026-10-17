@@ -13,8 +13,10 @@
 #   - with -e<n>, it is 1 when the run was stopped after n instructions (make then reports "Error 1"), and 0 when the
 #     program ended first, whatever its own exit status;
 #   - an error of FESVR (e.g. a replay that diverged from its recording) aborts spike.
-# final-state.json is left empty when -e stops the run, or on an error of FESVR. spike stopped by SIGTERM or SIGINT
-# writes it, with the instruction count where it stopped, and exits 0.
+# final-state.json says why the run finished (finish_reason) and, unless the FESVR failed, each hart's instruction count
+# there: target_exit (with exit_code), checkpoints_created, instret_limit (-e), interrupted (SIGTERM/SIGINT, with
+# signal: spike then exits 0), error (with the FESVR's message), or unfinished (spike died). Judge a run by it, not by
+# make's exit status.
 
 SIM ?= @SIM@
 SIM_FLAGS_EXTRA ?=

@@ -1,8 +1,8 @@
 # Load checkpoint @CHECKPOINT_NAME@ of trace @TRACE_UUID@ (entry point @ENTRY@), at SimPoint @SIMPOINT_INDEX@ of
 # weight @SIMPOINT_WEIGHT@, and simulate its interval: INTERVAL instructions from the checkpoint (-e).
 # spike exits 1 when -e stops it, so make reports "Error 1": that is how this run normally ends, and final-state.json
-# then stays empty. Read the results from the simulator's own statistics.
-# Outputs: final-state.json, written only if the program ends within the interval
+# then says instret_limit, with the count at the interval's end. Read the results from the simulator's own statistics.
+# Outputs: final-state.json
 
 TRACE := @TRACE_DIR@
 CHECKPOINT := @CHECKPOINT@

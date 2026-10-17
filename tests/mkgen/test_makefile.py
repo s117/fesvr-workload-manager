@@ -21,6 +21,7 @@ from fwm.repo.sysroot import add_sysroot, get_sysroot
 from fwm.repo.trace import add_trace
 from tests.conftest import import_checkpoint
 from tests.fesvr_files import (
+    final_state_json,
     write_recording, write_checkpoint, Command, exit_command, recording_sha256, CheckpointHart
 )
 
@@ -45,7 +46,7 @@ def trace(repo, entry, tmp_path):
     rec = tmp_path / "rec"
     write_recording(str(rec), harts=[COMMANDS])
     final_state = tmp_path / "final-state.json"
-    final_state.write_text('{"hart_state": [{"instret": 5000}]}')
+    final_state.write_text(final_state_json(5000))
     return add_trace(repo, "e", str(rec), final_state=str(final_state))
 
 

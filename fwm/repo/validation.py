@@ -2,17 +2,15 @@
 Validation of checkpoints: load a checkpoint, run to the end of the program, and compare with its trace.
 
 A replay stops at the first difference from its recording (another command, other data written to the host, or a
-recording that ran out). So a run from a checkpoint whose every HART's final instruction count equals the trace's has
-replayed the rest of the program exactly, including its exit command: the exit status matches too. (spike stopped by a
-signal also writes its final state, where it stopped: that count differs, so the run fails.)
+recording that ran out). So a run from a checkpoint that ends with the program's exit (finish_reason target_exit), at
+every HART's final instruction count of the trace, has replayed the rest of the program exactly, including its exit
+command. Any other end fails, with its reason: e.g. an error of the simulator (a replay that diverged), a signal (a
+job's time limit), or -e.
 """
-import json
 import os
 from typing import List, Optional, Tuple
 
-import pydantic
-
-from fwm.data_loader.final_state import read_final_state
+from fwm.data_loader.final_state import read_final_state, FinalStateError, FinishReason
 from fwm.database.db import now_tz
 from fwm.database.schema import DecoupledCheckpoint
 from fwm.mkgen.makefile import read_run_info
@@ -28,20 +26,22 @@ FINAL_STATE = "final-state.json"
 
 def _judge(ckpt: DecoupledCheckpoint, run_dir: str) -> Tuple[bool, str]:
     """:return: Whether the run validates the checkpoint, and why."""
-    final_state = os.path.join(run_dir, FINAL_STATE)
-    if not os.path.isfile(final_state):
-        return False, f"the run has no {FINAL_STATE}: it didn't run, or didn't end"
-    if os.path.getsize(final_state) == 0:
-        return False, (f"the run didn't end normally ({FINAL_STATE} is empty): it was stopped by -e, or by an error of "
-                       f"the simulator, e.g. a replay that diverged from its recording")
+    path = os.path.join(run_dir, FINAL_STATE)
+    if not os.path.isfile(path):
+        return False, f"the run has no {FINAL_STATE}: it didn't run"
     try:
-        instrets = read_final_state(final_state)
-    except (OSError, json.JSONDecodeError, pydantic.ValidationError) as e:
-        return False, f"invalid {final_state}: {e}"
+        state = read_final_state(path)
+    except FinalStateError as e:
+        return False, str(e)
+    if state.finish_reason != FinishReason.TARGET_EXIT:
+        where = f" at instret {state.instrets}" if state.instrets is not None else ""
+        return False, f"the run didn't end with the program's exit: {state.describe()}{where}"
     expected: List[Optional[int]] = [h.instret for h in trace_harts(ckpt.trace)]
-    if instrets != expected:
-        return False, f"the run ended at instret {instrets}, the trace at {expected}"
-    return True, f"the run ended at the trace's instret {expected}"
+    if state.instrets != expected:
+        return False, f"the run ended at instret {state.instrets}, the trace at {expected}"
+    if (state.exit_code or 0) & 0xff != ckpt.trace.exit_status:
+        return False, f"the program exited with code {state.exit_code}, in the trace with status {ckpt.trace.exit_status}"
+    return True, f"the program exited at the trace's instret {expected}, with its exit code {state.exit_code}"
 
 
 def record_validation(repo: Repo, ckpt_ref: str, run_dir: str) -> DecoupledCheckpoint:

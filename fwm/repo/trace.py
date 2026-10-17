@@ -1,13 +1,11 @@
-import json
 import os
 import re
 import uuid
 from typing import List, Optional, Tuple
 
 import peewee as pw
-import pydantic
 
-from fwm.data_loader.final_state import read_final_state
+from fwm.data_loader.final_state import read_final_state, FinalState, FinalStateError, FinishReason
 from fwm.data_loader.recording import (
     read_recording, read_recording_sha256, read_target_spec, Recording, RecordingFormatError
 )
@@ -53,58 +51,73 @@ def trace_harts(trace: DecoupledTrace) -> List[TraceHart]:
     return list(trace.harts.order_by(TraceHart.hart_id))
 
 
-def _read_instrets(final_state: Optional[str]) -> Optional[List[int]]:
-    """The instret of each HART in a +final-state-dump file, if one is given."""
+# What to do with a record run that didn't end with the program's exit
+_NOT_AN_EXIT = {
+    FinishReason.INTERRUPTED: "record it again (with more time, if it was a time limit)",
+    FinishReason.INSTRET_LIMIT: "its recording is truncated: import it without --final-state, or record it again without -e",
+    FinishReason.ERROR: "record it again once that is fixed",
+    FinishReason.UNFINISHED: "record it again",
+}
+
+
+def _read_final_state(final_state: Optional[str]) -> Optional[FinalState]:
+    """The +final-state-dump of a record run, if one is given: the run must have ended with the program's exit."""
     if final_state is None:
         return None
-    if os.path.isfile(final_state) and os.path.getsize(final_state) == 0:
-        raise FwmValidationError(
-            f"the final state {final_state} is empty: spike writes it only when the simulation ends normally, not "
-            f"when -e stops the run. Import a truncated recording without --final-state.")
     try:
-        return read_final_state(final_state)
-    except (OSError, json.JSONDecodeError, pydantic.ValidationError) as e:
-        raise FwmValidationError(f"invalid final state {final_state}: {e}")
+        state = read_final_state(final_state)
+    except FinalStateError as e:
+        raise FwmValidationError(str(e))
+    if state.finish_reason != FinishReason.TARGET_EXIT:
+        advice = _NOT_AN_EXIT.get(state.finish_reason, "it isn't the final state of a record run")
+        raise FwmValidationError(
+            f"the run of the final state {final_state} didn't end with the program's exit: {state.describe()}; {advice}")
+    return state
 
 
-def _judge_recording(recording: Recording, instrets: Optional[List[int]], recording_dir: str,
+def _judge_recording(recording: Recording, state: Optional[FinalState], recording_dir: str,
                      final_state: Optional[str]) -> None:
-    """Check that a recording and the final state of its run agree."""
+    """Check that a recording and the final state of its run (which says the program exited) agree."""
+    if state is None:
+        return
     spec = recording.target_spec
-    if instrets is not None and len(instrets) != spec.num_harts:
+    instrets = state.instrets or []
+    if len(instrets) != spec.num_harts:
         raise FwmValidationError(
             f"the final state {final_state} has {len(instrets)} HART(s), but the recording has {spec.num_harts}")
-    if instrets is not None and recording.exit_status is None:
-        # -e leaves the final state empty; spike stopped by SIGTERM or SIGINT writes it, where it stopped, and exits 0
+    if recording.exit_status is None:
         raise FwmValidationError(
-            f"the recording {recording_dir} is truncated (the program never exited), but its run wrote the final state "
-            f"{final_state}: spike was stopped by a signal, e.g. a job's time limit. Record it again, or import it as "
-            f"a truncated recording without --final-state.")
+            f"the final state {final_state} says the program exited, but the recording {recording_dir} is truncated: "
+            f"they aren't of the same run")
+    if recording.exit_status != (state.exit_code or 0) & 0xff:
+        raise FwmValidationError(
+            f"the final state {final_state} says the program exited with code {state.exit_code}, but the recording "
+            f"{recording_dir} with status {recording.exit_status}: they aren't of the same run")
 
 
-def check_recording(recording_dir: str, final_state: Optional[str] = None) -> Tuple[Recording, Optional[List[int]]]:
+def check_recording(recording_dir: str, final_state: Optional[str] = None) -> Tuple[Recording, Optional[FinalState]]:
     """
     Check that a recording is complete and consistent, as `fwm repo add trace` would, without a repository: e.g. on the
     node that ran it, so that a run cut short is caught there.
 
     :param final_state: The +final-state-dump of the recording run.
-    :return: The recording, and the instret of each HART from the final state, if one is given.
-    :raise FwmValidationError: The recording is malformed, truncated (the program never exited), or doesn't agree with
-                               the final state.
+    :return: The recording, and the final state, if one is given.
+    :raise FwmValidationError: The recording is malformed or truncated (the program never exited), the final state
+                               doesn't say the program exited, or the two disagree.
     """
     if not os.path.isdir(recording_dir):
         raise NotFoundError(f"{recording_dir} is not a directory")
-    instrets = _read_instrets(final_state)
+    state = _read_final_state(final_state)
     try:
         recording = read_recording(recording_dir)
     except (RecordingFormatError, OSError, EOFError) as e:
         raise FwmValidationError(f"invalid recording {recording_dir}: {e}")
-    _judge_recording(recording, instrets, recording_dir, final_state)
+    _judge_recording(recording, state, recording_dir, final_state)
     if recording.exit_status is None:
         raise FwmValidationError(
             f"the recording {recording_dir} is truncated: the program never exited (e.g. the run was stopped by -e, or "
             f"by an error of the simulator)")
-    return recording, instrets
+    return recording, state
 
 
 def _source_recording_sha256s(recording_dir: str) -> Optional[List[str]]:
@@ -153,7 +166,8 @@ def add_trace(repo: Repo, entry_name: str, recording_dir: str, final_state: Opti
     entry = get_entry(entry_name)
     if not os.path.isdir(recording_dir):
         raise NotFoundError(f"{recording_dir} is not a directory")
-    instrets = _read_instrets(final_state)
+    state = _read_final_state(final_state)
+    instrets = state.instrets if state is not None else None
     existing = _trace_with_recording(entry, _source_recording_sha256s(recording_dir))
     if existing is not None:
         return _existing_trace(existing, instrets, exist_ok)
@@ -165,12 +179,12 @@ def add_trace(repo: Repo, entry_name: str, recording_dir: str, final_state: Opti
             recording = read_recording(staged)
         except (RecordingFormatError, OSError, EOFError) as e:
             raise FwmValidationError(f"invalid recording {recording_dir}: {str(e).replace(staged, recording_dir)}")
-        return _import_trace(repo, entry, recording_dir, staged, recording, final_state, instrets, description,
+        return _import_trace(repo, entry, recording_dir, staged, recording, final_state, state, description,
                              exist_ok, sim_version)
 
 
 def _import_trace(repo: Repo, entry: NativeEntry, recording_dir: str, staged: str, recording: Recording,
-                  final_state: Optional[str], instrets: Optional[List[int]], description: Optional[str],
+                  final_state: Optional[str], state: Optional[FinalState], description: Optional[str],
                   exist_ok: bool, sim_version: Optional[str]) -> DecoupledTrace:
     spec = recording.target_spec
 
@@ -193,7 +207,8 @@ def _import_trace(repo: Repo, entry: NativeEntry, recording_dir: str, staged: st
             f"the recording booted an ELF of SHA256 {spec.boot_elf_sha256}, but the boot ELF {boot_elf} of entry "
             f"point '{entry.name}' in sysroot '{entry.sysroot.name}' has SHA256 {boot_elf_digest}")
 
-    _judge_recording(recording, instrets, recording_dir, final_state)
+    _judge_recording(recording, state, recording_dir, final_state)
+    instrets = state.instrets if state is not None else None
 
     log = Logger.get_logger()
     if recording.exit_status is None:

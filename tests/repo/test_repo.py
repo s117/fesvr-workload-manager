@@ -16,6 +16,7 @@ from fwm.repo.sysroot import add_sysroot, verify_sysroot
 from fwm.repo.trace import add_trace, resolve_trace, verify_trace
 from tests.data_loader.test_sim_version import SPIKE_VERSION
 from tests.fesvr_files import (
+    final_state_json,
     write_recording, write_checkpoint, Command, exit_command, recording_sha256, CheckpointHart as CkptHart,
     encode_hart_state, default_hart_state_entries
 )
@@ -227,9 +228,9 @@ def entry(repo, sysroot_src, write_entry_point):
     return add_entry(repo, "sr", "wl", "e", write_entry_point())
 
 
-def write_final_state(tmp_path, *instrets) -> str:
+def write_final_state(tmp_path, *instrets, exit_code=0) -> str:
     path = tmp_path / "final-state.json"
-    path.write_text('{"hart_state": [' + ", ".join(f'{{"instret": {i}}}' for i in instrets) + "]}")
+    path.write_text(final_state_json(*instrets, exit_code=exit_code))
     return str(path)
 
 
@@ -255,7 +256,7 @@ def test_add_trace_nonzero_exit(repo, entry, tmp_path, caplog):
     """A program that exits with an error status is a complete trace; the status is kept, with a warning."""
     rec = tmp_path / "rec"
     write_recording(str(rec), harts=[[Command(), exit_command(3)]])
-    trace = add_trace(repo, "e", str(rec), final_state=write_final_state(tmp_path, 900))
+    trace = add_trace(repo, "e", str(rec), final_state=write_final_state(tmp_path, 900, exit_code=3))
     assert trace.exit_status == 3
     assert "exited with status 3" in caplog.text
 
@@ -312,7 +313,7 @@ def test_add_trace_again(repo, entry, tmp_path):
     rec = tmp_path / "rec"
     write_recording(str(rec), harts=[COMMANDS])
     final_state = tmp_path / "final-state.json"
-    final_state.write_text('{"hart_state": [{"instret": 5000}]}')
+    final_state.write_text(final_state_json(5000))
     trace = add_trace(repo, "e", str(rec), final_state=str(final_state))
 
     # the same recording isn't imported twice
@@ -322,7 +323,7 @@ def test_add_trace_again(repo, entry, tmp_path):
     # with exist_ok, only with the same final state
     with pytest.raises(AlreadyExistsError, match="different final state"):
         add_trace(repo, "e", str(rec), exist_ok=True)
-    final_state.write_text('{"hart_state": [{"instret": 6000}]}')
+    final_state.write_text(final_state_json(6000))
     with pytest.raises(AlreadyExistsError, match="different final state"):
         add_trace(repo, "e", str(rec), final_state=str(final_state), exist_ok=True)
     assert DecoupledTrace.select().count() == 1
@@ -330,12 +331,12 @@ def test_add_trace_again(repo, entry, tmp_path):
 
 
 def test_add_trace_interrupted_run(repo, entry, tmp_path):
-    """spike stopped by SIGTERM writes its final state, so a truncated recording with one was interrupted."""
+    """spike stopped by SIGTERM (e.g. a job's time limit) says so in its final state."""
     rec = tmp_path / "rec"
     write_recording(str(rec), harts=[[Command(), Command()]])
     final_state = tmp_path / "final-state.json"
-    final_state.write_text('{"hart_state": [{"instret": 1234}]}')
-    with pytest.raises(FwmValidationError, match="stopped by a signal"):
+    final_state.write_text(final_state_json(1234, reason="interrupted", signal="SIGTERM"))
+    with pytest.raises(FwmValidationError, match="SIGTERM stopped it"):
         add_trace(repo, "e", str(rec), final_state=str(final_state))
     assert add_trace(repo, "e", str(rec)).exit_status is None
 
