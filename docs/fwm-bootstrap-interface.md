@@ -72,7 +72,7 @@ The database uses SQLite's rollback journal, not WAL, so it can sit on a shared 
 - **Save `spike --version`** for provenance, and pass the file to `repo add trace` and `repo add checkpoint` with `--sim-version`. fwm checks it is build information. A recording replays reliably only with a spike of the same semantics, and this records which one made it.
 - **Clean what the Makefile doesn't own,** such as BBV files, or use a fresh run directory.
 
-**`final-state.json`** (spike's `+final-state-dump`) says why the run finished, and each HART's instruction count there. spike writes it as `unfinished` when the run starts and replaces it at the end, so it is never empty. fwm requires this format: a dump without `finish_reason`, from a spike older than riscv-isa-sim eb87256 / riscv-fesvr 6f2d3b8, is refused, since such a spike's count at the program's exit depended on where the run started.
+**`final-state.json`** (spike's `+final-state-dump`) says why the run finished, and each HART's instruction count there. spike writes it as `unfinished` when the run starts and replaces it at the end, so it is never empty. fwm requires this format: a dump without `finish_reason`, from a spike older than riscv-isa-sim eb87256 / riscv-fesvr 6f2d3b8, is refused, since such a spike's count at the program's exit depended on where the run started. Use riscv-isa-sim 872d191 / riscv-fesvr ecc3df3 or later: an earlier spike stopped by SIGTERM twice (under make, a scheduler's time limit or `kill -- -<pgid>`, which send it two) could leave an empty or broken dump; these ignore the repeat and write the dump atomically.
 
 | `finish_reason` | The run finished because | Extra key | `hart_state` |
 | --- | --- | --- | --- |

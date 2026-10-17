@@ -132,8 +132,9 @@ def test_record_replay_checkpoint(env, tmp_path):
             break
         time.sleep(0.05)
     time.sleep(1)
-    # to make, which passes it on to spike (signalling the whole group gives spike two: see fwm-bootstrap's run_make)
-    os.kill(proc.pid, signal.SIGTERM)
+    # to the whole process group, as a batch scheduler does: spike gets it twice (make passes it on too), and ignores
+    # the repeat (riscv-fesvr ecc3df3)
+    os.killpg(proc.pid, signal.SIGTERM)
     proc.wait()
     # make ends first: wait for spike, which writes its final state as it stops
     for _ in range(600):
