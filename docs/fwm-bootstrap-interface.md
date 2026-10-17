@@ -40,7 +40,7 @@ The database uses SQLite's rollback journal, not WAL, so it can sit on a shared 
 - **Step 2's `copy_spawn`** decides how the record run gets the sysroot (`fwm spawn --mode auto`): `true` copies it; `false` links each file to the repository's read-only file, which takes no time or space, but the program can't open those files for writing, and `stat` reports them read-only. It is a launch field: `--exist-ok` compares it.
 - **Step 2's metadata.** `entry.json` may also hold `metadata`, any JSON object: put the suite's `index.yaml` `metadata` there (and its `auxiliary` data, if runs need it). fwm keeps it, shows it, and copies it into every `run.json`, but doesn't interpret it. `--exist-ok` doesn't compare it, so a rerun keeps the stored metadata and warns if it differs; `fwm repo set-metadata` replaces it (or removes it, with a file holding `null`) without touching the traces.
 - **Step 3** is the only step that needs the sysroot, and it must run on Linux. Steps 6 and 8 need only the trace and its checkpoints, so they can also run on ARM64 Linux or macOS.
-- **Step 3's check.** `fwm check recording` runs the checks of `repo add trace` on the compute node, without a repository. A run cut short by the job's time limit fails there (spike stopped by SIGTERM writes its final state and exits 0), so the job can be retried with more time, instead of failing later in the import on the controller.
+- **Step 3's check.** `fwm check recording` runs the checks of `repo add trace` on the compute node, without a repository. A run cut short by the job's time limit fails there (its final state says `interrupted`, and spike exits 0), so the job can be retried with more time, instead of failing later in the import on the controller.
 - **Step 3's SimPoint profile.** `-s<interval>` makes spike write `bbv_proc_<hart>.bb.gz` in the run directory. Taking it in the record run saves a full replay; a replay with `-s` gives the same profile. It needs a spike built without `NO_SIMPOINT`.
 - **Step 5's description file.** A checkpoint's instruction count is the number of instructions retired before it. spike's BBV intervals are not exactly `<interval>` long (the first was 1,000,005 for a 1,000,000 interval), and spike drops the last partial interval. So the count of the interval with index `i` must be the sum of the sizes of intervals `0 … i-1`, not `i × interval`.
 - **Step 5's names.** A checkpoint's name is just a name; fwm reads nothing from it. riscv-simenv's `<entry>.<simpoint index>.<weight>` (e.g. `bfs-road-n64.3.0.25`) stays readable. Leave out riscv-simenv's `.gz`: an fwm checkpoint isn't a gzip file (spike compresses the memory image inside it).
@@ -62,7 +62,7 @@ The database uses SQLite's rollback journal, not WAL, so it can sit on a shared 
 | `repo bootstrap create-checkpoints` | `ckpt.desc` (the copied description, written when generated), `final-state.json`, and `checkpoints/` |
 | `mkgen from-sysroot` | `final-state.json`, `console.stdout`, `console.stderr`, and the post-run `sysroot/` |
 | `mkgen from-fesvr-trace`, `from-checkpoint` | `final-state.json` |
-| `mkgen from-simpoint` | `final-state.json`, left empty when `-e$(INTERVAL)` stops the run, as it normally does |
+| `mkgen from-simpoint` | `final-state.json`, normally saying `instret_limit`: `-e$(INTERVAL)` stopped the run |
 
 **What the calling script does:**
 - **Run `make -C <dir> run || true`, and let fwm judge the run,** not make's exit status. A program that legitimately exits non-zero makes `make` fail, while spike stopped by SIGTERM (e.g. a job's time limit) exits 0. fwm judges each kind of run from its outputs:
@@ -72,9 +72,19 @@ The database uses SQLite's rollback journal, not WAL, so it can sit on a shared 
 - **Save `spike --version`** for provenance, and pass the file to `repo add trace` and `repo add checkpoint` with `--sim-version`. fwm checks it is build information. A recording replays reliably only with a spike of the same semantics, and this records which one made it.
 - **Clean what the Makefile doesn't own,** such as BBV files, or use a fresh run directory.
 
-**`final-state.json`** is written when the simulation ends: normally, or when spike is stopped by SIGTERM or SIGINT, with the instruction count where it stopped. It stays empty after an `-e` stop or a simulator error, such as a replay that diverged from its recording. What it holds:
-- **record, from-sysroot, from-fesvr-trace, from-checkpoint:** each HART's instruction count at the end of the program, or where a signal stopped it.
-- **create-checkpoints:** where the run stopped, just after the last checkpoint, not the end of the program. Don't compare it with the trace.
+**`final-state.json`** (spike's `+final-state-dump`) says why the run finished, and each HART's instruction count there. spike writes it as `unfinished` when the run starts and replaces it at the end, so it is never empty. fwm requires this format: a dump without `finish_reason`, from a spike older than riscv-isa-sim eb87256 / riscv-fesvr 6f2d3b8, is refused, since such a spike's count at the program's exit depended on where the run started.
+
+| `finish_reason` | The run finished because | Extra key | `hart_state` |
+| --- | --- | --- | --- |
+| `target_exit` | the program exited | `exit_code` | the count before the exit's `tohost` write, whatever the run started from |
+| `checkpoints_created` | the last checkpoint was created | | at the last checkpoint, not the end of the program |
+| `instret_limit` | `-e` stopped it | | the start count plus the limit |
+| `debug_quit` | spike's debug mode was quit | | where it quit |
+| `interrupted` | SIGTERM or SIGINT (e.g. a job's time limit); spike exits 0 | `signal` | where it stopped |
+| `error` | the FESVR failed, e.g. a replay that diverged from its recording | `error`: the message | none |
+| `unfinished` | spike died otherwise: a crash, an assert, `kill -9` | | none |
+
+fwm takes a trace's counts only from a `target_exit` dump whose `exit_code` matches the recording's exit status, and validates a checkpoint only by a `target_exit` run (below).
 
 Each Makefile also starts with a line `# fwm-run: {...}` saying what the run is for, e.g. `{"kind": "from-checkpoint", "trace": "<uuid>", "checkpoint": "<name>"}`. `record-validation` uses it to check that a run directory belongs to the checkpoint.
 
@@ -179,15 +189,14 @@ A different item under the same name fails with status 5. Without `--exist-ok`, 
 A replay stops at the first difference from its recording: a different command, different data written to the host, or a recording that ran out. A checkpoint is therefore validated by loading it and running to the end of the program, without `-e`.
 
 `fwm repo record-validation <checkpoint> <run dir>`:
-- **Passes when** each HART's final instruction count in `final-state.json` equals the trace's. A run that reached the trace's final count has replayed the recorded exit, so it has the trace's exit status too.
-- **Fails** otherwise, with the reason: no `final-state.json`, an empty one (an `-e` stop or a simulator error), or different counts (e.g. spike was stopped by a signal).
+- **Passes when** `final-state.json` says `target_exit`, with the trace's exit status and each HART's final instruction count of the trace. The run has then replayed the rest of the program exactly, up to its recorded exit.
+- **Fails** otherwise, with the reason: no `final-state.json`, a run that ended otherwise (its `finish_reason`, e.g. `error` with the simulator's message, `interrupted`, `instret_limit`), or different counts or exit status.
 - **Is refused** (status 4, nothing recorded) when the run directory isn't a `mkgen from-checkpoint` run of that checkpoint, or the trace has no final instruction counts (imported without `--final-state`, or truncated).
 
 ## Truncated recordings
 
 A recording is truncated when its run was stopped before the program exited:
-- by `-e`: spike leaves `final-state.json` empty, which `fwm repo add trace --final-state` rejects;
-- by a signal (SIGTERM, SIGINT): spike writes `final-state.json` and exits 0, and `fwm repo add trace --final-state` rejects the combination of a truncated recording and a final state;
+- by `-e` (`instret_limit`), a signal (`interrupted`), or a simulator `error`: `fwm repo add trace --final-state` refuses any dump but `target_exit`, saying why the run finished;
 - import a truncated recording on purpose without `--final-state`;
 - the trace then has no instruction counts, so `repo bootstrap create-checkpoints` can't check the counts against the end of the recording, and its checkpoints can't be validated.
 

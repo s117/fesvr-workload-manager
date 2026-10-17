@@ -180,7 +180,7 @@ spike's exit status:
 
 **Don't judge a run by make's exit status; let fwm judge it.** A program that legitimately exits non-zero makes `make` fail, while spike stopped by SIGTERM (e.g. a job's time limit) exits 0. `fwm repo add trace --final-state` judges a record run, `fwm repo add checkpoint` a checkpoint creation, and `fwm repo record-validation` a run from a checkpoint.
 
-`final-state.json` is written when the simulation ends: normally (the program exited, or the last checkpoint was taken), or when spike is stopped by SIGTERM or SIGINT, with the instruction count where it stopped. It stays empty after an `-e` stop or a simulator error, e.g. a replay that diverged from its recording.
+`final-state.json` says why the run finished, and each hart's instruction count there: `target_exit` (with `exit_code`), `checkpoints_created`, `instret_limit` (`-e`), `debug_quit`, `interrupted` (with `signal`), `error` (with the simulator's message, and no count) or `unfinished` (spike died). fwm needs a spike that writes `finish_reason` (riscv-isa-sim eb87256 / riscv-fesvr 6f2d3b8 or later): older ones wrote counts at the program's exit that depended on where the run started, and their dumps are refused.
 
 The Makefiles leave other simulator outputs, such as `bbv_proc_0.bb.gz` from `-s`, to the caller: use a fresh run directory, or remove them.
 
