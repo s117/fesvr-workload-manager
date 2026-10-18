@@ -3,7 +3,8 @@ Reader of FESVR device traffic recordings (the folder written by +dev-traffic-re
 
 The format is defined in riscv-fesvr/fesvr/device_traffic_format.h, and documented in riscv-isa-sim's
 docs/fesvr-checkpoint-and-traffic-replay.md, section 9. All integers are little-endian and all structures are packed.
-The .packets, .index and .sha256 files are gzip-compressed by default; plain files are read as well.
+The .packets, .index and .sha256 files are gzip-compressed by default; plain files are read as well. A recording also
+holds its provenance (recording_provenance.json, see fwm.data_loader.provenance), which fwm requires.
 """
 import gzip
 import hashlib
@@ -12,6 +13,8 @@ import struct
 import zlib
 from dataclasses import dataclass
 from typing import BinaryIO, List, Optional, Tuple
+
+from fwm.data_loader.provenance import RecordingProvenance, ProvenanceError, read_provenance
 
 TARGET_SPEC_FILE = "target_spec.data"
 BOOT_ELF_FILE = "boot.elf"
@@ -62,6 +65,9 @@ class Recording:
     harts: List[HartRecording]
     # The program's exit status, or None if the run never exited (a truncated recording)
     exit_status: Optional[int]
+    # How it was made (recording_provenance.json), and the file's text
+    provenance: RecordingProvenance
+    provenance_text: str
 
 
 def _open(path: str) -> BinaryIO:
@@ -215,8 +221,8 @@ def scan_packets(recording_dir: str, hart_id: int, last_offset: Optional[int]) -
 
 def read_recording(recording_dir: str) -> Recording:
     """
-    Read and check a recording: its target spec, its boot ELF, and each HART's files. Each HART's .packets stream is
-    read in full to check it against its SHA256 (the replay itself never recomputes it).
+    Read and check a recording: its target spec, its boot ELF, its provenance, and each HART's files. Each HART's
+    .packets stream is read in full to check it against its SHA256 (the replay itself never recomputes it).
 
     :raise RecordingFormatError: The folder is not a complete, consistent recording.
     """
@@ -229,6 +235,10 @@ def read_recording(recording_dir: str) -> Recording:
 def _read_recording(recording_dir: str) -> Recording:
     target_spec = read_target_spec(recording_dir)
     check_boot_elf(recording_dir, target_spec)
+    try:
+        provenance, provenance_text = read_provenance(recording_dir)
+    except ProvenanceError as e:
+        raise RecordingFormatError(str(e))
 
     harts = []
     for hart_id in range(target_spec.num_harts):
@@ -252,4 +262,5 @@ def _read_recording(recording_dir: str) -> Recording:
     # the low 8 bits of the status (exit(-1) is 255).
     exit_codes = [h.last_exit_code for h in harts if h.last_exit_code != 0]
     exit_status = (exit_codes[-1] >> 1) & 0xff if exit_codes else None
-    return Recording(target_spec=target_spec, harts=harts, exit_status=exit_status)
+    return Recording(target_spec=target_spec, harts=harts, exit_status=exit_status, provenance=provenance,
+                     provenance_text=provenance_text)

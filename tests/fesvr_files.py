@@ -9,7 +9,7 @@ import os
 import struct
 import zlib
 from dataclasses import dataclass, field
-from typing import List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 PACKETS_FILE_MAGIC = 0x38837587
 INDEX_FILE_MAGIC = 0x38834639
@@ -54,10 +54,33 @@ def encode_packets(commands: Sequence[Command]) -> Tuple[bytes, List[int]]:
     return bytes(data), offsets
 
 
+def provenance(**changes: Any) -> Dict[str, Any]:
+    """A recording's provenance, as the FESVR writes it (recording_provenance.json)."""
+    build = {"build_hostname": "builder", "build_host": "Linux 6.18 x86_64", "build_target": "x86_64-pc-linux-gnu",
+             "cxx_compiler": "GNU 16.2.1", "build_date": "2026-10-17T18:00:00-0400", "build_type": "-O3",
+             "repository": "https://github.com/s117/riscv-isa-sim.git", "version": "heads/main-0-gfd01c25",
+             "commit": "fd01c257b2d755dbf8b73f076376cd8e234ce9dc"}
+    value: Dict[str, Any] = {
+        "started": "2026-10-17T18:57:50-0400", "finished": "2026-10-17T18:59:12-0400", "time_zone": "EDT",
+        "uname": {"sysname": "Linux", "nodename": "recorder", "release": "6.18.49", "version": "#1 SMP",
+                  "machine": "x86_64"},
+        "command": {"argv": ["spike", "-m1", "+dev-traffic-record=rec", "/boot/pk", "prog.rv64"], "cwd": "/work"},
+        "simulator": {"name": "spike", "build": build},
+        "fesvr": {**build, "repository": "https://github.com/s117/riscv-fesvr.git", "version": "heads/main-0-g8472993",
+                  "commit": "8472993ef6643d4dc750395251b024aff323d70f"},
+    }
+    value.update(changes)
+    return value
+
+
+_DEFAULT = object()
+
+
 def write_recording(rec_dir: str, mem_mb: int = 1, harts: Optional[Sequence[Sequence[Command]]] = None,
-                    boot_elf: bytes = DEFAULT_BOOT_ELF, compress: bool = True) -> None:
+                    boot_elf: bytes = DEFAULT_BOOT_ELF, compress: bool = True, prov: Any = _DEFAULT) -> None:
     """
-    Write a recording folder. By default, one HART whose program runs two commands and exits with status 0.
+    Write a recording folder. By default, one HART whose program runs two commands and exits with status 0, with
+    provenance(). prov: its provenance instead (a dict, or a str written as it is), or None for none.
     """
     if harts is None:
         harts = [[Command(), exit_command(0)]]
@@ -74,6 +97,10 @@ def write_recording(rec_dir: str, mem_mb: int = 1, harts: Optional[Sequence[Sequ
 
     write("target_spec.data", struct.pack("<II32s", mem_mb, len(harts), hashlib.sha256(boot_elf).digest()), False)
     write("boot.elf", boot_elf, False)
+    if prov is _DEFAULT:
+        prov = provenance()
+    if prov is not None:
+        write("recording_provenance.json", (prov if isinstance(prov, str) else json.dumps(prov)).encode(), False)
     for hart_id, commands in enumerate(harts):
         packets, offsets = encode_packets(commands)
         write(f"device_traffic_hart{hart_id}.packets", packets)
