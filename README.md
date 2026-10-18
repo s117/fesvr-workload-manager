@@ -212,3 +212,5 @@ FWM_TEST_SPIKE_SRC=/path/to/riscv-isa-sim uv run pytest tests/integration
 ```
 
 The bootstrap pipeline's interface to fwm is described in [docs/fwm-bootstrap-interface.md](docs/fwm-bootstrap-interface.md).
+
+Notes for coding agents (how fwm is built, the spike behaviour it relies on, decisions, conventions) are in [docs/agent-guide.md](docs/agent-guide.md).
