@@ -24,7 +24,7 @@ The database uses SQLite's rollback journal, not WAL, so it can sit on a shared 
     fwm check recording R1/trace --final-state R1/final-state.json      -> exit 4: cut short
     -> validate R1's console and sysroot with the suite's validator
  4. fwm repo add trace <entry> R1/trace --final-state R1/final-state.json \
-        --sim-version V --exist-ok                                       -> trace UUID   controller
+        --exist-ok                                                       -> trace UUID   controller
  5. SimPoint analysis of R1/bbv_proc_0.bb.gz -> description file D, SimPoint info S    pipeline
  6. fwm repo bootstrap create-checkpoints <uuid> D -o R3                             compute
     make -C R3 run || true
@@ -69,7 +69,7 @@ The database uses SQLite's rollback journal, not WAL, so it can sit on a shared 
   - a record run, by `fwm repo add trace --final-state`, or before that, on the node that ran it, by `fwm check recording --final-state`;
   - a create-checkpoints run, by `fwm repo add checkpoint`;
   - a run from a checkpoint, by `fwm repo record-validation`.
-- **Save `spike --version`** for provenance, and pass the file to `repo add trace` and `repo add checkpoint` with `--sim-version`. fwm checks it is build information. A recording replays reliably only with a spike of the same semantics, and this records which one made it.
+- **Provenance.** A recording says how it was made, in its `recording_provenance.json` (riscv-isa-sim fd01c25 / riscv-fesvr 8472993 or later): when it started and finished, the recording machine (`uname`), the simulator's command line and working directory, and the spike's and FESVR's builds. fwm requires it, and keeps it with the trace. Checkpoint files say nothing of how they were made: **save `spike --version`** and pass the file to `repo add checkpoint` with `--sim-version`; fwm checks it is build information. A recording replays reliably only with a spike of the same semantics, and these record which one made it.
 - **Clean what the Makefile doesn't own,** such as BBV files, or use a fresh run directory.
 
 **`final-state.json`** (spike's `+final-state-dump`) says why the run finished, and each HART's instruction count there. spike writes it as `unfinished` when the run starts and replaces it at the end, so it is never empty. fwm requires this format: a dump without `finish_reason`, from a spike older than riscv-isa-sim eb87256 / riscv-fesvr 6f2d3b8, is refused, since such a spike's count at the program's exit depended on where the run started. Use riscv-isa-sim 872d191 / riscv-fesvr ecc3df3 or later: an earlier spike stopped by SIGTERM twice (under make, a scheduler's time limit or `kill -- -<pgid>`, which send it two) could leave an empty or broken dump; these ignore the repeat and write the dump atomically.
@@ -149,7 +149,7 @@ Exit status:
   - `uuid`, `entry`, `description`, `creation_time`, `path`;
   - `mem_mb`, `num_harts`, `boot_elf_sha256`;
   - `exit_status` (0–255, `null` if truncated) and `complete`;
-  - `sim_version`: `{"builds": {<component>: {<field>: <value>}}, "raw": <text>}`, or `null`. The components are `spike` and `FESVR (libfesvr)`, with fields such as `Version` and `Commit`;
+  - `provenance`: the recording's `recording_provenance.json`, as recorded: `started`, `finished` (absent if the recording process died), `time_zone`, `uname` (`sysname`, `nodename`, `release`, `version`, `machine`), `command` (`argv`, `cwd`), `simulator` (`name`, `build`), and `fesvr`; the builds have fields such as `version`, `commit`, `repository` and `build_date`;
   - `fwm_version`;
   - `harts`: a list of `{hart_id, recording_sha256, num_commands, instret}`;
   - `checkpoints` (names).
@@ -158,7 +158,8 @@ Exit status:
   - `format_version`, `content_sha256`;
   - `simpoint_weight`, `simpoint_index`, `simpoint_interval`, `simpoint_max_k` (all `null` without SimPoint info), `requested_count`;
   - `validation`: `{"status": "passed" | "failed", "time", "detail"}`, or `null` if not validated;
-  - `sim_version`, `fwm_version`, as for a trace;
+  - `sim_version`: from `--sim-version`, `{"builds": {<component>: {<field>: <value>}}, "raw": <text>}`, or `null`. The components are `spike` and `FESVR (libfesvr)`, with fields such as `Version` and `Commit`;
+  - `fwm_version`;
   - `harts`: a list of `{hart_id, recording_sha256, cmd_index, hart_state_version, csr_count}`. `csr_count` is the instruction count where the checkpoint was actually taken; it can differ slightly from `requested_count`.
 
 `content_sha256` is the SHA-256 of what `riscv-isa-sim/scripts/checkpoint-digest.py <file>` prints. It doesn't depend on how zlib compressed the memory, so two checkpoints of the same point compare equal wherever they were created.

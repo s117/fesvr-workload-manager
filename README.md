@@ -78,13 +78,18 @@ fwm repo add entry road.sg bfs bfs-road-n64 bfs-road-n64.json
 - `copy_spawn` (optional, default `true`) is how a run of the program gets its sysroot (see `fwm spawn`): a copy, or, when `false`, links to the repository's read-only files. Linking takes no time or space, even for gigabytes of input, but the program can't open its files for writing, `stat` reports them read-only, and `lstat` and `readlink` see links into the repository. Use `false` only for a program that just reads the files it finds.
 - `metadata` is optional and free-form: any JSON object, such as a riscv-simenv suite's `index.yaml` metadata. fwm shows it and copies it into each run's `run.json`. Change it later with `fwm repo set-metadata`.
 
-Record a run, and import the recording as a trace, with the `spike --version` output for provenance:
+Record a run, and import the recording as a trace. The recording says how it was made (`recording_provenance.json`: when, on what machine, the command line, and the spike's and FESVR's builds), which the trace keeps:
+
+```
+fwm repo bootstrap record bfs-road-n64 -o run1 && make -C run1 run SIM_FLAGS_EXTRA=-s100000000   # with a BBV
+fwm repo add trace bfs-road-n64 run1/trace --final-state run1/final-state.json
+# prints the trace UUID
+```
+
+Checkpoint files don't say how they were made, so their import takes the `spike --version` output for provenance:
 
 ```
 spike --version > sim-version.txt
-fwm repo bootstrap record bfs-road-n64 -o run1 && make -C run1 run SIM_FLAGS_EXTRA=-s100000000   # with a BBV
-fwm repo add trace bfs-road-n64 run1/trace --final-state run1/final-state.json --sim-version sim-version.txt
-# prints the trace UUID
 ```
 
 Create checkpoints from a description file of `<name>: <instruction count>` lines (e.g. the SimPoints of the BBV), and import them in one transaction:
@@ -133,7 +138,7 @@ make -C d run SIM=/path/to/721sim                  # make reports "Error 1": spi
 | `fwm repo add sysroot <dir> <name>` | Import a sysroot. |
 | `fwm repo add entry <sysroot> <workload> <name> <entry_point.json>` | Add an entry point. |
 | `fwm repo set-metadata <entry> <file.json>` | Replace an entry point's metadata (`null` removes it), keeping its traces. |
-| `fwm repo add trace <entry> <recording-dir> [--final-state f.json] [--sim-version f]` | Import a recording; prints its UUID. |
+| `fwm repo add trace <entry> <recording-dir> [--final-state f.json]` | Import a recording, with its provenance; prints its UUID. |
 | `fwm check recording <recording-dir> [--final-state f.json] [--json]` | Check a recording as `repo add trace` would, without a repository: complete, well formed, agreeing with its final state. |
 | `fwm repo add checkpoint <trace> <desc> <checkpoint-dir> [--simpoint-info j] [--sim-version f]` | Import the checkpoints of a description in one transaction; prints `<uuid>:<name>` for each. |
 | `fwm repo bootstrap record <entry> [-o dir]` | Generate a run directory that records a run of an entry point. |
@@ -180,7 +185,7 @@ spike's exit status:
 
 **Don't judge a run by make's exit status; let fwm judge it.** A program that legitimately exits non-zero makes `make` fail, while spike stopped by SIGTERM (e.g. a job's time limit) exits 0. `fwm repo add trace --final-state` judges a record run, `fwm repo add checkpoint` a checkpoint creation, and `fwm repo record-validation` a run from a checkpoint.
 
-`final-state.json` says why the run finished, and each hart's instruction count there: `target_exit` (with `exit_code`), `checkpoints_created`, `instret_limit` (`-e`), `debug_quit`, `interrupted` (with `signal`), `error` (with the simulator's message, and no count) or `unfinished` (spike died). fwm needs a spike that writes `finish_reason` (riscv-isa-sim eb87256 / riscv-fesvr 6f2d3b8 or later): older ones wrote counts at the program's exit that depended on where the run started, and their dumps are refused. Use riscv-isa-sim 872d191 / riscv-fesvr ecc3df3 or later in batch jobs: before them, a run that got SIGTERM twice (from a job's time limit, under make) could leave an empty or broken dump.
+`final-state.json` says why the run finished, and each hart's instruction count there: `target_exit` (with `exit_code`), `checkpoints_created`, `instret_limit` (`-e`), `debug_quit`, `interrupted` (with `signal`), `error` (with the simulator's message, and no count) or `unfinished` (spike died). fwm needs a spike that writes `finish_reason` (riscv-isa-sim eb87256 / riscv-fesvr 6f2d3b8 or later): older ones wrote counts at the program's exit that depended on where the run started, and their dumps are refused. fwm also needs the recording's provenance (`recording_provenance.json`), written from riscv-isa-sim fd01c25 / riscv-fesvr 8472993 on, and refuses a recording without it. Those versions also include the fixes of riscv-isa-sim 872d191 / riscv-fesvr ecc3df3, needed in batch jobs: before them, a run that got SIGTERM twice (from a job's time limit, under make) could leave an empty or broken dump.
 
 The Makefiles leave other simulator outputs, such as `bbv_proc_0.bb.gz` from `-s`, to the caller: use a fresh run directory, or remove them.
 
