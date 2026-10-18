@@ -1,6 +1,6 @@
 import sqlite3
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 import peewee as pw
 import pytest
@@ -43,9 +43,14 @@ def make_entry(name: str = "entry", workload: str = "wl", sysroot: str = "sr") -
                               stdin_file=None, boot_elf="/boot/pk", mem_mb=256, nprocs=1)
 
 
+# A trace's provenance columns
+PROVENANCE = {"provenance": "{}", "recorded_on": "host",
+              "recording_started": datetime(2026, 10, 17, 18, 57, 50, tzinfo=timezone(timedelta(hours=-4)))}
+
+
 def make_trace(entry: NativeEntry) -> DecoupledTrace:
     trace = DecoupledTrace.create(uuid=uuid.uuid4(), native_entry=entry, file_catalog=save_catalog(make_catalog()),
-                                  mem_mb=256, num_harts=1, boot_elf_sha256=SHA_A, exit_status=0)
+                                  mem_mb=256, num_harts=1, boot_elf_sha256=SHA_A, exit_status=0, **PROVENANCE)
     TraceHart.create(trace=trace, hart_id=0, recording_sha256=SHA_B, num_commands=10, instret=1000)
     return trace
 
@@ -201,9 +206,17 @@ def test_provenance_and_simpoint_fields(db):
     entry = NativeEntry.create(name="e", workload=Workload.create(name="w"), sysroot=sysroot, command="p",
                                working_directory="/", boot_elf="/pk", mem_mb=1, nprocs=1)
     trace = DecoupledTrace.create(uuid=uuid.uuid4(), native_entry=entry, file_catalog=catalog, mem_mb=1, num_harts=1,
-                                  boot_elf_sha256="0" * 64)
-    assert trace.sim_version is None
+                                  boot_elf_sha256="0" * 64, **PROVENANCE)
+    trace = DecoupledTrace.get_by_id(trace.id)
+    # the recording machine's UTC offset is kept
+    assert (trace.recorded_on, trace.recording_started, trace.recording_finished) == (
+        "host", PROVENANCE["recording_started"], None)
+    assert trace.recording_started.utcoffset() == timedelta(hours=-4)
     assert trace.fwm_version == fwm_version()
+    # every trace has its provenance
+    with pytest.raises(pw.IntegrityError, match="provenance"):
+        DecoupledTrace.create(uuid=uuid.uuid4(), native_entry=entry, file_catalog=catalog, mem_mb=1, num_harts=1,
+                              boot_elf_sha256="0" * 64, recorded_on="h", recording_started=PROVENANCE["recording_started"])
     ckpt = DecoupledCheckpoint.create(name="c", trace=trace, file_catalog=catalog, format_version=1,
                                       content_sha256="0" * 64, simpoint_index=3, simpoint_interval=100000000,
                                       simpoint_max_k=10, requested_count=300000017)

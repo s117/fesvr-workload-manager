@@ -2,7 +2,7 @@ import click
 
 from fwm.cli.completion import complete_by_kind
 from fwm.cli.fwm import open_repo
-from fwm.cli.output import echo_json, echo_view, summarize_sim_version
+from fwm.cli.output import echo_json, echo_view, summarize_view
 from fwm.database.schema import Workload
 from fwm.repo import query
 from fwm.repo.checkpoint import resolve_checkpoint
@@ -43,4 +43,4 @@ def show(ctx, kind, id, as_json):
     if as_json:
         echo_json(view)
     else:
-        echo_view(summarize_sim_version(view))
+        echo_view(summarize_view(view))

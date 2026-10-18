@@ -13,11 +13,14 @@ import hashlib
 import json
 import os
 import signal
+import socket
 import subprocess
 import sys
 import time
 
 import pytest
+
+from fwm.data_loader.sim_version import parse_sim_version
 
 SPIKE = os.environ.get("FWM_TEST_SPIKE")
 SYSROOT = os.environ.get("FWM_TEST_SYSROOT")
@@ -92,12 +95,18 @@ def test_record_replay_checkpoint(env, tmp_path):
     assert (described["kind"], described["sysroot"]["name"], described["entry"]["metadata"]) == ("record", "sr",
                                                                                                   metadata)
     total = instret(r1)
-    add_trace = ("repo", "add", "trace", "e", str(r1 / "trace"), "--final-state", str(r1 / "final-state.json"),
-                 "--sim-version", str(version))
+    add_trace = ("repo", "add", "trace", "e", str(r1 / "trace"), "--final-state", str(r1 / "final-state.json"))
     trace = fwm(env, *add_trace)
     view = json.loads(fwm(env, "show", "trace", trace, "--json"))
     assert view["complete"]
-    assert view["sim_version"]["builds"]["spike"]["Commit"]
+    # how it was recorded: on this host, by this spike, with the record Makefile's command line
+    prov = view["provenance"]
+    assert prov["uname"]["nodename"] == socket.gethostname()
+    assert any(arg.startswith("+dev-traffic-record=") for arg in prov["command"]["argv"])
+    commit = parse_sim_version(version.read_text())["spike"]["Commit"]
+    assert prov["simulator"]["build"]["commit"] == commit
+    assert prov["fesvr"]["commit"] == parse_sim_version(version.read_text())["FESVR (libfesvr)"]["Commit"]
+    assert prov["finished"] >= prov["started"]
     # the same recording is not imported twice
     assert fwm_status(env, *add_trace) == 5
     assert fwm(env, *add_trace, "--exist-ok") == trace

@@ -1,3 +1,4 @@
+import json
 import os
 import uuid
 from types import SimpleNamespace
@@ -16,6 +17,7 @@ from fwm.repo.sysroot import add_sysroot, verify_sysroot
 from fwm.repo.trace import add_trace, resolve_trace, verify_trace
 from tests.data_loader.test_sim_version import SPIKE_VERSION
 from tests.fesvr_files import (
+    provenance,
     final_state_json,
     write_recording, write_checkpoint, Command, exit_command, recording_sha256, CheckpointHart as CkptHart,
     encode_hart_state, default_hart_state_entries
@@ -552,3 +554,35 @@ def test_fifo_in_trace(repo, entry, tmp_path):
     os.mkfifo(rec / "fifo")
     with pytest.raises(FwmValidationError, match="neither a file nor symlink"):
         add_trace(repo, "e", str(rec))
+
+
+def test_add_trace_stores_its_provenance(repo, entry, tmp_path, caplog):
+    rec = tmp_path / "rec"
+    write_recording(str(rec), harts=[COMMANDS])
+    trace = DecoupledTrace.get_by_id(add_trace(repo, "e", str(rec)).id)
+    assert json.loads(trace.provenance) == provenance()
+    assert trace.recorded_on == "recorder"
+    assert (trace.recording_started.isoformat(), trace.recording_finished.isoformat()) == (
+        "2026-10-17T18:57:50-04:00", "2026-10-17T18:59:12-04:00")
+    assert "finished" not in caplog.text
+
+
+def test_provenance_without_its_end(repo, entry, tmp_path, caplog):
+    """A complete recording whose process died before noting when it finished: imported, with a warning."""
+    rec = tmp_path / "rec"
+    prov = provenance()
+    del prov["finished"]
+    write_recording(str(rec), harts=[COMMANDS], prov=prov)
+    assert add_trace(repo, "e", str(rec)).recording_finished is None
+    assert "doesn't say when it finished" in caplog.text
+
+
+def test_same_recording_another_provenance(repo, entry, tmp_path):
+    """The same traffic recorded again (another time, another host) is the same trace, which keeps its provenance."""
+    rec = tmp_path / "rec"
+    write_recording(str(rec), harts=[COMMANDS])
+    trace = add_trace(repo, "e", str(rec))
+    again = tmp_path / "again"
+    write_recording(str(again), harts=[COMMANDS], prov=provenance(uname={**provenance()["uname"], "nodename": "other"}))
+    assert add_trace(repo, "e", str(again), exist_ok=True).uuid == trace.uuid
+    assert DecoupledTrace.get_by_id(trace.id).recorded_on == "recorder"

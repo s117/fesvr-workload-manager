@@ -116,18 +116,19 @@ def add_entry_cmd(ctx, sysroot_name, workload_name, entry_point_name, entry_poin
 @click.option("--final-state", type=click.Path(exists=True, dir_okay=False),
               help="The +final-state-dump of the recording run: the instret of each HART.")
 @click.option("--description", "-d", help="A description of the trace.")
-@_sim_version_option
 @_exist_ok_option
 @click.pass_context
-def add_trace_cmd(ctx, entry, recording_dir, final_state, description, sim_version_file, exist_ok):
+def add_trace_cmd(ctx, entry, recording_dir, final_state, description, exist_ok):
     """
-    Import RECORDING_DIR, a recording (+dev-traffic-record) of a run of the entry point ENTRY, as a trace.
+    Import RECORDING_DIR, a recording (+dev-traffic-record) of a run of the entry point ENTRY, as a trace, with its
+    provenance (recording_provenance.json: when, on what machine and with which spike it was recorded), which it must
+    have.
 
     Prints the UUID of the trace. A recording that already is a trace of the entry point fails with status 5, or,
     with --exist-ok and the same final state, prints that trace.
     """
-    click.echo(str(add_trace(open_repo(ctx, write=True), entry, recording_dir, final_state, description, exist_ok,
-                             _read_sim_version(sim_version_file)).uuid))
+    click.echo(str(add_trace(open_repo(ctx, write=True), entry, recording_dir, final_state, description,
+                             exist_ok).uuid))
 
 
 @add.command("checkpoint")

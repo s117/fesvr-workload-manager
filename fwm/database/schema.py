@@ -194,8 +194,15 @@ class DecoupledTrace(BaseModel):
     # The program's exit status, read from the recording. Null if the run never exited (a truncated recording).
     exit_status = pw.IntegerField(null=True)
 
-    # The `spike --version` output of the simulator that recorded it, if given at import.
-    sim_version = pw.TextField(null=True)
+    # How the recording was made: its recording_provenance.json, as recorded (see data_loader.provenance): when, on
+    # what machine, with which command line, and the build information of the simulator and of its FESVR.
+    provenance = pw.TextField()
+
+    # From the provenance, for listing and querying: the recording machine's name (uname's nodename), and when the
+    # recording started and finished (with the recording machine's UTC offset; finished is null if it never noted it).
+    recorded_on = pw.CharField()
+    recording_started = TimestampTzField()
+    recording_finished = TimestampTzField(null=True)
 
     # Version of the fwm that imported it.
     fwm_version = pw.CharField(default=fwm_version)

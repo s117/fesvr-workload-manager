@@ -7,6 +7,7 @@ from fwm.cli.fwm import cli
 from tests.data_loader.test_sim_version import SPIKE_VERSION
 from tests.cli.conftest import COMMANDS, write_checkpoints, write_simpoint_info
 from tests.fesvr_files import (
+    provenance,
     write_recording, write_checkpoint, recording_sha256, Command, CheckpointHart, encode_hart_state,
     default_hart_state_entries, exit_command
 )
@@ -246,33 +247,30 @@ def test_read_only_repo(run, populated, tmp_path, write_entry_point):
             p.chmod(p.stat().st_mode | 0o200)
 
 
-def test_sim_version(run, populated, tmp_path):
+def test_provenance(run, populated, tmp_path):
+    """A trace keeps how it was recorded: its recording_provenance.json."""
+    view = json.loads(run("show", "trace", populated, "--json")[1])
+    assert view["provenance"] == provenance()
+    assert "sim_version" not in view
+    out = run("show", "trace", populated)[1]
+    for line in ("recorded: 2026-10-17T18:57:50-0400 - 2026-10-17T18:59:12-0400 EDT",
+                 "on: recorder (Linux 6.18.49, x86_64)", "simulator: spike heads/main-0-gfd01c25 (fd01c257b2d7)",
+                 "fesvr: heads/main-0-g8472993 (8472993ef664)", "command: spike -m1 +dev-traffic-record=rec",
+                 "cwd: /work"):
+        assert line in out
+    assert "RECORDED ON" in run("list", "traces")[1] and "recorder" in run("list", "traces")[1]
+
+    # a recording made by an older spike, without one, is refused
+    old = tmp_path / "old"
+    write_recording(str(old), harts=[[Command(payload=0x3000), exit_command(0)]], prov=None)
+    code, out, err = run("repo", "add", "trace", "e", str(old))
+    assert (code, out) == (4, "")
+    assert "has no recording_provenance.json: it was made by a spike older than" in err
+
+    # the spike's version comes from the provenance now: add trace takes no --sim-version
     version = tmp_path / "sim-version.txt"
     version.write_text(SPIKE_VERSION)
-    rec = tmp_path / "rec2"
-    write_recording(str(rec), harts=[[Command(payload=0x3000), exit_command(0)]])
-    code, out, _ = run("repo", "add", "trace", "e", str(rec), "--sim-version", str(version))
-    assert code == 0
-    trace_uuid = out.strip()
-
-    code, out, _ = run("show", "trace", trace_uuid, "--json")
-    view = json.loads(out)
-    assert view["sim_version"]["raw"] == SPIKE_VERSION
-    assert view["sim_version"]["builds"]["spike"]["Commit"] == "0d7a85c80db593a638d33cb655d866b174d69bde"
-    assert view["fwm_version"]
-    code, out, _ = run("show", "trace", trace_uuid)
-    assert "spike: heads/anycore-gcc_16.1.0-llvm_22.1.8-0-g0d7a85c (0d7a85c80db5)" in out
-    assert "FESVR (libfesvr): heads/anycore-gcc_16.1.0-llvm_22.1.8-0-g4fce14b (4fce14b1b852)" in out
-
-    # a trace imported without one
-    assert json.loads(run("show", "trace", populated, "--json")[1])["sim_version"] is None
-
-    version.write_text("not a version\n")
-    rec3 = tmp_path / "rec3"
-    write_recording(str(rec3), harts=[[Command(payload=0x4000), exit_command(0)]])
-    code, out, err = run("repo", "add", "trace", "e", str(rec3), "--sim-version", str(version))
-    assert (code, out) == (4, "")
-    assert "invalid --sim-version" in err
+    assert run("repo", "add", "trace", "e", str(old), "--sim-version", str(version))[0] == 2
 
 
 def test_add_checkpoints(run, populated, tmp_path):

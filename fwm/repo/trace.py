@@ -152,15 +152,14 @@ def _existing_trace(trace: DecoupledTrace, instrets: Optional[List[int]], exist_
 
 
 def add_trace(repo: Repo, entry_name: str, recording_dir: str, final_state: Optional[str] = None,
-              description: Optional[str] = None, exist_ok: bool = False,
-              sim_version: Optional[str] = None) -> DecoupledTrace:
+              description: Optional[str] = None, exist_ok: bool = False) -> DecoupledTrace:
     """
-    Import a device traffic recording of an entry point's run as a trace.
+    Import a device traffic recording of an entry point's run as a trace, with its provenance
+    (recording_provenance.json: when, on what machine and with which simulator it was recorded).
 
     :param final_state: The +final-state-dump of the recording run, which gives the instret of each HART.
     :param exist_ok: If the recording already is a trace of the entry point, with the same final state, return it
                      instead of failing.
-    :param sim_version: The `spike --version` output of the simulator that made the recording, for provenance.
     :raise AlreadyExistsError: The recording already is a trace of the entry point.
     """
     entry = get_entry(entry_name)
@@ -180,12 +179,12 @@ def add_trace(repo: Repo, entry_name: str, recording_dir: str, final_state: Opti
         except (RecordingFormatError, OSError, EOFError) as e:
             raise FwmValidationError(f"invalid recording {recording_dir}: {str(e).replace(staged, recording_dir)}")
         return _import_trace(repo, entry, recording_dir, staged, recording, final_state, state, description,
-                             exist_ok, sim_version)
+                             exist_ok)
 
 
 def _import_trace(repo: Repo, entry: NativeEntry, recording_dir: str, staged: str, recording: Recording,
                   final_state: Optional[str], state: Optional[FinalState], description: Optional[str],
-                  exist_ok: bool, sim_version: Optional[str]) -> DecoupledTrace:
+                  exist_ok: bool) -> DecoupledTrace:
     spec = recording.target_spec
 
     if spec.mem_mb != entry.mem_mb:
@@ -216,6 +215,10 @@ def _import_trace(repo: Repo, entry: NativeEntry, recording_dir: str, staged: st
                     f"by -e). It can't be replayed past its last command.")
     elif recording.exit_status != 0:
         log.warning(f"the program of the recording {recording_dir} exited with status {recording.exit_status}")
+    prov = recording.provenance
+    if recording.exit_status is not None and prov.finished is None:
+        log.warning(f"the provenance of the recording {recording_dir} doesn't say when it finished: its process died "
+                    f"after the program's exit")
 
     trace_uuid = uuid.uuid4()
     catalog = catalog_of(staged, recording_dir)
@@ -230,7 +233,8 @@ def _import_trace(repo: Repo, entry: NativeEntry, recording_dir: str, staged: st
         trace = DecoupledTrace.create(
             uuid=trace_uuid, native_entry=entry, file_catalog=save_catalog(catalog), mem_mb=spec.mem_mb,
             num_harts=spec.num_harts, boot_elf_sha256=spec.boot_elf_sha256, exit_status=recording.exit_status,
-            sim_version=sim_version, description=description)
+            provenance=recording.provenance_text, recorded_on=prov.uname.nodename,
+            recording_started=prov.started_at, recording_finished=prov.finished_at, description=description)
         for hart in recording.harts:
             TraceHart.create(trace=trace, hart_id=hart.hart_id, recording_sha256=hart.recording_sha256,
                              num_commands=hart.num_commands,

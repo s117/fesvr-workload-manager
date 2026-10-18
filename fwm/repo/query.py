@@ -1,6 +1,7 @@
 """
 Plain views of the repository content, as dicts of JSON-compatible values, for `fwm list` and `fwm show`.
 """
+import json
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -89,7 +90,8 @@ def trace_view(repo: Repo, trace: DecoupledTrace) -> View:
         "boot_elf_sha256": trace.boot_elf_sha256,
         "exit_status": trace.exit_status,
         "complete": trace.exit_status is not None,
-        "sim_version": sim_version_view(trace.sim_version),
+        # how it was recorded: recording_provenance.json, as recorded
+        "provenance": json.loads(trace.provenance),
         "fwm_version": trace.fwm_version,
         "harts": [{
             "hart_id": h.hart_id,

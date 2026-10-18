@@ -1,5 +1,5 @@
 import json
-from typing import Any, Callable, List, Sequence, Tuple, Union
+from typing import Any, Callable, Dict, List, Sequence, Tuple, Union
 
 import click
 
@@ -34,6 +34,37 @@ def echo_table(rows: List[View], columns: Sequence[Tuple[str, Column]]) -> None:
     widths = [max(len(r[i]) for r in table) for i in range(len(columns))]
     for r in table:
         click.echo("  ".join(c.ljust(w) for c, w in zip(r, widths)).rstrip())
+
+
+def _build(build: Dict[str, str]) -> str:
+    return f"{build.get('version', '?')} ({build.get('commit', '?')[:12]})"
+
+
+def summarize_provenance(provenance: View) -> View:
+    """A trace's provenance in a few lines, for reading: when and where it was recorded, by what, and how."""
+    uname = provenance["uname"]
+    period = provenance["started"] + (f" - {provenance['finished']}" if provenance.get("finished") else
+                                      " (never noted as finished)")
+    summary: Dict[str, Any] = {
+        "recorded": f"{period} {provenance.get('time_zone', '')}".rstrip(),
+        "on": f"{uname['nodename']} ({uname['sysname']} {uname['release']}, {uname['machine']})",
+    }
+    simulator = provenance.get("simulator")
+    if simulator:
+        summary["simulator"] = f"{simulator['name']} {_build(simulator['build'])}"
+    summary["fesvr"] = _build(provenance["fesvr"])
+    command = provenance["command"]
+    summary["command"] = " ".join(command["argv"]) if command.get("argv") else None
+    summary["cwd"] = command["cwd"]
+    return summary
+
+
+def summarize_view(view: View) -> View:
+    """A view shortened for reading: its build information and provenance summarized."""
+    view = summarize_sim_version(view)
+    if view.get("provenance"):
+        view = {**view, "provenance": summarize_provenance(view["provenance"])}
+    return view
 
 
 def summarize_sim_version(view: View) -> View:

@@ -44,7 +44,8 @@ def list_cmd(ctx, kind, name_filter, workload, sysroot, trace_ref, as_json):
                    ("TRACES", lambda v: len(v["traces"])), ("COMMAND", "command")]
     elif kind == "traces":
         rows = query.list_traces(r, name_filter)
-        columns = [("TRACE", "uuid"), ("ENTRY", "entry"), ("COMPLETE", "complete"), ("EXIT", "exit_status"),
+        columns = [("TRACE", "uuid"), ("ENTRY", "entry"), ("RECORDED ON", lambda v: v["provenance"]["uname"]["nodename"]),
+                   ("COMPLETE", "complete"), ("EXIT", "exit_status"),
                    ("INSTRET", lambda v: [h["instret"] for h in v["harts"]]),
                    ("CHECKPOINTS", lambda v: len(v["checkpoints"]))]
     else:
