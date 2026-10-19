@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import importlib
 import signal
 
 import click
@@ -12,8 +13,33 @@ def _exit_on_signal(signum, frame):
     raise SystemExit(128 + signum)
 
 
+# The module and attribute of each subcommand. A subcommand is imported only when it runs, since loading every module
+# from a shared filesystem takes seconds
+_SUBCOMMANDS = {
+    "repo": ("fwm.cli.subcmds.repo", "repo"),
+    "list": ("fwm.cli.subcmds.list", "list_cmd"),
+    "show": ("fwm.cli.subcmds.show", "show"),
+    "spawn": ("fwm.cli.subcmds.spawn", "spawn"),
+    "mkgen": ("fwm.cli.subcmds.mkgen", "mkgen"),
+    "check": ("fwm.cli.subcmds.check", "check"),
+    "completion": ("fwm.cli.subcmds.completion", "completion"),
+}
+
+
 class FwmGroup(click.Group):
-    """The fwm command group: reports an FwmError as a message, and exits with its exit code."""
+    """
+    The fwm command group: imports a subcommand when it runs, reports an FwmError as a message, and exits with its
+    exit code.
+    """
+
+    def list_commands(self, ctx: click.Context):
+        return sorted(set(self.commands) | set(_SUBCOMMANDS))
+
+    def get_command(self, ctx: click.Context, cmd_name: str):
+        if cmd_name not in self.commands and cmd_name in _SUBCOMMANDS:
+            module, attr = _SUBCOMMANDS[cmd_name]
+            self.add_command(getattr(importlib.import_module(module), attr), cmd_name)
+        return super().get_command(ctx, cmd_name)
 
     def main(self, *args, **kwargs):
         # Batch schedulers stop a job with SIGTERM (or SIGHUP), whose default action skips all cleanup
@@ -60,18 +86,3 @@ def open_repo(ctx: click.Context, write: bool = False) -> Repo:
         ctx.find_root().call_on_close(obj["repo"].close)
     return obj["repo"]
 
-
-def _register_commands() -> None:
-    from fwm.cli.subcmds.check import check
-    from fwm.cli.subcmds.completion import completion
-    from fwm.cli.subcmds.list import list_cmd
-    from fwm.cli.subcmds.mkgen import mkgen
-    from fwm.cli.subcmds.repo import repo
-    from fwm.cli.subcmds.show import show
-    from fwm.cli.subcmds.spawn import spawn
-
-    for command in (repo, list_cmd, show, spawn, mkgen, check, completion):
-        cli.add_command(command)
-
-
-_register_commands()
