@@ -39,7 +39,8 @@ def test_list_and_show(run, populated):
     code, out, _ = run("list", "entries", "--json")
     assert code == 0
     entries = json.loads(out)
-    assert [(e["name"], e["workload"], e["sysroot"], e["traces"]) for e in entries] == [("e", "wl", "sr", [trace_uuid])]
+    assert [(e["name"], e["workload"], e["sysroot"], e["traces"], e["num_checkpoints"]) for e in entries] == [
+        ("e", "wl", "sr", [trace_uuid], 1)]
 
     code, out, _ = run("list", "traces", "--json")
     traces = json.loads(out)

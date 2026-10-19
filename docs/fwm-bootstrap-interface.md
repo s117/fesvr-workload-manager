@@ -144,7 +144,7 @@ Exit status:
 
 - **workload:** `name`, `creation_time`, `entries` (names). A workload has no description: describe it in its entry points' `metadata`.
 - **sysroot:** `name`, `description`, `creation_time`, `path`, `num_files`, `num_links`, `num_dirs`, `size_bytes`, `entries`.
-- **entry:** `name`, `workload`, `sysroot`, `description`, `creation_time`, `command`, `working_directory`, `stdin_file`, `boot_elf`, `mem_mb`, `nprocs`, `copy_spawn`, `metadata` (the object given, or `null`), `traces` (UUIDs).
+- **entry:** `name`, `workload`, `sysroot`, `description`, `creation_time`, `command`, `working_directory`, `stdin_file`, `boot_elf`, `mem_mb`, `nprocs`, `copy_spawn`, `metadata` (the object given, or `null`), `traces` (UUIDs), `num_checkpoints` (of all its traces).
 - **trace:**
   - `uuid`, `entry`, `description`, `creation_time`, `path`;
   - `mem_mb`, `num_harts`, `boot_elf_sha256`;

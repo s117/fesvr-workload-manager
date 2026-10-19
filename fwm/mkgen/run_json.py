@@ -15,8 +15,8 @@ from fwm.repo.repo import Repo
 RUN_JSON = "run.json"
 
 
-def _without(view: query.View, key: str) -> query.View:
-    return {k: v for k, v in view.items() if k != key}
+def _without(view: query.View, *keys: str) -> query.View:
+    return {k: v for k, v in view.items() if k not in keys}
 
 
 def describe_run(repo: Repo, entry: NativeEntry, trace: Optional[DecoupledTrace] = None,
@@ -33,7 +33,8 @@ def describe_run(repo: Repo, entry: NativeEntry, trace: Optional[DecoupledTrace]
     sections: Dict[str, Any] = {
         "sysroot": _without(query.sysroot_view(repo, entry.sysroot), "entries"),
         "workload": _without(query.workload_view(entry.workload), "entries"),
-        "entry": _without(query.entry_view(entry), "traces"),
+        # not what the repository holds besides: it changes, and the run doesn't use it
+        "entry": _without(query.entry_view(entry), "traces", "num_checkpoints"),
     }
     if trace is not None:
         sections["trace"] = _without(query.trace_view(repo, trace), "checkpoints")
