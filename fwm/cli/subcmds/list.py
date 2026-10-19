@@ -6,7 +6,7 @@ from fwm.cli.completion import complete_list_filter, complete_sysroot, complete_
 from fwm.cli.fwm import open_repo
 from fwm.cli.output import echo_json, echo_table, Column
 from fwm.repo import query
-from fwm.repo.trace import resolve_trace
+from fwm.repo.lookup import resolve_trace
 
 
 @click.command("list")

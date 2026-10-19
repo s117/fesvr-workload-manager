@@ -10,13 +10,14 @@ from fwm.cli.subcmds.bootstrap import bootstrap
 from fwm.data_loader.sim_version import read_sim_version, SimVersionError
 from fwm.database.schema import Sysroot, DecoupledTrace, DecoupledCheckpoint
 from fwm.repo import remove as rm
-from fwm.repo.checkpoint import add_checkpoints, resolve_checkpoint, verify_checkpoint
+from fwm.repo.checkpoint import add_checkpoints, verify_checkpoint
 from fwm.repo.entry import add_entry, set_entry_metadata
 from fwm.repo.errors import FwmValidationError
 from fwm.repo.gc import collect_garbage, find_leftovers
+from fwm.repo.lookup import get_sysroot, resolve_checkpoint, resolve_trace
 from fwm.repo.repo import Repo
-from fwm.repo.sysroot import add_sysroot, get_sysroot, verify_sysroot
-from fwm.repo.trace import add_trace, resolve_trace, verify_trace
+from fwm.repo.sysroot import add_sysroot, verify_sysroot
+from fwm.repo.trace import add_trace, verify_trace
 from fwm.repo.validation import record_validation, PASSED
 from fwm.utils.log import Logger
 

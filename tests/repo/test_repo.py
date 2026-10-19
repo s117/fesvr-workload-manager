@@ -9,12 +9,13 @@ from fwm.database.schema import (
     Sysroot, Workload, NativeEntry, DecoupledTrace, TraceHart, DecoupledCheckpoint, CheckpointHart, TreeCatalog
 )
 from fwm.repo import remove as rm
-from fwm.repo.checkpoint import resolve_checkpoint, verify_checkpoint
-from fwm.repo.entry import add_entry, entry_metadata, set_entry_metadata
+from fwm.repo.checkpoint import verify_checkpoint
+from fwm.repo.entry import add_entry, set_entry_metadata
 from fwm.repo.errors import AlreadyExistsError, FwmValidationError, NotFoundError, RepoUnusableError
+from fwm.repo.lookup import entry_metadata, resolve_checkpoint, resolve_trace
 from fwm.repo.repo import Repo
 from fwm.repo.sysroot import add_sysroot, verify_sysroot
-from fwm.repo.trace import add_trace, resolve_trace, verify_trace
+from fwm.repo.trace import add_trace, verify_trace
 from tests.data_loader.test_sim_version import SPIKE_VERSION
 from tests.fesvr_files import (
     provenance,

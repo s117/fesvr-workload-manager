@@ -13,13 +13,6 @@ from fwm.utils.fs import set_tree_writable
 from fwm.utils.log import Logger
 
 
-def get_sysroot(name: str) -> Sysroot:
-    sysroot = Sysroot.get_or_none(Sysroot.name == name)
-    if sysroot is None:
-        raise NotFoundError(f"no sysroot named '{name}'")
-    return sysroot
-
-
 def _existing_sysroot(sysroot: Sysroot, catalog: Optional[FileCatalog], src_dir: str,
                       exist_ok: bool) -> Sysroot:
     """

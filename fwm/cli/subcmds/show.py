@@ -5,11 +5,8 @@ from fwm.cli.fwm import open_repo
 from fwm.cli.output import echo_json, echo_view, summarize_view
 from fwm.database.schema import Workload
 from fwm.repo import query
-from fwm.repo.checkpoint import resolve_checkpoint
-from fwm.repo.entry import get_entry
+from fwm.repo.lookup import get_entry, get_sysroot, resolve_checkpoint, resolve_trace
 from fwm.repo.errors import NotFoundError
-from fwm.repo.sysroot import get_sysroot
-from fwm.repo.trace import resolve_trace
 
 
 @click.command()

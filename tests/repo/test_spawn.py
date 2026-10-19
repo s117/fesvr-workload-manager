@@ -4,8 +4,9 @@ import pytest
 
 from fwm.database.schema import Sysroot
 from fwm.repo import query
-from fwm.repo.entry import add_entry, get_entry
+from fwm.repo.entry import add_entry
 from fwm.repo.errors import AlreadyExistsError, FwmValidationError, NotFoundError
+from fwm.repo.lookup import get_entry
 from fwm.repo.spawn import spawn, SpawnMode
 from fwm.repo.sysroot import add_sysroot, verify_sysroot
 from tests.conftest import mode

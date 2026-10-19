@@ -19,11 +19,11 @@ from typing import Any, Dict, Optional
 from fwm.data_loader.ckpt_desc import read_ckpt_desc, CkptDescError
 from fwm.database.schema import NativeEntry, DecoupledTrace, DecoupledCheckpoint
 from fwm.mkgen.run_json import RUN_JSON, describe_run
-from fwm.repo.checkpoint import resolve_checkpoint
-from fwm.repo.entry import get_entry, entry_target_cwd, entry_target_path
 from fwm.repo.errors import FwmValidationError, NotFoundError
+from fwm.repo.lookup import (
+    entry_target_cwd, entry_target_path, get_entry, resolve_checkpoint, resolve_trace, trace_harts
+)
 from fwm.repo.repo import Repo
-from fwm.repo.trace import resolve_trace, trace_harts
 from fwm.version import fwm_version
 
 MAKEFILE = "Makefile"

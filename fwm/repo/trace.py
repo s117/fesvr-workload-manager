@@ -1,9 +1,6 @@
 import os
-import re
 import uuid
 from typing import List, Optional, Tuple
-
-import peewee as pw
 
 from fwm.data_loader.final_state import read_final_state, FinalState, FinalStateError, FinishReason
 from fwm.data_loader.recording import (
@@ -11,44 +8,13 @@ from fwm.data_loader.recording import (
 )
 from fwm.database.catalog_store import save_catalog, load_catalog
 from fwm.database.schema import CatalogFile, DecoupledTrace, TraceHart, NativeEntry
-from fwm.repo.entry import get_entry, entry_target_path
 from fwm.repo.errors import AlreadyExistsError, FwmValidationError, NotFoundError
+from fwm.repo.lookup import entry_target_path, get_entry, trace_harts
 from fwm.repo.repo import Repo, catalog_of, copy_source, DIGEST_ALGO, REPO_PERM_MASK
 from fwm.utils.file_catalog import verify_catalog, FailedDetail
 from fwm.utils.fs import set_tree_writable
 from fwm.utils.log import Logger
 from fwm.utils.target_path import target_path_to_sysroot_relative
-
-
-def resolve_trace(ref: str) -> DecoupledTrace:
-    """
-    Find a trace by its UUID (a unique prefix is enough), or by the name of an entry point that has exactly one trace.
-    """
-    entry = NativeEntry.get_or_none(NativeEntry.name == ref)
-    if entry is not None:
-        traces = list(entry.traces)
-        if len(traces) == 1:
-            return traces[0]
-        if not traces:
-            raise NotFoundError(f"entry point '{ref}' has no trace")
-        raise FwmValidationError(
-            f"entry point '{ref}' has {len(traces)} traces, give the UUID of one: " +
-            ", ".join(str(t.uuid) for t in traces))
-
-    prefix = ref.lower().replace("-", "")
-    if not re.fullmatch(r"[0-9a-f]{1,32}", prefix):
-        raise NotFoundError(f"no trace or entry point '{ref}'")
-    # the UUIDs are stored as 32 hex digits
-    matches = list(DecoupledTrace.select().where(pw.fn.substr(DecoupledTrace.uuid, 1, len(prefix)) == prefix))
-    if len(matches) == 1:
-        return matches[0]
-    if not matches:
-        raise NotFoundError(f"no trace or entry point '{ref}'")
-    raise FwmValidationError(f"'{ref}' matches {len(matches)} traces: " + ", ".join(str(t.uuid) for t in matches))
-
-
-def trace_harts(trace: DecoupledTrace) -> List[TraceHart]:
-    return list(trace.harts.order_by(TraceHart.hart_id))
 
 
 # What to do with a record run that didn't end with the program's exit

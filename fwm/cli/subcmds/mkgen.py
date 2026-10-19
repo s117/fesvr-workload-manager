@@ -8,7 +8,7 @@ from fwm.cli.fwm import open_repo
 from fwm.mkgen.makefile import (
     generate_from_sysroot, generate_from_fesvr_trace, generate_from_checkpoint, generate_from_simpoint
 )
-from fwm.repo.checkpoint import resolve_checkpoint
+from fwm.repo.lookup import resolve_checkpoint
 from fwm.utils.log import Logger
 
 out_dir_option = click.option("--out-dir", "-o", type=click.Path(file_okay=False), default=".", show_default=True,

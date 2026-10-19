@@ -13,7 +13,7 @@ from click.shell_completion import CompletionItem
 
 from fwm.database.schema import Sysroot, Workload, NativeEntry, DecoupledTrace, DecoupledCheckpoint
 from fwm.repo.repo import Repo
-from fwm.repo.trace import resolve_trace
+from fwm.repo.lookup import resolve_trace
 
 Candidates = Iterable[Tuple[str, Optional[str]]]  # (value, help)
 Completer = Callable[[click.Context, click.Parameter, str], List[CompletionItem]]

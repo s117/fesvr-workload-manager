@@ -21,7 +21,7 @@ from typing import List
 from fwm.data_loader.file_catalog import FileCatalog
 from fwm.database.catalog_store import load_catalog
 from fwm.database.schema import NativeEntry
-from fwm.repo.entry import get_entry
+from fwm.repo.lookup import get_entry
 from fwm.repo.errors import FwmValidationError
 from fwm.repo.repo import Repo
 from fwm.utils.file_catalog import verify_catalog, FailedDetail

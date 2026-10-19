@@ -2,12 +2,9 @@ from typing import Callable
 
 from fwm.database.catalog_store import delete_catalog
 from fwm.database.schema import Sysroot, NativeEntry, DecoupledTrace, DecoupledCheckpoint
-from fwm.repo.checkpoint import resolve_checkpoint
-from fwm.repo.entry import get_entry
+from fwm.repo.lookup import get_entry, get_sysroot, resolve_checkpoint, resolve_trace
 from fwm.repo.errors import FwmValidationError
 from fwm.repo.repo import Repo
-from fwm.repo.sysroot import get_sysroot
-from fwm.repo.trace import resolve_trace
 
 # Schedules a path to be deleted once the removal is committed (see Repo.removal())
 Remover = Callable[[str], None]

@@ -13,11 +13,11 @@ from fwm.mkgen.makefile import (
 from fwm.database.schema import DecoupledTrace
 from fwm.mkgen.run_json import RUN_JSON
 from fwm.repo import query
+from fwm.repo.lookup import get_entry, get_sysroot, resolve_checkpoint
 from fwm.repo.repo import Repo
-from fwm.repo.checkpoint import resolve_checkpoint
-from fwm.repo.entry import add_entry, get_entry, set_entry_metadata
+from fwm.repo.entry import add_entry, set_entry_metadata
 from fwm.repo.errors import FwmValidationError, NotFoundError
-from fwm.repo.sysroot import add_sysroot, get_sysroot
+from fwm.repo.sysroot import add_sysroot
 from fwm.repo.trace import add_trace
 from tests.conftest import import_checkpoint
 from tests.fesvr_files import (

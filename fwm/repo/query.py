@@ -11,10 +11,8 @@ from fwm.data_loader.sim_version import parse_sim_version, SimVersionError
 from fwm.database.schema import (
     Workload, Sysroot, NativeEntry, DecoupledTrace, DecoupledCheckpoint, CatalogFile, CatalogLink, CatalogDir
 )
-from fwm.repo.checkpoint import checkpoint_harts
-from fwm.repo.entry import entry_metadata
+from fwm.repo.lookup import checkpoint_harts, entry_metadata, trace_harts
 from fwm.repo.repo import Repo
-from fwm.repo.trace import trace_harts
 
 View = Dict[str, Any]
 

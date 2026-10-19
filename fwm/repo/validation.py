@@ -14,10 +14,9 @@ from fwm.data_loader.final_state import read_final_state, FinalStateError, Finis
 from fwm.database.db import now_tz
 from fwm.database.schema import DecoupledCheckpoint
 from fwm.mkgen.makefile import read_run_info
-from fwm.repo.checkpoint import resolve_checkpoint
 from fwm.repo.errors import FwmValidationError
+from fwm.repo.lookup import resolve_checkpoint, trace_harts
 from fwm.repo.repo import Repo
-from fwm.repo.trace import trace_harts
 
 PASSED = "passed"
 FAILED = "failed"

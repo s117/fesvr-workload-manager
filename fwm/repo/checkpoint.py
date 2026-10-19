@@ -14,36 +14,9 @@ from fwm.data_loader.simpoint_info import load_simpoint_info, SimpointInfo
 from fwm.database.catalog_store import save_catalog, load_catalog
 from fwm.database.schema import DecoupledCheckpoint, CheckpointHart, DecoupledTrace
 from fwm.repo.errors import AlreadyExistsError, FwmValidationError, NotFoundError
+from fwm.repo.lookup import resolve_trace, trace_harts
 from fwm.repo.repo import Repo, DIGEST_ALGO, REPO_PERM_MASK
-from fwm.repo.trace import resolve_trace, trace_harts
 from fwm.utils.file_catalog import create_catalog, verify_catalog, FailedDetail
-
-
-def resolve_checkpoint(ref: str) -> DecoupledCheckpoint:
-    """
-    Find a checkpoint by "<trace>:<name>" (see resolve_trace() for <trace>), or by its name when it is unique.
-    """
-    if ":" in ref:
-        trace_ref, name = ref.split(":", 1)
-        trace = resolve_trace(trace_ref)
-        ckpt = DecoupledCheckpoint.get_or_none((DecoupledCheckpoint.trace == trace) &
-                                               (DecoupledCheckpoint.name == name))
-        if ckpt is None:
-            raise NotFoundError(f"trace {trace.uuid} has no checkpoint named '{name}'")
-        return ckpt
-
-    matches = list(DecoupledCheckpoint.select().where(DecoupledCheckpoint.name == ref))
-    if len(matches) == 1:
-        return matches[0]
-    if not matches:
-        raise NotFoundError(f"no checkpoint named '{ref}'")
-    raise FwmValidationError(
-        f"{len(matches)} traces have a checkpoint named '{ref}', give it as <trace>:<name>: " +
-        ", ".join(f"{c.trace.uuid}:{c.name}" for c in matches))
-
-
-def checkpoint_harts(ckpt: DecoupledCheckpoint) -> List[CheckpointHart]:
-    return list(ckpt.harts.order_by(CheckpointHart.hart_id))
 
 
 def _existing_checkpoint(ckpt: DecoupledCheckpoint, content_sha256: Optional[str], file: str,

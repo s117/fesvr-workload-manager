@@ -9,36 +9,14 @@ from fwm.data_loader.file_catalog import FileCatalog
 from fwm.database.catalog_store import load_catalog
 from fwm.database.schema import NativeEntry, Sysroot, Workload
 from fwm.repo.errors import AlreadyExistsError, FwmValidationError, NotFoundError
+from fwm.repo.lookup import entry_metadata, get_entry, get_sysroot
 from fwm.repo.repo import Repo, check_name
-from fwm.repo.sysroot import get_sysroot
 from fwm.utils.log import Logger
 from fwm.utils.target_path import normalize_target_path, target_path_to_sysroot_relative
 
 
-def get_entry(name: str) -> NativeEntry:
-    entry = NativeEntry.get_or_none(NativeEntry.name == name)
-    if entry is None:
-        raise NotFoundError(f"no entry point named '{name}'")
-    return entry
-
-
-def entry_metadata(entry: NativeEntry) -> Optional[Dict[str, Any]]:
-    """The entry point's metadata, or None if it has none."""
-    return json.loads(entry.metadata) if entry.metadata is not None else None
-
-
 def _metadata_text(metadata: Optional[Dict[str, Any]]) -> Optional[str]:
     return json.dumps(metadata) if metadata is not None else None
-
-
-def entry_target_cwd(entry: NativeEntry) -> str:
-    """The entry's working directory, as a normalized target path (FESVR resolves a relative one against "/")."""
-    return normalize_target_path("/", entry.working_directory)
-
-
-def entry_target_path(entry: NativeEntry, path: str) -> str:
-    """A path of the entry (boot ELF, stdin file), as a normalized target path."""
-    return normalize_target_path(entry_target_cwd(entry), path)
 
 
 def _check_paths(entry: WorkloadEntry, catalog: FileCatalog) -> None:
