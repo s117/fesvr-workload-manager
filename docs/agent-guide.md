@@ -34,12 +34,12 @@ The branch is `main`. Never push without being asked.
 
 | Path | What |
 | --- | --- |
-| `fwm/cli/fwm.py` | The click group: `--repo-path` / `FWM_REPO_PATH`, `open_repo(ctx, write=...)`, `FwmError` → exit code, SIGTERM/SIGHUP → `SystemExit(128+sig)` so cleanup runs |
+| `fwm/cli/fwm.py` | The click group: subcommands imported when they run (`_SUBCOMMANDS`), `--repo-path` / `FWM_REPO_PATH`, `open_repo(ctx, write=...)`, `FwmError` → exit code, SIGTERM/SIGHUP → `SystemExit(128+sig)` so cleanup runs |
 | `fwm/cli/subcmds/` | `repo` (`add`, `remove`, `verify`, `gc`, `set-metadata`, `record-validation`, and `bootstrap` from `bootstrap.py`), `list`, `show`, `spawn`, `mkgen`, `check`, `completion` |
 | `fwm/cli/completion.py`, `output.py` | Shell completion (opens the repository read-only); table, JSON and summary output |
 | `fwm/data_loader/` | Readers and pydantic models of spike's files: `recording.py`, `provenance.py`, `final_state.py`, `checkpoint.py` (+ digest), `ckpt_desc.py`, `simpoint_info.py`, `sim_version.py` (`spike --version`), `entry_point.py`, `file_catalog.py` |
 | `fwm/database/` | peewee models (`schema.py`), `db.py` (`open_db`, `SCHEMA_VERSION`, journal, busy timeout), `catalog_store.py`, `custom_field.py` (`TimestampTzField`) |
-| `fwm/repo/` | The operations: `repo.py` (`Repo`, staging, `importing()`, `removal()`), `sysroot.py`, `entry.py`, `trace.py`, `checkpoint.py`, `validation.py`, `spawn.py`, `remove.py`, `gc.py`, `query.py` (the JSON views), `errors.py` |
+| `fwm/repo/` | The operations: `repo.py` (`Repo`, staging, `importing()`, `removal()`), `sysroot.py`, `entry.py`, `trace.py`, `checkpoint.py`, `validation.py`, `spawn.py`, `remove.py`, `gc.py`, `query.py` (the JSON views), `lookup.py` (finding a sysroot, entry point, trace or checkpoint by name), `errors.py` |
 | `fwm/mkgen/` | `makefile.py` (generators, quoting, `read_run_info`), `run_json.py`, `templates/*.mk` (`header.mk` + one per run kind) |
 | `fwm/utils/` | file catalogs and their verification, digests, `fs.py` (copy with reflinks, read-only trees, `remove_tree`), target-path normalisation like FESVR's |
 | `tests/` | `fesvr_files.py` writes fake recordings, checkpoints, provenance and final states; `conftest.py` has the fixtures; `integration/test_spike_e2e.py` runs a real spike |
@@ -69,6 +69,10 @@ Stored content is made read-only, so delete a repository with `chmod -R u+w <dir
   - SQLite uses the rollback journal, not WAL, with a 30 s busy timeout and `BEGIN IMMEDIATE`;
   - read-only users open with `?mode=ro`;
   - commands that write should run on one host.
+- **Fast read-only commands:** on GPFS every imported module costs file lookups, a few ms each and sometimes 100 ms on a busy login node, so importing everything made `fwm list` take seconds:
+  - `list`, `show`, `mkgen` and shell completion must not import pydantic. `list` and `show` must not import colorama or `importlib.metadata` either. `tests/cli/test_imports.py` checks this;
+  - keep heavy imports out of the modules they load: `fwm/cli/` (except the writer subcommands), `lookup.py`, `query.py`, `repo.py`, `fwm/database/`, `fwm/utils/fs.py`, `log.py`, `version.py`. Where one of these needs a heavy module, import it inside the function, with a comment;
+  - a new subcommand goes in `_SUBCOMMANDS` in `fwm/cli/fwm.py`, not `cli.add_command()`.
 - **Schema changes:** bump `SCHEMA_VERSION` in `fwm/database/db.py` and don't write migrations. The user rebuilds repositories, which so far are all test repositories. Give them the list of repository paths to delete.
 - **Generated Makefiles:**
   - every value is shell-quoted then make-escaped (`shell_value`), and newlines are refused;
@@ -163,7 +167,7 @@ Verify formats and options in `riscv-isa-sim` / `riscv-fesvr` source before desi
 ## 7. Development
 
 ```sh
-uv run pytest                    # ~410 tests, ~15 s
+uv run pytest                    # ~420 tests, ~15 s
 uv run mypy fwm tests
 uv run ruff check fwm tests      # pyproject pins ruff's former default rules (E4, E7, E9, F)
 ```
@@ -189,6 +193,7 @@ FWM_TEST_SPIKE_SRC=~/Garage/riscv-isa-sim uv run pytest tests/integration
 
 **Pitfalls:**
 - **Two environments:** a shell started in fwm-bootstrap may carry its `VIRTUAL_ENV`, so `uv` warns. Harmless.
+- **No system Python:** `/usr/bin/python3.12` is on the login node's local disk but not on every compute node, so fwm runs on uv's Python, which lives on GPFS (`~/.local/share/uv`). Startup speed has to come from importing less.
 - **zsh word splitting:** the user's shell is zsh, so `$var` holding several words isn't split. Use bash for such loops.
 - **Signals in tests:** wait for the whole process group to exit before reading a dump. make ends before spike finishes writing.
 - **`tests/fesvr_files.py`** writes fake files that must match the real formats. When spike changes a format, change the fakes and the readers together.
