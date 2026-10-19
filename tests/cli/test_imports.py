@@ -2,12 +2,16 @@
 The read-only commands load only what they need: on a shared filesystem, every module costs file lookups, and loading
 pydantic and the spike file readers made `fwm list` take seconds on a busy login node.
 """
+import importlib
 import json
 import subprocess
 import sys
 import textwrap
 
+import click
 import pytest
+
+from fwm.cli.fwm import _SUBCOMMANDS
 
 # Modules the fast commands must not load
 HEAVY = ("pydantic", "colorama", "importlib.metadata")
@@ -43,10 +47,23 @@ def test_read_only_commands_load_no_heavy_module(populated, tmp_path, args):
     assert not loaded_modules(str(tmp_path / "repo"), args) & set(HEAVY)
 
 
-# Not the subcommand names: their completions show each one's help, which imports them all
-@pytest.mark.parametrize("args", [["show", "trace"], ["mkgen", "from-checkpoint"]])
+@pytest.mark.parametrize("args", [[], ["show", "trace"], ["mkgen", "from-checkpoint"]])
 def test_completion_loads_no_heavy_module(populated, tmp_path, args):
     assert not loaded_modules(str(tmp_path / "repo"), args, complete=True) & set(HEAVY)
+
+
+@pytest.mark.parametrize("complete", [False, True])
+def test_help_and_subcommand_names_import_no_subcommand(tmp_path, complete):
+    modules = loaded_modules(str(tmp_path / "repo"), [] if complete else ["--help"], complete=complete)
+    assert not [m for m in modules if m.startswith("fwm.cli.subcmds.")]
+
+
+@pytest.mark.parametrize("name", sorted(_SUBCOMMANDS))
+def test_subcommand_table(name):
+    module, attr, short_help = _SUBCOMMANDS[name]
+    command = getattr(importlib.import_module(module), attr)
+    assert isinstance(command, click.Command) and command.name == name
+    assert short_help.endswith(".") and len(short_help) <= 62  # one line in `fwm --help` at 80 columns
 
 
 def test_mkgen_loads_no_pydantic(populated, tmp_path):

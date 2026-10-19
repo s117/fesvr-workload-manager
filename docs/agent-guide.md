@@ -72,7 +72,7 @@ Stored content is made read-only, so delete a repository with `chmod -R u+w <dir
 - **Fast read-only commands:** on GPFS every imported module costs file lookups, a few ms each and sometimes 100 ms on a busy login node, so importing everything made `fwm list` take seconds:
   - `list`, `show`, `mkgen` and shell completion must not import pydantic. `list` and `show` must not import colorama or `importlib.metadata` either. `tests/cli/test_imports.py` checks this;
   - keep heavy imports out of the modules they load: `fwm/cli/` (except the writer subcommands), `lookup.py`, `query.py`, `repo.py`, `fwm/database/`, `fwm/utils/fs.py`, `log.py`, `version.py`. Where one of these needs a heavy module, import it inside the function, with a comment;
-  - a new subcommand goes in `_SUBCOMMANDS` in `fwm/cli/fwm.py`, not `cli.add_command()`.
+  - a new subcommand goes in `_SUBCOMMANDS` in `fwm/cli/fwm.py`, with its one-line short help, not `cli.add_command()`. `fwm --help` and completing a subcommand name read the help from there, so they import no subcommand.
 - **Schema changes:** bump `SCHEMA_VERSION` in `fwm/database/db.py` and don't write migrations. The user rebuilds repositories, which so far are all test repositories. Give them the list of repository paths to delete.
 - **Generated Makefiles:**
   - every value is shell-quoted then make-escaped (`shell_value`), and newlines are refused;

@@ -13,16 +13,17 @@ def _exit_on_signal(signum, frame):
     raise SystemExit(128 + signum)
 
 
-# The module and attribute of each subcommand. A subcommand is imported only when it runs, since loading every module
-# from a shared filesystem takes seconds
+# The module, attribute and short help of each subcommand. A subcommand is imported only when it runs, since loading
+# every module from a shared filesystem takes seconds. Its short help is kept here, so that `fwm --help` and completing
+# a subcommand name import none of them
 _SUBCOMMANDS = {
-    "repo": ("fwm.cli.subcmds.repo", "repo"),
-    "list": ("fwm.cli.subcmds.list", "list_cmd"),
-    "show": ("fwm.cli.subcmds.show", "show"),
-    "spawn": ("fwm.cli.subcmds.spawn", "spawn"),
-    "mkgen": ("fwm.cli.subcmds.mkgen", "mkgen"),
-    "check": ("fwm.cli.subcmds.check", "check"),
-    "completion": ("fwm.cli.subcmds.completion", "completion"),
+    "repo": ("fwm.cli.subcmds.repo", "repo", "Create and change the workload repository."),
+    "list": ("fwm.cli.subcmds.list", "list_cmd", "List workloads, sysroots, entry points, traces or checkpoints."),
+    "show": ("fwm.cli.subcmds.show", "show", "Show a workload, sysroot, entry point, trace or checkpoint."),
+    "spawn": ("fwm.cli.subcmds.spawn", "spawn", "Make a working copy of an entry point's sysroot."),
+    "mkgen": ("fwm.cli.subcmds.mkgen", "mkgen", "Generate a run directory that begins a simulation."),
+    "check": ("fwm.cli.subcmds.check", "check", "Check the outputs of a run before importing them."),
+    "completion": ("fwm.cli.subcmds.completion", "completion", "Print the script that enables shell completion."),
 }
 
 
@@ -33,13 +34,27 @@ class FwmGroup(click.Group):
     """
 
     def list_commands(self, ctx: click.Context):
-        return sorted(set(self.commands) | set(_SUBCOMMANDS))
+        return sorted(_SUBCOMMANDS)
 
     def get_command(self, ctx: click.Context, cmd_name: str):
         if cmd_name not in self.commands and cmd_name in _SUBCOMMANDS:
-            module, attr = _SUBCOMMANDS[cmd_name]
-            self.add_command(getattr(importlib.import_module(module), attr), cmd_name)
+            module, attr, short_help = _SUBCOMMANDS[cmd_name]
+            command = getattr(importlib.import_module(module), attr)
+            command.short_help = short_help
+            self.add_command(command, cmd_name)
         return super().get_command(ctx, cmd_name)
+
+    def format_commands(self, ctx: click.Context, formatter: click.HelpFormatter) -> None:
+        with formatter.section("Commands"):
+            formatter.write_dl([(name, _SUBCOMMANDS[name][2]) for name in self.list_commands(ctx)])
+
+    def shell_complete(self, ctx: click.Context, incomplete: str):
+        from click.shell_completion import CompletionItem
+
+        names = [CompletionItem(name, help=_SUBCOMMANDS[name][2])
+                 for name in self.list_commands(ctx) if name.startswith(incomplete)]
+        # the options: click.Group's own version would also import every subcommand for its help
+        return names + click.Command.shell_complete(self, ctx, incomplete)
 
     def main(self, *args, **kwargs):
         # Batch schedulers stop a job with SIGTERM (or SIGHUP), whose default action skips all cleanup
