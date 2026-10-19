@@ -1,9 +1,10 @@
 import os
-import shutil
 import stat
-import subprocess
 import sys
 from typing import Union, Tuple
+
+# shutil and subprocess are imported in the functions that use them: they load many modules, and the read-only
+# commands, which load this module, never need them
 
 
 def remove_path(p: str) -> None:
@@ -11,6 +12,7 @@ def remove_path(p: str) -> None:
         if os.path.isfile(p):
             os.remove(p)
         else:
+            import shutil
             shutil.rmtree(p)
 
 
@@ -66,6 +68,9 @@ def copy_tree(src: str, dst: str) -> None:
 
     On Linux, GNU cp copies with reflinks where the file system supports them, which makes copying a large tree cheap.
     """
+    import shutil
+    import subprocess
+
     if os.path.lexists(dst):
         raise FileExistsError(dst)
     if sys.platform.startswith("linux") and shutil.which("cp"):
@@ -120,5 +125,7 @@ def remove_tree(path: str) -> None:
     if os.path.islink(path) or not os.path.isdir(path):
         os.remove(path)
         return
+    import shutil
+
     set_tree_writable(path)
     shutil.rmtree(path)

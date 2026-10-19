@@ -4,24 +4,27 @@ import sys
 
 class Logger:
     class ColorFormatter(logging.Formatter):
-        import colorama
-        grey = colorama.Fore.WHITE + colorama.Style.DIM
-        yellow = colorama.Fore.YELLOW
-        white = colorama.Fore.WHITE
-        red = colorama.Fore.RED
-        bold_red = colorama.Fore.RED + colorama.Style.BRIGHT
-        reset = colorama.Style.RESET_ALL
         plain_format = "%(message)s"
         detailed_format = "%(levelname)-8s - %(message)s (%(filename)s:%(lineno)d)"
 
-        FORMATS = {
-            logging.DEBUG: grey + detailed_format + reset,
-            # logging.INFO: white + plain_format + reset,
-            logging.INFO: plain_format,
-            logging.WARNING: yellow + detailed_format + reset,
-            logging.ERROR: red + detailed_format + reset,
-            logging.CRITICAL: bold_red + detailed_format + reset
-        }
+        def __init__(self):
+            super().__init__()
+            # imported when the first message is logged, not with the module: most commands never log
+            import colorama
+            grey = colorama.Fore.WHITE + colorama.Style.DIM
+            yellow = colorama.Fore.YELLOW
+            # white = colorama.Fore.WHITE
+            red = colorama.Fore.RED
+            bold_red = colorama.Fore.RED + colorama.Style.BRIGHT
+            reset = colorama.Style.RESET_ALL
+            self.FORMATS = {
+                logging.DEBUG: grey + self.detailed_format + reset,
+                # logging.INFO: white + self.plain_format + reset,
+                logging.INFO: self.plain_format,
+                logging.WARNING: yellow + self.detailed_format + reset,
+                logging.ERROR: red + self.detailed_format + reset,
+                logging.CRITICAL: bold_red + self.detailed_format + reset
+            }
 
         def format(self, record):
             log_fmt = self.FORMATS.get(record.levelno)

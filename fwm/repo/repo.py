@@ -3,16 +3,17 @@ import fcntl
 import os
 import re
 import uuid
-from typing import Callable, Iterator, List, Tuple
+from typing import Callable, Iterator, List, Tuple, TYPE_CHECKING
 
 import peewee as pw
 
 from fwm.database.db import open_db, SchemaVersionError
 from fwm.repo.errors import FwmValidationError, RepoUnusableError
-from fwm.data_loader.file_catalog import FileCatalog
-from fwm.utils.file_catalog import create_catalog
 from fwm.utils.fs import copy_tree, remove_tree, set_tree_readonly
 from fwm.utils.log import Logger
+
+if TYPE_CHECKING:
+    from fwm.data_loader.file_catalog import FileCatalog
 
 REPO_DB_FILE = "fwm.db"
 SYSROOTS_DIR = "sysroots"
@@ -40,12 +41,15 @@ def copy_source(src: str, staged: str) -> None:
         raise FwmValidationError(f"cannot copy {src}: {e}")
 
 
-def catalog_of(tree: str, shown_as: str) -> FileCatalog:
+def catalog_of(tree: str, shown_as: str) -> "FileCatalog":
     """
     The catalog of a tree to import. What can't be cataloged is reported as invalid input.
 
     :param shown_as: The path to show in messages for the tree, e.g. the source of a staged copy.
     """
+    # imported here: it loads pydantic, which the read-only commands don't need
+    from fwm.utils.file_catalog import create_catalog
+
     try:
         return create_catalog(DIGEST_ALGO, tree)
     except (NotImplementedError, OSError) as e:
