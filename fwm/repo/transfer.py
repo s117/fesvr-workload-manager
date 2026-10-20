@@ -121,41 +121,64 @@ def _read_trace(trace: DecoupledTrace, checkpoints: bool) -> _Trace:
                   checkpoints=ckpts)
 
 
+def _read_entry(source: Repo, name: str, sysroots: Dict[str, _Sysroot], traces: bool,
+                checkpoints: bool) -> Optional[_Unit]:
+    """
+    Read an entry point and what is copied with it, in a read transaction of its own. A sysroot already read (in
+    sysroots) isn't read again. Return None if the source has no such entry point.
+    """
+    # DEFERRED: a read takes no write lock, even on a connection opened for writing (which begins IMMEDIATE)
+    with source.db.atomic("DEFERRED"):
+        entry = NativeEntry.get_or_none(NativeEntry.name == name)
+        if entry is None:
+            return None
+        sysroot_name = entry.sysroot.name
+        if sysroot_name not in sysroots:
+            sysroots[sysroot_name] = _read_sysroot(entry.sysroot)
+        return _Unit(sysroot=sysroots[sysroot_name], entry=_Entry(
+            name=entry.name, workload=_fields(entry.workload), sysroot=sysroot_name,
+            row=_fields(entry, "workload", "sysroot"),
+            traces=[_read_trace(t, checkpoints) for t in entry.traces.order_by(DecoupledTrace.recording_started)]
+            if traces else []))
+
+
 def _read_source(source: Repo, entry_names: Sequence[str], everything: bool, traces: bool,
                  checkpoints: bool) -> List[_Unit]:
     """
-    Read what is copied from the source, in one read transaction so that it is a consistent snapshot.
+    Read what is copied from the source. Each entry point is read in a read transaction of its own, so that reading
+    a large repository doesn't hold up its writers; it is copied in a transaction of its own too.
 
     :param everything: Every entry point, and every sysroot that has none, instead of entry_names.
     :raise NotFoundError: An entry point isn't in the source.
     """
-    # DEFERRED: a read takes no write lock, even on a connection opened for writing (which begins IMMEDIATE)
-    with source.db.bind_ctx(ALL_MODELS), source.db.atomic("DEFERRED"):
-        if everything:
-            entries = list(NativeEntry.select().order_by(NativeEntry.name))
-        else:
-            names = list(dict.fromkeys(entry_names))
-            found = {name: NativeEntry.get_or_none(NativeEntry.name == name) for name in names}
-            missing = [name for name in names if found[name] is None]
-            if missing:
-                raise NotFoundError(f"no entry point named {', '.join(repr(n) for n in missing)} in {source.path}")
-            entries = [e for e in found.values() if e is not None]
+    with source.db.bind_ctx(ALL_MODELS):
+        with source.db.atomic("DEFERRED"):
+            if everything:
+                names = [e.name for e in NativeEntry.select(NativeEntry.name).order_by(NativeEntry.name)]
+                lone_sysroots = [s.name for s in Sysroot.select().order_by(Sysroot.name)
+                                 if s.entries.count() == 0]
+            else:
+                names = list(dict.fromkeys(entry_names))
+                missing = [n for n in names if NativeEntry.get_or_none(NativeEntry.name == n) is None]
+                if missing:
+                    raise NotFoundError(f"no entry point named {', '.join(repr(n) for n in missing)} in {source.path}")
+                lone_sysroots = []
 
         sysroots: Dict[str, _Sysroot] = {}
         units = []
-        for entry in entries:
-            sysroot_name = entry.sysroot.name
-            if sysroot_name not in sysroots:
-                sysroots[sysroot_name] = _read_sysroot(entry.sysroot)
-            units.append(_Unit(sysroot=sysroots[sysroot_name], entry=_Entry(
-                name=entry.name, workload=_fields(entry.workload), sysroot=sysroot_name,
-                row=_fields(entry, "workload", "sysroot"),
-                traces=[_read_trace(t, checkpoints) for t in entry.traces.order_by(DecoupledTrace.recording_started)]
-                if traces else [])))
-        if everything:
-            for sysroot in Sysroot.select().order_by(Sysroot.name):
-                if sysroot.name not in sysroots:
-                    units.append(_Unit(sysroot=_read_sysroot(sysroot), entry=None))
+        for name in names:
+            unit = _read_entry(source, name, sysroots, traces, checkpoints)
+            if unit is None:
+                if everything:
+                    continue  # removed since it was listed
+                raise NotFoundError(f"entry point '{name}' was removed from {source.path}")
+            units.append(unit)
+        for name in lone_sysroots:
+            if name not in sysroots:
+                with source.db.atomic("DEFERRED"):
+                    sysroot = Sysroot.get_or_none(Sysroot.name == name)
+                    if sysroot is not None:  # else removed since it was listed
+                        units.append(_Unit(sysroot=_read_sysroot(sysroot), entry=None))
     return units
 
 

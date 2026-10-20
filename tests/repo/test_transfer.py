@@ -385,6 +385,28 @@ def test_reading_takes_no_write_lock(source, dest, monkeypatch):
     assert begun
 
 
+def test_reading_lets_writers_commit(source, dest, monkeypatch):
+    """Each entry point is read in a transaction of its own: between them, a writer of the source can commit."""
+    real_read_entry = transfer_module._read_entry
+    committed = []
+
+    def read_entry(*args, **kwargs):
+        unit = real_read_entry(*args, **kwargs)
+        other = sqlite3.connect(os.path.join(source.path, "fwm.db"), timeout=0)
+        other.execute("BEGIN IMMEDIATE")
+        other.execute("UPDATE NativeEntry SET description = description")
+        other.commit()  # fails if a read transaction is still open
+        other.close()
+        committed.append(unit.entry.name)
+        return unit
+
+    monkeypatch.setattr(transfer_module, "_read_entry", read_entry)
+    with source.repo.bound():
+        push(source.repo, dest.path, ["a", "c"])
+    assert committed == ["a", "c"]
+    assert snapshot(dest) == snapshot(source.repo, entries={"a", "c"})
+
+
 def test_read_only_dest(source, dest):
     set_tree_readonly(dest.path)
     with source.repo.bound():
