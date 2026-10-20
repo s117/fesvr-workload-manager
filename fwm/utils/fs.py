@@ -64,7 +64,7 @@ def human_readable_size(size_bytes: int) -> str:
 
 def copy_tree(src: str, dst: str) -> None:
     """
-    Copy a directory tree, preserving symlinks as links and the permission bits. dst must not exist.
+    Copy a directory tree, or a file, preserving symlinks as links and the permission bits. dst must not exist.
 
     On Linux, GNU cp copies with reflinks where the file system supports them, which makes copying a large tree cheap.
     """
@@ -78,8 +78,10 @@ def copy_tree(src: str, dst: str) -> None:
                                 check=False)
         if result.returncode != 0:
             raise OSError(f"failed to copy {src} to {dst}: {result.stderr.strip()}")
-    else:
+    elif os.path.isdir(src) and not os.path.islink(src):
         shutil.copytree(src, dst, symlinks=True)
+    else:
+        shutil.copy2(src, dst, follow_symlinks=False)
 
 
 def set_tree_writable(path: str) -> None:

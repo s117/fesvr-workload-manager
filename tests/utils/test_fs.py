@@ -104,6 +104,21 @@ def test_copy_tree(tmp_path):
         copy_tree(str(src), str(dst))
 
 
+@pytest.mark.parametrize("with_cp", [True, False])
+def test_copy_tree_file(tmp_path, monkeypatch, with_cp):
+    import shutil
+    from fwm.utils.fs import copy_tree
+
+    if not with_cp:
+        monkeypatch.setattr(shutil, "which", lambda name: None)
+    src = tmp_path / "file"
+    src.write_text("data")
+    src.chmod(0o440)
+    copy_tree(str(src), str(tmp_path / "copy"))
+    assert (tmp_path / "copy").read_text() == "data"
+    assert (tmp_path / "copy").stat().st_mode & 0o777 == 0o440
+
+
 def test_set_tree_readonly_and_writable(tmp_path):
     from fwm.utils.fs import set_tree_readonly, set_tree_writable
 
