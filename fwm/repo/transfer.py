@@ -320,6 +320,19 @@ def _copy_unit(source: Repo, dest: Repo, unit: _Unit) -> List[Item]:
                 dest, stack, source.checkpoint_path(ckpt.source_trace, ckpt.name), ckpt.catalog,
                 f"checkpoint {ckpt.source_trace}:{ckpt.name}", file_name=ckpt.name)
 
+        plan = _commit(dest, unit, staged)
+    for warning in plan.warnings:
+        Logger.get_logger().warning(warning)
+    return plan.items
+
+
+def _commit(dest: Repo, unit: _Unit, staged: Dict[str, str]) -> _Plan:
+    """
+    Add the rows of what the destination lacks of a unit, and place its staged files, in one transaction. Return the
+    plan committed.
+    """
+    created_dirs: List[str] = []  # checkpoint folders of new traces, which a failure must not leave behind
+    try:
         with dest.importing() as place:
             # another command may have changed the destination meanwhile
             plan = _plan(unit)
@@ -352,13 +365,20 @@ def _copy_unit(source: Repo, dest: Repo, unit: _Unit) -> List[Item]:
                     for hart in ckpt.harts:
                         CheckpointHart.create(**hart, checkpoint=ckpt_row)
                     final_dir = dest.checkpoint_dir(trace_uuid)
-                    os.makedirs(final_dir, exist_ok=True)
+                    if not os.path.isdir(final_dir):
+                        os.mkdir(final_dir)
+                        created_dirs.append(final_dir)
                     os.chmod(final_dir, 0o755)  # it holds the read-only checkpoints of the trace, but stays writable
                     place(os.path.join(staged[f"checkpoint {trace_uuid}:{ckpt.name}"], ckpt.name),
                           dest.checkpoint_path(trace_uuid, ckpt.name))
-    for warning in plan.warnings:
-        Logger.get_logger().warning(warning)
-    return plan.items
+    except BaseException:
+        for path in created_dirs:
+            try:
+                os.rmdir(path)  # emptied by the rollback of importing()
+            except OSError:
+                pass  # left for `fwm repo gc`
+        raise
+    return plan
 
 
 @dataclass
@@ -399,7 +419,8 @@ def transfer(source: Repo, dest: Repo, entry_names: Sequence[str] = (), everythi
     units = _read_source(source, entry_names, everything, traces, traces and checkpoints)
     result = TransferResult()
     with dest.bound():
-        conflicts = [c for unit in units for c in _plan(unit).conflicts]
+        # (a sysroot several entry points share conflicts once)
+        conflicts = list(dict.fromkeys(c for unit in units for c in _plan(unit).conflicts))
         if conflicts:
             raise AlreadyExistsError(f"{len(conflicts)} conflict(s) with {dest.path}, nothing was copied:\n" +
                                      "\n".join(f"  {c}" for c in conflicts))

@@ -15,8 +15,9 @@ def create_subrepo(source: Repo, path: str, entry_names: Sequence[str], traces: 
 
     :raise FwmValidationError: path is inside source, or exists and is not an empty directory.
     """
+    path = os.path.realpath(path)  # a link to an empty directory: create (and on failure, remove) the repository there
     source_path = os.path.realpath(source.path)
-    if os.path.commonpath([os.path.realpath(path), source_path]) == source_path:
+    if os.path.commonpath([path, source_path]) == source_path:
         raise FwmValidationError(f"{path} is inside the repository {source.path}: create it somewhere else")
     existed = os.path.isdir(path)
     Repo.init(path, bind=False).close()

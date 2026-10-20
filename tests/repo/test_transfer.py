@@ -261,6 +261,17 @@ def test_sysroot_conflict(copy, source, dest, tmp_path, sysroot_src):
         copy("a")
 
 
+def test_shared_sysroot_conflicts_once(copy, source, dest, tmp_path, sysroot_src):
+    """A conflicting sysroot of several entry points is one conflict."""
+    other = tmp_path / "other"
+    shutil.copytree(sysroot_src, other, symlinks=True)
+    (other / "app" / "input.txt").write_text("changed\n")
+    with dest.bound():
+        add_sysroot(dest, str(other), "sr1")
+    with pytest.raises(AlreadyExistsError, match=r"^1 conflict\(s\)"):
+        copy("a", "b")
+
+
 def test_trace_conflicts(copy, source, dest, tmp_path, sysroot_src, write_entry_point):
     with dest.bound():
         add_sysroot(dest, str(sysroot_src), "sr1")
@@ -300,6 +311,25 @@ def test_interrupted(copy, source, dest, monkeypatch):
     monkeypatch.setattr(transfer_module, "copy_source", real_copy)
     assert [line.split()[0] for line in lines(copy("a", "c"))] == ["present"] * 5 + ["added"] * 3
     assert snapshot(dest) == snapshot(source.repo, entries={"a", "c"})
+
+
+def test_failed_commit(copy, source, dest, monkeypatch):
+    """A commit that fails leaves nothing, not even the checkpoint folder of the new trace."""
+    real_save_catalog = transfer_module.save_catalog
+    saved = []
+
+    def save_catalog(catalog):
+        saved.append(catalog)
+        if len(saved) == 4:  # sysroot, trace, a.1, then a.2
+            raise KeyboardInterrupt
+        return real_save_catalog(catalog)
+
+    monkeypatch.setattr(transfer_module, "save_catalog", save_catalog)
+    with pytest.raises(KeyboardInterrupt):
+        copy("a")
+    assert snapshot(dest)["sysroots"] == {}
+    assert verify_all(dest) == []
+    assert os.listdir(os.path.join(dest.path, "checkpoints")) == []
 
 
 def test_damaged_source(copy, source, dest):
@@ -385,6 +415,19 @@ def test_subrepo_failed(source, tmp_path, existed):
         with pytest.raises(NotFoundError):
             create_subrepo(source.repo, str(path), ["a", "nope"])
     assert os.listdir(path) == [] if existed else not path.exists()
+
+
+def test_subrepo_through_link(source, tmp_path):
+    """NEW_REPO may be a link to an empty directory: the repository is created there, and removed from there."""
+    (tmp_path / "target").mkdir()
+    (tmp_path / "link").symlink_to(tmp_path / "target")
+    with source.repo.bound():
+        with pytest.raises(NotFoundError):
+            create_subrepo(source.repo, str(tmp_path / "link"), ["a", "nope"])
+        assert os.listdir(tmp_path / "target") == []
+        create_subrepo(source.repo, str(tmp_path / "link"), ["a"])
+    assert (tmp_path / "link").is_symlink()
+    assert "fwm.db" in os.listdir(tmp_path / "target")
 
 
 def test_subrepo_refused(source, tmp_path):
