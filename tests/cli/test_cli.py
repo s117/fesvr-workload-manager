@@ -332,8 +332,13 @@ def test_pull_and_push(run, populated, sysroot_src, tmp_path, caplog):
     assert run("--repo-path", other, "mkgen", "from-checkpoint", "e.2.0.40", "-o", str(tmp_path / "r"),
                repo=False)[0] == 0
 
-    # usage, not found and conflicts
+    # usage (checked first), not found and conflicts
     assert run("repo", "push", other)[0] == 2
+    os.chmod(tmp_path / "repo", 0o555)
+    code, _, err = run("repo", "pull", other)
+    assert code == 2 and "give the entry points to copy, or --all" in err
+    os.chmod(tmp_path / "repo", 0o755)
+    assert run("repo", "pull", str(tmp_path / "missing"), "e")[0] == 2
     assert run("repo", "push", other, "e", "--all")[0] == 2
     assert run("repo", "push", str(tmp_path / "repo"), "e")[0] == 2
     assert run("repo", "push", other, "nope")[0] == 3
@@ -348,9 +353,10 @@ def test_pull_and_push(run, populated, sysroot_src, tmp_path, caplog):
 
 def test_subrepo(run, populated, tmp_path, caplog):
     sub = str(tmp_path / "sub")
-    assert run("repo", "subrepo", sub, "e") == (0, sub + "\n", "")
+    assert run("repo", "subrepo", sub, "e")[:2] == (0, sub + "\n")
     assert "added 1 sysroot, 1 entry point, 1 trace, 1 checkpoint" in caplog.text
-    assert run("--repo-path", sub, "list", "checkpoints", "--json", repo=False)[0] == 0
+    code, out, _ = run("--repo-path", sub, "list", "checkpoints", "--json", repo=False)
+    assert (code, [c["name"] for c in json.loads(out)]) == (0, ["e.2.0.40"])
     assert run("repo", "subrepo", sub, "e")[0] == 4  # not empty
     assert run("repo", "subrepo", str(tmp_path / "sub2"), "nope")[0] == 3
     assert not os.path.exists(tmp_path / "sub2")

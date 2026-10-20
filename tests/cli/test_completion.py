@@ -182,9 +182,16 @@ def test_transfer_entries(complete, run, populated, sysroot_src, write_entry_poi
 
     assert complete("repo", "pull", source) == [("x", "w @ s"), ("y", "w @ s")]
     assert complete("repo", "pull", source, "x") == [("y", "w @ s")]
-    assert complete("repo", "pull", "--all", source, incomplete="y") == [("y", "w @ s")]
+    assert complete("repo", "pull", "--all", source, incomplete="y") == []  # --all takes no entry point
     assert complete("repo", "pull", str(tmp_path / "missing")) == []
     assert complete("repo", "pull", str(tmp_path)) == []
     assert complete("repo", "push", source) == [("e", "wl @ sr")]
     assert complete("repo", "push", source, "e") == []
     assert complete("repo", "subrepo", str(tmp_path / "new")) == [("e", "wl @ sr")]
+
+
+def test_completion_expands_home(complete, run, populated, tmp_path, monkeypatch):
+    """The shell passes a leading ~ to completion as it was typed."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    assert values(complete("repo", "pull", "~/repo")) == ["e"]
+    assert values(complete("--repo-path", "~/repo", "spawn", repo=False)) == ["e"]

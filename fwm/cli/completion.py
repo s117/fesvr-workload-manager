@@ -5,6 +5,7 @@ Click calls these while it parses the command line for completion, without runni
 repository is opened here from the parsed --repo-path (or FWM_REPO_PATH). Completion must never fail loudly: without a
 usable repository, or on any error, a callback offers nothing.
 """
+import os
 import re
 from typing import Callable, Dict, Iterable, Iterator, List, Optional, Tuple, Union
 
@@ -24,14 +25,19 @@ def _natural_key(value: str) -> List[Union[int, str]]:
     return [int(part) if part.isdigit() else part for part in re.split(r"(\d+)", value)]
 
 
+def _expand(path: Optional[str]) -> Optional[str]:
+    # the shell expands a leading ~ when it runs a command, not in the words it passes to complete one
+    return os.path.expanduser(path) if path else path
+
+
 def _repo_path(ctx: click.Context) -> Optional[str]:
     """The repository of --repo-path (or FWM_REPO_PATH)."""
-    return ctx.find_root().params.get("repo_path")
+    return _expand(ctx.find_root().params.get("repo_path"))
 
 
 def _source_path(ctx: click.Context) -> Optional[str]:
     """The repository of the SOURCE argument (fwm repo pull)."""
-    return ctx.params.get("source")
+    return _expand(ctx.params.get("source"))
 
 
 def _open_repo_quietly(path: Optional[str]) -> Optional[Repo]:
@@ -85,7 +91,9 @@ def _entries(ctx: click.Context, incomplete: str) -> Candidates:
 
 
 def _other_entries(ctx: click.Context, incomplete: str) -> Candidates:
-    """The entry points not given yet to the ENTRIES argument (fwm repo pull, push and subrepo)."""
+    """The entry points not given yet to the ENTRIES argument (fwm repo pull, push and subrepo), unless --all is."""
+    if ctx.params.get("everything"):
+        return []
     given = set(ctx.params.get("entries") or ())
     return ((name, help_text) for name, help_text in _entries(ctx, incomplete) if name not in given)
 

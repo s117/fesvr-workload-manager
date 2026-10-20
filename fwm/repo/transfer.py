@@ -33,7 +33,7 @@ from fwm.database.schema import (
 )
 from fwm.repo.errors import AlreadyExistsError, FwmValidationError, NotFoundError, RepoUnusableError
 from fwm.repo.lookup import entry_metadata, trace_harts
-from fwm.repo.repo import Repo, copy_source, REPO_PERM_MASK
+from fwm.repo.repo import Repo, copy_source, REPO_DB_FILE, REPO_PERM_MASK
 from fwm.utils.file_catalog import catalog_differences, verify_catalog
 from fwm.utils.fs import set_tree_writable
 from fwm.utils.log import Logger
@@ -448,7 +448,7 @@ def transfer(source: Repo, dest: Repo, entry_names: Sequence[str] = (), everythi
     :raise AlreadyExistsError: Something conflicts with the destination: then nothing is copied.
     :raise FwmValidationError: A copied file doesn't match its catalog.
     """
-    if os.path.realpath(source.path) == os.path.realpath(dest.path):
+    if _same_repo(source.path, dest.path):
         raise RepoUnusableError(f"cannot copy {source.path} into itself")
     units = _read_source(source, entry_names, everything, traces, traces and checkpoints)
     result = TransferResult()
@@ -468,10 +468,18 @@ def transfer(source: Repo, dest: Repo, entry_names: Sequence[str] = (), everythi
     return result
 
 
+def _same_repo(a: str, b: str) -> bool:
+    """Whether two paths are of the same repository: its database is the same file, even through a bind mount."""
+    try:
+        return os.path.samefile(os.path.join(a, REPO_DB_FILE), os.path.join(b, REPO_DB_FILE))
+    except OSError:  # not both repositories
+        return os.path.realpath(a) == os.path.realpath(b)
+
+
 @contextlib.contextmanager
 def _other_repo(path: str, this: Repo, readonly: bool) -> Iterator[Repo]:
     """The repository at path, opened beside this one without binding the models to it."""
-    if os.path.realpath(path) == os.path.realpath(this.path):
+    if _same_repo(path, this.path):
         raise RepoUnusableError(f"cannot copy {this.path} into itself")
     other = Repo.open(path, readonly=readonly, bind=False)
     try:

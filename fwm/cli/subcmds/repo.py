@@ -293,9 +293,12 @@ def _transfer_options(f):
     return f
 
 
-def _transfer(copy, repo, other, entries, everything, no_traces, no_checkpoints):
+def _check_entries(entries, everything):
     if bool(entries) == everything:
         raise click.UsageError("give the entry points to copy, or --all")
+
+
+def _transfer(copy, repo, other, entries, everything, no_traces, no_checkpoints):
     result = copy(repo, other, entries, everything=everything, traces=not no_traces, checkpoints=not no_checkpoints,
                   report=lambda item: click.echo(str(item)))
     Logger.get_logger().info(result.summary())
@@ -315,7 +318,7 @@ _TRANSFER_HELP = """
 
 
 @repo.command("pull")
-@click.argument("source", type=click.Path(exists=True, file_okay=False))
+@click.argument("source", type=click.Path(file_okay=False))  # (a missing one isn't a repository: status 2)
 @click.argument("entries", nargs=-1, shell_complete=complete_source_entry)
 @click.option("--all", "everything", is_flag=True,
               help="Copy every entry point of SOURCE, and every sysroot that has none.")
@@ -323,6 +326,7 @@ _TRANSFER_HELP = """
 @click.pass_context
 def pull_cmd(ctx, source, entries, everything, no_traces, no_checkpoints):
     from fwm.repo.transfer import pull
+    _check_entries(entries, everything)
     _transfer(pull, open_repo(ctx, write=True), source, entries, everything, no_traces, no_checkpoints)
 
 
@@ -341,6 +345,7 @@ pull_cmd.help = """
 @click.pass_context
 def push_cmd(ctx, dest, entries, everything, no_traces, no_checkpoints):
     from fwm.repo.transfer import push
+    _check_entries(entries, everything)
     _transfer(push, open_repo(ctx), dest, entries, everything, no_traces, no_checkpoints)
 
 
