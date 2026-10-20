@@ -344,3 +344,14 @@ def test_pull_and_push(run, populated, sysroot_src, tmp_path, caplog):
     code, out, err = run("--repo-path", third, "repo", "pull", repo_path, "--no-traces", "e", repo=False)
     assert (code, out) == (5, "")
     assert "sysroot 'sr' exists, with different content" in err
+
+
+def test_subrepo(run, populated, tmp_path, caplog):
+    sub = str(tmp_path / "sub")
+    assert run("repo", "subrepo", sub, "e") == (0, sub + "\n", "")
+    assert "added 1 sysroot, 1 entry point, 1 trace, 1 checkpoint" in caplog.text
+    assert run("--repo-path", sub, "list", "checkpoints", "--json", repo=False)[0] == 0
+    assert run("repo", "subrepo", sub, "e")[0] == 4  # not empty
+    assert run("repo", "subrepo", str(tmp_path / "sub2"), "nope")[0] == 3
+    assert not os.path.exists(tmp_path / "sub2")
+    assert run("repo", "subrepo", str(tmp_path / "sub2"))[0] == 2

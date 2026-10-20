@@ -16,6 +16,7 @@ from fwm.repo.entry import add_entry
 from fwm.repo.errors import AlreadyExistsError, FwmValidationError, NotFoundError, RepoUnusableError
 from fwm.repo.gc import find_leftovers
 from fwm.repo.repo import Repo
+from fwm.repo.subrepo import create_subrepo
 from fwm.repo.sysroot import add_sysroot, verify_sysroot
 from fwm.repo.trace import add_trace, verify_trace
 from fwm.repo.transfer import pull, push
@@ -358,3 +359,41 @@ def test_bad_input(copy, source, dest, tmp_path):
     with source.repo.bound():
         with pytest.raises(RepoUnusableError, match="into itself"):
             push(source.repo, source.path, ["a"])
+
+
+# --- subrepo
+
+
+def test_subrepo(source, tmp_path):
+    path = str(tmp_path / "sub")
+    with source.repo.bound():
+        result = create_subrepo(source.repo, path, ["a", "c"], checkpoints=False)
+        assert result.summary() == "added 2 sysroots, 2 entry points, 2 traces"
+    sub = Repo.open(path, bind=False)
+    assert snapshot(sub) == snapshot(source.repo, entries={"a", "c"}, checkpoints=False)
+    assert verify_all(sub) == []
+    sub.close()
+
+
+@pytest.mark.parametrize("existed", [False, True])
+def test_subrepo_failed(source, tmp_path, existed):
+    """A failed subrepo is removed: an empty directory it was created in stays."""
+    path = tmp_path / "sub"
+    if existed:
+        path.mkdir()
+    with source.repo.bound():
+        with pytest.raises(NotFoundError):
+            create_subrepo(source.repo, str(path), ["a", "nope"])
+    assert os.listdir(path) == [] if existed else not path.exists()
+
+
+def test_subrepo_refused(source, tmp_path):
+    (tmp_path / "full").mkdir()
+    (tmp_path / "full" / "file").write_text("x")
+    with source.repo.bound():
+        with pytest.raises(FwmValidationError, match="not an empty directory"):
+            create_subrepo(source.repo, str(tmp_path / "full"), ["a"])
+        with pytest.raises(FwmValidationError, match="inside the repository"):
+            create_subrepo(source.repo, os.path.join(source.path, "sub"), ["a"])
+    assert os.listdir(tmp_path / "full") == ["file"]
+    assert not os.path.exists(os.path.join(source.path, "sub"))

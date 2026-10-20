@@ -187,3 +187,4 @@ def test_transfer_entries(complete, run, populated, sysroot_src, write_entry_poi
     assert complete("repo", "pull", str(tmp_path)) == []
     assert complete("repo", "push", source) == [("e", "wl @ sr")]
     assert complete("repo", "push", source, "e") == []
+    assert complete("repo", "subrepo", str(tmp_path / "new")) == [("e", "wl @ sr")]

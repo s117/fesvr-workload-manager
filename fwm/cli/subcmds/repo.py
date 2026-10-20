@@ -17,6 +17,7 @@ from fwm.repo.errors import FwmValidationError
 from fwm.repo.gc import collect_garbage, find_leftovers
 from fwm.repo.lookup import get_sysroot, resolve_checkpoint, resolve_trace
 from fwm.repo.repo import Repo
+from fwm.repo.subrepo import create_subrepo
 from fwm.repo.sysroot import add_sysroot, verify_sysroot
 from fwm.repo.trace import add_trace, verify_trace
 from fwm.repo.transfer import pull, push
@@ -340,3 +341,21 @@ push_cmd.help = """
     Copy the ENTRIES, entry points of this repository, into the repository DEST (or with --all, everything this one
     has). This repository is only read.
     """ + _TRANSFER_HELP
+
+
+@repo.command("subrepo")
+@click.argument("new_repo", type=click.Path(file_okay=False))
+@click.argument("entries", nargs=-1, required=True, shell_complete=complete_other_entry)
+@_transfer_options
+@click.pass_context
+def subrepo_cmd(ctx, new_repo, entries, no_traces, no_checkpoints):
+    """
+    Create the repository NEW_REPO with the ENTRIES, entry points of this repository, and their sysroots, traces and
+    checkpoints: `fwm repo init NEW_REPO`, then `fwm repo push NEW_REPO ENTRIES...`. If the copy fails, NEW_REPO is
+    removed. This repository is only read.
+
+    NEW_REPO must not exist, or must be an empty directory. Prints its path.
+    """
+    result = create_subrepo(open_repo(ctx), new_repo, entries, traces=not no_traces, checkpoints=not no_checkpoints)
+    Logger.get_logger().info(result.summary())
+    click.echo(os.path.abspath(new_repo))
