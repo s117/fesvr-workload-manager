@@ -275,11 +275,19 @@ def _plan(unit: _Unit) -> _Plan:
 # --- copying
 
 
+def _tree_paths(tree: str) -> List[str]:
+    """Every file, link and directory under tree, relative to it."""
+    paths = []
+    for dirpath, dirnames, filenames in os.walk(tree):
+        paths += [os.path.relpath(os.path.join(dirpath, name), tree) for name in dirnames + filenames]
+    return paths
+
+
 def _stage(dest: Repo, stack: contextlib.ExitStack, source_path: str, catalog: FileCatalog, what: str,
            file_name: Optional[str] = None) -> str:
     """
     Copy a tree (or, with file_name, the file source_path into a folder, as file_name) into the destination's staging
-    area, and check the copy against its catalog. Return the staged path.
+    area, and check that the copy is what its catalog describes, and nothing else. Return the staged path.
     """
     staged: str = stack.enter_context(dest.staging())
     if file_name is None:
@@ -288,7 +296,9 @@ def _stage(dest: Repo, stack: contextlib.ExitStack, source_path: str, catalog: F
         os.mkdir(staged)
         copy_source(source_path, os.path.join(staged, file_name))
     file_problems, link_problems, dir_problems = verify_catalog(catalog, staged, perm_mask=REPO_PERM_MASK)
-    problems = sorted(file_problems + link_problems + dir_problems)
+    listed = {f.path for f in catalog.files} | {link.path for link in catalog.links} | {d.path for d in catalog.dirs}
+    problems = sorted(file_problems + link_problems + dir_problems +
+                      [(path, "not in the catalog") for path in _tree_paths(staged) if path not in listed])
     if problems:
         raise FwmValidationError(f"the copy of {what} from {source_path} doesn't match its catalog:\n" +
                                  "\n".join(f"  {path}: {reason}" for path, reason in problems))

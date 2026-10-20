@@ -344,6 +344,17 @@ def test_damaged_source(copy, source, dest):
     assert verify_all(dest) == []
 
 
+def test_unlisted_file_in_source(copy, source, dest):
+    """A file that no catalog lists, added to the source's sysroot, isn't copied with it."""
+    sysroot_dir = source.repo.sysroot_dir("sr1")
+    os.chmod(sysroot_dir, 0o755)
+    with open(os.path.join(sysroot_dir, "unlisted"), "w") as f:
+        f.write("x")
+    with pytest.raises(FwmValidationError, match="doesn't match its catalog:\n  unlisted: not in the catalog"):
+        copy("a")
+    assert snapshot(dest)["sysroots"] == {}
+
+
 def test_read_only_source(source, dest):
     before = snapshot(source.repo)
     source.repo.close()
