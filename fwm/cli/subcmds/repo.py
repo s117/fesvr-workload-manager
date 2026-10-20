@@ -352,7 +352,7 @@ def subrepo_cmd(ctx, new_repo, entries, no_traces, no_checkpoints):
     """
     Create the repository NEW_REPO with the ENTRIES, entry points of this repository, and their sysroots, traces and
     checkpoints: `fwm repo init NEW_REPO`, then `fwm repo push NEW_REPO ENTRIES...`. If the copy fails, NEW_REPO is
-    removed. This repository is only read.
+    removed (an empty directory it was created in is left empty). This repository is only read.
 
     NEW_REPO must not exist, or must be an empty directory. Prints its path.
     """

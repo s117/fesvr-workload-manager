@@ -184,7 +184,7 @@ fwm --repo-path /shared/repo repo push ~/merged --all   # merge everything into 
 
   Copying again adds nothing, and its rows never change.
 - **Conflicts:** the same name with something else is a conflict. Then nothing is copied, and the command fails with status 5.
-- **Interruptions:** each entry point is committed on its own, like an import. An interrupted copy can be run again to complete it. `subrepo` removes its new repository if the copy fails.
+- **Interruptions:** each entry point is committed on its own, like an import. An interrupted copy can be run again to complete it. `subrepo` removes its new repository if the copy fails (an empty directory it was created in is left empty, as it was).
 - **Read access is enough** to copy from a repository. Completion offers the entry points of the repository copied from: for `pull`, those of its `<source>`.
 - **Output:** each item prints as `added|present <kind> <id>` (`subrepo` prints the new repository's path), and a summary goes to stderr.
 

@@ -428,14 +428,34 @@ def test_subrepo(source, tmp_path):
 
 @pytest.mark.parametrize("existed", [False, True])
 def test_subrepo_failed(source, tmp_path, existed):
-    """A failed subrepo is removed: an empty directory it was created in stays."""
-    path = tmp_path / "sub"
+    """A failed subrepo is removed, with the directories made for it; a directory it was created in stays as it was."""
+    path = tmp_path / "x" / "y" / "sub"
     if existed:
-        path.mkdir()
+        path.mkdir(parents=True)
+        path.chmod(0o2770)
+        before = path.stat()
     with source.repo.bound():
         with pytest.raises(NotFoundError):
             create_subrepo(source.repo, str(path), ["a", "nope"])
-    assert os.listdir(path) == [] if existed else not path.exists()
+    if existed:
+        assert os.listdir(path) == []
+        assert (path.stat().st_mode, path.stat().st_ino) == (before.st_mode, before.st_ino)
+    else:
+        assert os.listdir(tmp_path).count("x") == 0
+
+
+def test_subrepo_failed_cleanup(source, tmp_path, monkeypatch, caplog):
+    """When the new repository can't be removed, the error of the copy is the one reported."""
+    from fwm.repo import subrepo as subrepo_module
+
+    def remove_tree(path):
+        raise PermissionError(13, "Permission denied", path)
+
+    monkeypatch.setattr(subrepo_module, "remove_tree", remove_tree)
+    with source.repo.bound():
+        with pytest.raises(NotFoundError):
+            create_subrepo(source.repo, str(tmp_path / "sub"), ["a", "nope"])
+    assert "cannot remove the new repository" in caplog.text
 
 
 def test_subrepo_through_link(source, tmp_path):
