@@ -387,7 +387,8 @@ def transfer(source: Repo, dest: Repo, entry_names: Sequence[str] = (), everythi
     :param entry_names: The entry points of the source to copy.
     :param everything: Copy every entry point of the source, and every sysroot that has none, instead.
     :param traces: Copy the entry points' traces (and, with checkpoints, their checkpoints).
-    :param report: Called with each item once its entry point is committed (or found present).
+    :param report: Called with each item once its entry point is committed (or found present). An item shared by
+                   several entry points, like their sysroot, is reported once.
     :raise RepoUnusableError: source and dest are the same repository.
     :raise NotFoundError: An entry point isn't in the source.
     :raise AlreadyExistsError: Something conflicts with the destination: then nothing is copied.
@@ -402,10 +403,13 @@ def transfer(source: Repo, dest: Repo, entry_names: Sequence[str] = (), everythi
         if conflicts:
             raise AlreadyExistsError(f"{len(conflicts)} conflict(s) with {dest.path}, nothing was copied:\n" +
                                      "\n".join(f"  {c}" for c in conflicts))
+        reported = set()
         for unit in units:
             for item in _copy_unit(source, dest, unit):
-                result.items.append(item)
-                report(item)
+                if (item.kind, item.id) not in reported:
+                    reported.add((item.kind, item.id))
+                    result.items.append(item)
+                    report(item)
     return result
 
 

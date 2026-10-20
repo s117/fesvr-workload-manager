@@ -167,7 +167,7 @@ def test_copy_twice(copy, source, dest):
 
 def test_shared_sysroot(copy, source, dest):
     result = copy("a", "b", "a")
-    assert [line for line in lines(result) if "sysroot" in line] == ["added sysroot sr1", "present sysroot sr1"]
+    assert [line for line in lines(result) if "sysroot" in line] == ["added sysroot sr1"]  # reported once
     assert snapshot(dest) == snapshot(source.repo, entries={"a", "b"})
     assert verify_all(dest) == []
 
