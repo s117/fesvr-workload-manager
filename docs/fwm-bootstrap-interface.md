@@ -6,9 +6,9 @@ fwm-bootstrap is the workload preparation pipeline (Snakemake) that turns a work
 
 | Where | What runs there |
 | --- | --- |
-| One host, e.g. the Snakemake controller (`localrules`) | Commands that change the repository: `fwm repo init`, `repo add`, `repo set-metadata`, `repo remove`, `repo gc`, `repo record-validation`. |
+| One host, e.g. the Snakemake controller (`localrules`) | Commands that change the repository: `fwm repo init`, `repo add`, `repo set-metadata`, `repo remove`, `repo gc`, `repo record-validation`, `repo pull`; and `repo push` / `repo subrepo`, for the repository they write. |
 | Any compute node | The generated Makefiles (`make -C <run dir> run`). Only the record and `from-sysroot` runs open the database, read-only, when `fwm spawn` checks the sysroot out. |
-| Anywhere, even without write permission | `fwm list`, `show`, `verify`, `mkgen`, `repo bootstrap`, `spawn`, shell completion; `fwm check`, which needs no repository at all. |
+| Anywhere, even without write permission | `fwm list`, `show`, `verify`, `mkgen`, `repo bootstrap`, `spawn`, shell completion; `fwm check`, which needs no repository at all. A repository is only read when it is copied from (`repo pull`'s source, `repo push`'s and `repo subrepo`'s `--repo-path`). |
 
 The database uses SQLite's rollback journal, not WAL, so it can sit on a shared filesystem such as NFS and be read from several hosts. Commands that change it start their transaction with the write lock held and wait up to 30 seconds for each other. Keep them on one host anyway: SQLite's locking over a network filesystem is only as reliable as that filesystem's.
 
@@ -124,6 +124,8 @@ The sections are the objects of `fwm show --json` (see JSON below), without thei
 | `fwm repo record-validation` | `passed: <why>` or `failed: <why>` |
 | `fwm repo verify` | one line per problem: `<kind> <id>: <path>: <reason>`, or `leftover <path>: <reason>` |
 | `fwm repo gc` | one line per leftover removed (with `--dry-run`, found): `<path>: <reason>` |
+| `fwm repo pull`, `repo push` | one line per item, once its entry point is committed (an item several entry points share, like their sysroot, only once): `added\|present sysroot <name>`, `… entry <name>`, `… trace <UUID>` (a trace kept under another UUID: `present trace <its UUID> (<the copied UUID>)`), `… checkpoint <trace UUID>:<name>` |
+| `fwm repo subrepo` | the new repository's path |
 | `fwm mkgen ...`, `fwm repo bootstrap ...` | the Makefile path |
 | `fwm list ... --json`, `fwm show ... --json` | JSON, below |
 

@@ -35,11 +35,11 @@ The branch is `main`. Never push without being asked.
 | Path | What |
 | --- | --- |
 | `fwm/cli/fwm.py` | The click group: subcommands imported when they run (`_SUBCOMMANDS`), `--repo-path` / `FWM_REPO_PATH`, `open_repo(ctx, write=...)`, `FwmError` → exit code, SIGTERM/SIGHUP → `SystemExit(128+sig)` so cleanup runs |
-| `fwm/cli/subcmds/` | `repo` (`add`, `remove`, `verify`, `gc`, `set-metadata`, `record-validation`, and `bootstrap` from `bootstrap.py`), `list`, `show`, `spawn`, `mkgen`, `check`, `completion` |
+| `fwm/cli/subcmds/` | `repo` (`add`, `remove`, `verify`, `gc`, `set-metadata`, `record-validation`, `pull`, `push`, `subrepo`, and `bootstrap` from `bootstrap.py`), `list`, `show`, `spawn`, `mkgen`, `check`, `completion` |
 | `fwm/cli/completion.py`, `output.py` | Shell completion (opens the repository read-only); table, JSON and summary output |
 | `fwm/data_loader/` | Readers and pydantic models of spike's files: `recording.py`, `provenance.py`, `final_state.py`, `checkpoint.py` (+ digest), `ckpt_desc.py`, `simpoint_info.py`, `sim_version.py` (`spike --version`), `entry_point.py`, `file_catalog.py` |
 | `fwm/database/` | peewee models (`schema.py`), `db.py` (`open_db`, `SCHEMA_VERSION`, journal, busy timeout), `catalog_store.py`, `custom_field.py` (`TimestampTzField`) |
-| `fwm/repo/` | The operations: `repo.py` (`Repo`, staging, `importing()`, `removal()`), `sysroot.py`, `entry.py`, `trace.py`, `checkpoint.py`, `validation.py`, `spawn.py`, `remove.py`, `gc.py`, `query.py` (the JSON views), `lookup.py` (finding a sysroot, entry point, trace or checkpoint by name), `errors.py` |
+| `fwm/repo/` | The operations: `repo.py` (`Repo`, staging, `importing()`, `removal()`), `sysroot.py`, `entry.py`, `trace.py`, `checkpoint.py`, `validation.py`, `spawn.py`, `remove.py`, `gc.py`, `transfer.py` (copying entry points between repositories: `pull`, `push`), `subrepo.py`, `query.py` (the JSON views), `lookup.py` (finding a sysroot, entry point, trace or checkpoint by name), `errors.py` |
 | `fwm/mkgen/` | `makefile.py` (generators, quoting, `read_run_info`), `run_json.py`, `templates/*.mk` (`header.mk` + one per run kind) |
 | `fwm/utils/` | file catalogs and their verification, digests, `fs.py` (copy with reflinks, read-only trees, `remove_tree`), target-path normalisation like FESVR's |
 | `tests/` | `fesvr_files.py` writes fake recordings, checkpoints, provenance and final states; `conftest.py` has the fixtures; `integration/test_spike_e2e.py` runs a real spike |
@@ -85,7 +85,7 @@ Stored content is made read-only, so delete a repository with `chmod -R u+w <dir
 
 Verify formats and options in `riscv-isa-sim` / `riscv-fesvr` source before designing a feature; the user expects this.
 
-**Minimum versions** (the installed spike is at `/usr/local/usrapps/rotenberg/jli95/anycore-riscv/install-linux/bin/spike`):
+**Minimum versions.** Toolchains with spike are installed at `/usr/local/usrapps/rotenberg/anycore-riscv/install-linux-<commit>/`; use the newest one (on 2026-10-20, `install-linux-df3c68d`: riscv-isa-sim c303463 / riscv-fesvr f8a1a42). The older `.../jli95/anycore-riscv/install-linux` is gone.
 
 | riscv-isa-sim / riscv-fesvr | What fwm needs from it |
 | --- | --- |
@@ -150,6 +150,16 @@ Verify formats and options in `riscv-isa-sim` / `riscv-fesvr` source before desi
 - **Run generators:** `mkgen` is for users; `repo bootstrap` is for the creator and only reads the repository.
 - **Old spikes:** old dumps and recordings without provenance are refused rather than supported. The repositories get rebuilt instead.
 - **`--sim-version`:** `repo add trace` has none, because the provenance holds the recording spike's build. Checkpoints keep it, since their files carry no provenance.
+- **Copying between repositories** (2026-10-20): one mechanism, `fwm/repo/transfer.py`, serves merging and subsets.
+  - `repo pull SOURCE` writes `--repo-path`; `repo push DEST` reads it; `repo subrepo NEW` is `init` + `push`, and removes `NEW` on failure.
+  - It picks entry points (or `--all`), each bringing its sysroot, traces and checkpoints (`--no-traces`, `--no-checkpoints`).
+  - Rows are copied as they are, trace UUIDs included.
+  - What the destination has is kept under the `--exist-ok` rules. A trace is matched by its recording, so a destination trace with another UUID is kept and the checkpoints attach to it.
+  - Destination rows never change; there are no updates or hard links.
+  - Conflicts are all checked first, and then nothing is copied.
+  - Each entry point is staged, verified against its catalogs and committed on its own, so reruns complete an interrupted copy.
+  - Two repositories are open at once: the destination is bound to `database_proxy` (`Repo.bound()`), and the source is read through `bind_ctx` after `Repo.open(..., bind=False)`.
+  - `pull`'s completion reads its `SOURCE` argument, not `--repo-path`.
 
 **Kept deliberately:**
 - the Makefiles keep a minimal behaviour (no extra files, no BBV cleanup);
@@ -175,7 +185,7 @@ uv run ruff check fwm tests      # pyproject pins ruff's former default rules (E
 **Spike end-to-end test** (`tests/integration/test_spike_e2e.py`, ~45 s): it needs a helloworld sysroot built with the new toolchain. Scratch files vanish between sessions; rebuild it with:
 
 ```sh
-R=/usr/local/usrapps/rotenberg/jli95/anycore-riscv/install-linux
+R=/usr/local/usrapps/rotenberg/anycore-riscv/install-linux-df3c68d   # or the newest install-linux-*
 S=<scratch dir>; mkdir -p $S/sysroot/app $S/sysroot/boot
 $R/bin/riscv64-unknown-linux-gnu-gcc -static -Wl,-Ttext-segment,0x10000 -O2 -o $S/sysroot/app/helloworld.rv64 \
     /usr/local/usrapps/rotenberg/fwm-bootstrap/suites/helloworld/sysroots/000.helloworld/src/helloworld.c
