@@ -169,3 +169,21 @@ def test_completion_command(shell, marker, monkeypatch):
 def test_completion_command_unknown_shell():
     result = CliRunner().invoke(cli, ["completion", "tcsh"])
     assert result.exit_code == 2
+
+
+def test_transfer_entries(complete, run, populated, sysroot_src, write_entry_point, tmp_path):
+    """pull completes the entry points of its SOURCE; push and subrepo those of --repo-path. Given ones are left out."""
+    source = str(tmp_path / "source")
+    assert run("repo", "init", source, repo=False)[0] == 0
+    assert run("--repo-path", source, "repo", "add", "sysroot", str(sysroot_src), "s", repo=False)[0] == 0
+    for name in ("x", "y"):
+        assert run("--repo-path", source, "repo", "add", "entry", "s", "w", name, write_entry_point(),
+                   repo=False)[0] == 0
+
+    assert complete("repo", "pull", source) == [("x", "w @ s"), ("y", "w @ s")]
+    assert complete("repo", "pull", source, "x") == [("y", "w @ s")]
+    assert complete("repo", "pull", "--all", source, incomplete="y") == [("y", "w @ s")]
+    assert complete("repo", "pull", str(tmp_path / "missing")) == []
+    assert complete("repo", "pull", str(tmp_path)) == []
+    assert complete("repo", "push", source) == [("e", "wl @ sr")]
+    assert complete("repo", "push", source, "e") == []

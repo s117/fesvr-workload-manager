@@ -313,3 +313,34 @@ def test_list_json_is_show_json(run, populated):
         assert listed, list_kind
         for view in listed:
             assert view == json.loads(run("show", show_kind, view[key], "--json")[1])
+
+
+def test_pull_and_push(run, populated, sysroot_src, tmp_path, caplog):
+    trace_uuid = populated
+    repo_path = str(tmp_path / "repo")
+    other = str(tmp_path / "other")
+    assert run("repo", "init", other, repo=False)[0] == 0
+
+    code, out, err = run("--repo-path", other, "repo", "pull", repo_path, "e", repo=False)
+    assert (code, out) == (0, f"added sysroot sr\nadded entry e\nadded trace {trace_uuid}\n"
+                              f"added checkpoint {trace_uuid}:e.2.0.40\n")
+    assert "added 1 sysroot, 1 entry point, 1 trace, 1 checkpoint" in caplog.text
+    code, out, err = run("repo", "push", other, "--all")
+    assert (code, out) == (0, f"present sysroot sr\npresent entry e\npresent trace {trace_uuid}\n"
+                              f"present checkpoint {trace_uuid}:e.2.0.40\n")
+    assert run("--repo-path", other, "repo", "verify", repo=False)[0] == 0
+    assert run("--repo-path", other, "mkgen", "from-checkpoint", "e.2.0.40", "-o", str(tmp_path / "r"),
+               repo=False)[0] == 0
+
+    # usage, not found and conflicts
+    assert run("repo", "push", other)[0] == 2
+    assert run("repo", "push", other, "e", "--all")[0] == 2
+    assert run("repo", "push", str(tmp_path / "repo"), "e")[0] == 2
+    assert run("repo", "push", other, "nope")[0] == 3
+    third = str(tmp_path / "third")
+    assert run("repo", "init", third, repo=False)[0] == 0
+    (sysroot_src / "app" / "input.txt").write_text("changed\n")
+    assert run("--repo-path", third, "repo", "add", "sysroot", str(sysroot_src), "sr", repo=False)[0] == 0
+    code, out, err = run("--repo-path", third, "repo", "pull", repo_path, "--no-traces", "e", repo=False)
+    assert (code, out) == (5, "")
+    assert "sysroot 'sr' exists, with different content" in err

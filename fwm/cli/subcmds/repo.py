@@ -3,7 +3,8 @@ import os
 import click
 
 from fwm.cli.completion import (
-    complete_by_kind, complete_checkpoint, complete_entry, complete_sysroot, complete_trace, complete_workload
+    complete_by_kind, complete_checkpoint, complete_entry, complete_other_entry, complete_source_entry,
+    complete_sysroot, complete_trace, complete_workload
 )
 from fwm.cli.fwm import open_repo
 from fwm.cli.subcmds.bootstrap import bootstrap
@@ -18,6 +19,7 @@ from fwm.repo.lookup import get_sysroot, resolve_checkpoint, resolve_trace
 from fwm.repo.repo import Repo
 from fwm.repo.sysroot import add_sysroot, verify_sysroot
 from fwm.repo.trace import add_trace, verify_trace
+from fwm.repo.transfer import pull, push
 from fwm.repo.validation import record_validation, PASSED
 from fwm.utils.log import Logger
 
@@ -276,3 +278,65 @@ def gc_cmd(ctx, dry_run):
     for leftover in leftovers:
         click.echo(f"{leftover.path}: {leftover.reason}")
     Logger.get_logger().info(f"{'found' if dry_run else 'removed'} {len(leftovers)} leftover(s)")
+
+
+def _transfer_options(f):
+    f = click.option("--no-checkpoints", is_flag=True, help="Copy the traces, but none of their checkpoints.")(f)
+    f = click.option("--no-traces", is_flag=True,
+                     help="Copy only the sysroots and entry points: no trace, and so no checkpoint.")(f)
+    return f
+
+
+def _transfer(copy, repo, other, entries, everything, no_traces, no_checkpoints):
+    if bool(entries) == everything:
+        raise click.UsageError("give the entry points to copy, or --all")
+    result = copy(repo, other, entries, everything=everything, traces=not no_traces, checkpoints=not no_checkpoints,
+                  report=lambda item: click.echo(str(item)))
+    Logger.get_logger().info(result.summary())
+
+
+_TRANSFER_HELP = """
+    Each entry point brings its workload and its sysroot, and its traces with their checkpoints. Their rows are copied
+    as they are: trace UUIDs, provenance, metadata, validation results.
+
+    What the receiving repository already has is kept: the same sysroot, entry point, recording or checkpoint is
+    present, and its rows don't change. The same name with something else is a conflict: then nothing is copied, and
+    it fails with status 5. Each entry point is committed on its own, so an interrupted copy can be run again to
+    complete it.
+
+    Prints each item as `added|present <kind> <id>`, once its entry point is committed.
+    """
+
+
+@repo.command("pull")
+@click.argument("source", type=click.Path(exists=True, file_okay=False))
+@click.argument("entries", nargs=-1, shell_complete=complete_source_entry)
+@click.option("--all", "everything", is_flag=True,
+              help="Copy every entry point of SOURCE, and every sysroot that has none.")
+@_transfer_options
+@click.pass_context
+def pull_cmd(ctx, source, entries, everything, no_traces, no_checkpoints):
+    _transfer(pull, open_repo(ctx, write=True), source, entries, everything, no_traces, no_checkpoints)
+
+
+pull_cmd.help = """
+    Copy the ENTRIES, entry points of the repository SOURCE, into this repository (or with --all, everything SOURCE
+    has). SOURCE is only read.
+    """ + _TRANSFER_HELP
+
+
+@repo.command("push")
+@click.argument("dest", type=click.Path(exists=True, file_okay=False))
+@click.argument("entries", nargs=-1, shell_complete=complete_other_entry)
+@click.option("--all", "everything", is_flag=True,
+              help="Copy every entry point of this repository, and every sysroot that has none.")
+@_transfer_options
+@click.pass_context
+def push_cmd(ctx, dest, entries, everything, no_traces, no_checkpoints):
+    _transfer(push, open_repo(ctx), dest, entries, everything, no_traces, no_checkpoints)
+
+
+push_cmd.help = """
+    Copy the ENTRIES, entry points of this repository, into the repository DEST (or with --all, everything this one
+    has). This repository is only read.
+    """ + _TRANSFER_HELP

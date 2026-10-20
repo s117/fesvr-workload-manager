@@ -24,8 +24,17 @@ def _natural_key(value: str) -> List[Union[int, str]]:
     return [int(part) if part.isdigit() else part for part in re.split(r"(\d+)", value)]
 
 
-def _open_repo_quietly(ctx: click.Context) -> Optional[Repo]:
-    path = ctx.find_root().params.get("repo_path")
+def _repo_path(ctx: click.Context) -> Optional[str]:
+    """The repository of --repo-path (or FWM_REPO_PATH)."""
+    return ctx.find_root().params.get("repo_path")
+
+
+def _source_path(ctx: click.Context) -> Optional[str]:
+    """The repository of the SOURCE argument (fwm repo pull)."""
+    return ctx.params.get("source")
+
+
+def _open_repo_quietly(path: Optional[str]) -> Optional[Repo]:
     if not path:
         return None
     try:
@@ -34,13 +43,14 @@ def _open_repo_quietly(ctx: click.Context) -> Optional[Repo]:
         return None
 
 
-def _completer(candidates: Callable[[click.Context, str], Candidates]) -> Completer:
+def _completer(candidates: Callable[[click.Context, str], Candidates],
+               repo_path: Callable[[click.Context], Optional[str]] = _repo_path) -> Completer:
     """
     Make a click shell_complete callback that offers the candidates starting with the incomplete value, naturally
-    sorted, from the repository given on the command line.
+    sorted, from the repository given on the command line: by default --repo-path.
     """
     def complete(ctx: click.Context, param: click.Parameter, incomplete: str) -> List[CompletionItem]:
-        repo = _open_repo_quietly(ctx)
+        repo = _open_repo_quietly(repo_path(ctx))
         if repo is None:
             return []
         try:
@@ -72,6 +82,12 @@ def _workloads(ctx: click.Context, incomplete: str) -> Candidates:
 def _entries(ctx: click.Context, incomplete: str) -> Candidates:
     for entry in NativeEntry.select():
         yield entry.name, f"{entry.workload.name} @ {entry.sysroot.name}"
+
+
+def _other_entries(ctx: click.Context, incomplete: str) -> Candidates:
+    """The entry points not given yet to the ENTRIES argument (fwm repo pull, push and subrepo)."""
+    given = set(ctx.params.get("entries") or ())
+    return ((name, help_text) for name, help_text in _entries(ctx, incomplete) if name not in given)
 
 
 def _trace_help(trace: DecoupledTrace) -> str:
@@ -160,6 +176,8 @@ def _list_filter(ctx: click.Context, incomplete: str) -> Candidates:
 complete_sysroot = _completer(_sysroots)
 complete_workload = _completer(_workloads)
 complete_entry = _completer(_entries)
+complete_other_entry = _completer(_other_entries)
+complete_source_entry = _completer(_other_entries, _source_path)
 complete_trace = _completer(_traces)
 complete_checkpoint = _completer(_checkpoints)
 complete_simpoint_checkpoint = _completer(_simpoint_checkpoints)
