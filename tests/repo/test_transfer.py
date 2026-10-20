@@ -1,6 +1,7 @@
 import json
 import os
 import shutil
+import sqlite3
 from datetime import datetime
 from types import SimpleNamespace
 
@@ -351,6 +352,26 @@ def test_read_only_source(source, dest):
         pull(dest, source.path, ["a"])
     assert snapshot(dest) == snapshot(source.repo, entries={"a"})
     assert snapshot(source.repo) == before
+
+
+def test_reading_takes_no_write_lock(source, dest, monkeypatch):
+    """Reading the source doesn't hold up its writers, even when it is opened for writing."""
+    real_load_catalog = transfer_module.load_catalog
+    begun = []
+
+    def load_catalog(tree):
+        if not begun:
+            other = sqlite3.connect(os.path.join(source.path, "fwm.db"), timeout=0)
+            other.execute("BEGIN IMMEDIATE")  # fails if the reading holds the write lock
+            other.rollback()
+            other.close()
+            begun.append(True)
+        return real_load_catalog(tree)
+
+    monkeypatch.setattr(transfer_module, "load_catalog", load_catalog)
+    with source.repo.bound():
+        push(source.repo, dest.path, ["a"])
+    assert begun
 
 
 def test_read_only_dest(source, dest):

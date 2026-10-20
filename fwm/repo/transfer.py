@@ -129,7 +129,8 @@ def _read_source(source: Repo, entry_names: Sequence[str], everything: bool, tra
     :param everything: Every entry point, and every sysroot that has none, instead of entry_names.
     :raise NotFoundError: An entry point isn't in the source.
     """
-    with source.db.bind_ctx(ALL_MODELS), source.db.atomic():
+    # DEFERRED: a read takes no write lock, even on a connection opened for writing (which begins IMMEDIATE)
+    with source.db.bind_ctx(ALL_MODELS), source.db.atomic("DEFERRED"):
         if everything:
             entries = list(NativeEntry.select().order_by(NativeEntry.name))
         else:
