@@ -28,9 +28,9 @@ class SchemaVersionError(RuntimeError):
     pass
 
 
-def open_db(path: str, create: bool = False, readonly: bool = False) -> pw.SqliteDatabase:
+def open_db(path: str, create: bool = False, readonly: bool = False, bind: bool = True) -> pw.SqliteDatabase:
     """
-    Open the repository database and bind the models to it.
+    Open the repository database, and bind the models to it.
 
     The database uses SQLite's rollback journal, not WAL: WAL needs every process using the database to run on one host,
     while a repository may sit on a shared filesystem (e.g. NFS) and be read from several hosts. Writers wait for a busy
@@ -40,6 +40,8 @@ def open_db(path: str, create: bool = False, readonly: bool = False) -> pw.Sqlit
     :param path: Path of the SQLite file, or ":memory:".
     :param create: Create the tables and record the schema version (for a new repository).
     :param readonly: Open the database read-only, so that it can be read without write permission. Any write fails.
+    :param bind: Bind the models to it. Without, the models stay bound to the database they were bound to, and this one
+                 is used through its bind_ctx(), e.g. to read a second repository.
     :return: The opened database.
     :raise SchemaVersionError: The database was created for another schema version.
     """
@@ -57,20 +59,22 @@ def open_db(path: str, create: bool = False, readonly: bool = False) -> pw.Sqlit
             "busy_timeout": BUSY_TIMEOUT_MS,
             "foreign_keys": 1,
         }, lock_type="IMMEDIATE")
-    database_proxy.initialize(db)
+    if bind:
+        database_proxy.initialize(db)
     db.connect(reuse_if_open=True)
 
-    if create:
-        with db.atomic():
-            db.create_tables(ALL_MODELS)
-            SchemaInfo.create(version=SCHEMA_VERSION)
-    else:
-        version = None
-        if db.table_exists(SchemaInfo._meta.table_name):  # type: ignore[attr-defined]
-            row = SchemaInfo.get_or_none()
-            version = row.version if row else None
-        if version != SCHEMA_VERSION:
-            db.close()
-            raise SchemaVersionError(
-                f"the database {path} has schema version {version}, but this fwm uses version {SCHEMA_VERSION}")
+    with db.bind_ctx(ALL_MODELS):
+        if create:
+            with db.atomic():
+                db.create_tables(ALL_MODELS)
+                SchemaInfo.create(version=SCHEMA_VERSION)
+        else:
+            version = None
+            if db.table_exists(SchemaInfo._meta.table_name):  # type: ignore[attr-defined]
+                row = SchemaInfo.get_or_none()
+                version = row.version if row else None
+            if version != SCHEMA_VERSION:
+                db.close()
+                raise SchemaVersionError(
+                    f"the database {path} has schema version {version}, but this fwm uses version {SCHEMA_VERSION}")
     return db

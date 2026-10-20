@@ -51,6 +51,23 @@ def test_open_not_a_repo(tmp_path):
         Repo.open(str(tmp_path))
 
 
+def test_open_unbound(tmp_path):
+    """A second repository opened unbound leaves the models with the first one, until bound()."""
+    first = Repo.init(str(tmp_path / "a"))
+    Workload.create(name="in-a")
+    Repo.init(str(tmp_path / "b"), bind=False).close()
+    second = Repo.open(str(tmp_path / "b"), readonly=True, bind=False)
+    assert [w.name for w in Workload.select()] == ["in-a"]
+    with second.bound():
+        assert list(Workload.select()) == []
+    with pytest.raises(ZeroDivisionError):
+        with second.bound():
+            1 / 0
+    assert [w.name for w in Workload.select()] == ["in-a"]
+    second.close()
+    first.close()
+
+
 # --- sysroots
 
 

@@ -7,7 +7,7 @@ from typing import Callable, Iterator, List, Tuple, TYPE_CHECKING
 
 import peewee as pw
 
-from fwm.database.db import open_db, SchemaVersionError
+from fwm.database.db import database_proxy, open_db, SchemaVersionError
 from fwm.repo.errors import FwmValidationError, RepoUnusableError
 from fwm.utils.fs import copy_tree, remove_tree, set_tree_readonly
 from fwm.utils.log import Logger
@@ -79,20 +79,26 @@ class Repo:
         self.db = db
 
     @classmethod
-    def init(cls, path: str) -> "Repo":
+    def init(cls, path: str, bind: bool = True) -> "Repo":
+        """
+        Create an empty repository.
+
+        :param bind: Bind the models to its database (see open_db()).
+        """
         if os.path.exists(path) and (not os.path.isdir(path) or os.listdir(path)):
             raise FwmValidationError(f"cannot create a repository at {path}: it exists and is not an empty directory")
         os.makedirs(path, exist_ok=True)
         for d in (SYSROOTS_DIR, TRACES_DIR, CHECKPOINTS_DIR, STAGING_DIR):
             os.mkdir(os.path.join(path, d))
-        return cls(path, open_db(os.path.join(path, REPO_DB_FILE), create=True))
+        return cls(path, open_db(os.path.join(path, REPO_DB_FILE), create=True, bind=bind))
 
     @classmethod
-    def open(cls, path: str, readonly: bool = False) -> "Repo":
+    def open(cls, path: str, readonly: bool = False, bind: bool = True) -> "Repo":
         """
         Open a repository.
 
         :param readonly: Only read it: this works without write permission, but nothing can be changed.
+        :param bind: Bind the models to its database (see open_db()).
         """
         expected = (REPO_DB_FILE, SYSROOTS_DIR, TRACES_DIR, CHECKPOINTS_DIR, STAGING_DIR)
         missing = [p for p in expected if not os.path.exists(os.path.join(path, p))]
@@ -104,12 +110,25 @@ class Repo:
                 if not os.access(os.path.join(path, p), os.W_OK):
                     raise RepoUnusableError(f"the repository {path} is read-only for you: it can't be changed")
         try:
-            return cls(path, open_db(os.path.join(path, REPO_DB_FILE), readonly=readonly))
+            return cls(path, open_db(os.path.join(path, REPO_DB_FILE), readonly=readonly, bind=bind))
         except SchemaVersionError as e:
             raise RepoUnusableError(str(e))
 
     def close(self) -> None:
         self.db.close()
+
+    @contextlib.contextmanager
+    def bound(self) -> Iterator[None]:
+        """
+        Bind the models to this repository's database while the block runs, then back to the database they were bound
+        to before, even if the block fails.
+        """
+        previous = database_proxy.obj
+        database_proxy.initialize(self.db)
+        try:
+            yield
+        finally:
+            database_proxy.initialize(previous)
 
     def sysroot_dir(self, name: str) -> str:
         return os.path.join(self.path, SYSROOTS_DIR, name)
