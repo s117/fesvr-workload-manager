@@ -47,9 +47,15 @@ def test_read_only_commands_load_no_heavy_module(populated, tmp_path, args):
     assert not loaded_modules(str(tmp_path / "repo"), args) & set(HEAVY)
 
 
-@pytest.mark.parametrize("args", [[], ["show", "trace"], ["mkgen", "from-checkpoint"]])
+@pytest.mark.parametrize("args", [
+    [], ["show", "trace"], ["mkgen", "from-checkpoint"],
+    ["repo", "set-metadata"], ["repo", "remove", "entry"], ["repo", "add", "checkpoint"],
+    ["repo", "pull", "{repo}"], ["repo", "push", "{repo}"], ["repo", "subrepo", "new"],
+])
 def test_completion_loads_no_heavy_module(populated, tmp_path, args):
-    assert not loaded_modules(str(tmp_path / "repo"), args, complete=True) & set(HEAVY)
+    repo_path = str(tmp_path / "repo")
+    args = [arg.format(repo=repo_path) for arg in args]
+    assert not loaded_modules(repo_path, args, complete=True) & set(HEAVY)
 
 
 @pytest.mark.parametrize("complete", [False, True])

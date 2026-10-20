@@ -10,19 +10,14 @@ from fwm.cli.fwm import open_repo
 from fwm.cli.subcmds.bootstrap import bootstrap
 from fwm.data_loader.sim_version import read_sim_version, SimVersionError
 from fwm.database.schema import Sysroot, DecoupledTrace, DecoupledCheckpoint
-from fwm.repo import remove as rm
-from fwm.repo.checkpoint import add_checkpoints, verify_checkpoint
-from fwm.repo.entry import add_entry, set_entry_metadata
 from fwm.repo.errors import FwmValidationError
 from fwm.repo.gc import collect_garbage, find_leftovers
 from fwm.repo.lookup import get_sysroot, resolve_checkpoint, resolve_trace
 from fwm.repo.repo import Repo
-from fwm.repo.subrepo import create_subrepo
-from fwm.repo.sysroot import add_sysroot, verify_sysroot
-from fwm.repo.trace import add_trace, verify_trace
-from fwm.repo.transfer import pull, push
-from fwm.repo.validation import record_validation, PASSED
 from fwm.utils.log import Logger
+
+# The modules that read spike's files, catalog trees or copy repositories load pydantic: each command imports them when
+# it runs, so that completing `fwm repo ...` (which imports this module) stays light
 
 
 @click.group()
@@ -86,6 +81,7 @@ def add_sysroot_cmd(ctx, directory, sysroot_name, description, exist_ok):
 
     The tree is copied into the repository, cataloged with its permissions, and made read-only.
     """
+    from fwm.repo.sysroot import add_sysroot
     click.echo(add_sysroot(open_repo(ctx, write=True), directory, sysroot_name, description, exist_ok).name)
 
 
@@ -110,6 +106,7 @@ def add_entry_cmd(ctx, sysroot_name, workload_name, entry_point_name, entry_poin
     object, kept and shown by fwm. With --exist-ok, an entry point that differs only in its metadata or description
     is the same one, and keeps its own; change its metadata with `fwm repo set-metadata`.
     """
+    from fwm.repo.entry import add_entry
     click.echo(add_entry(open_repo(ctx, write=True), sysroot_name, workload_name, entry_point_name, entry_point_json,
                          description, exist_ok).name)
 
@@ -131,6 +128,7 @@ def add_trace_cmd(ctx, entry, recording_dir, final_state, description, exist_ok)
     Prints the UUID of the trace. A recording that already is a trace of the entry point fails with status 5, or,
     with --exist-ok and the same final state, prints that trace.
     """
+    from fwm.repo.trace import add_trace
     click.echo(str(add_trace(open_repo(ctx, write=True), entry, recording_dir, final_state, description,
                              exist_ok).uuid))
 
@@ -160,6 +158,7 @@ def add_checkpoint_cmd(ctx, trace, desc, checkpoint_dir, simpoint_info, descript
 
     Prints each checkpoint as <trace UUID>:<name>, in the order of DESC.
     """
+    from fwm.repo.checkpoint import add_checkpoints
     ckpts = add_checkpoints(open_repo(ctx, write=True), trace, desc, checkpoint_dir, simpoint_info=simpoint_info,
                             description=description, exist_ok=exist_ok, sim_version=_read_sim_version(sim_version_file))
     for ckpt in ckpts:
@@ -176,6 +175,7 @@ def set_metadata_cmd(ctx, entry, metadata_json):
 
     Prints the name of the entry point.
     """
+    from fwm.repo.entry import set_entry_metadata
     click.echo(set_entry_metadata(open_repo(ctx, write=True), entry, metadata_json).name)
 
 
@@ -191,6 +191,7 @@ def remove_cmd(ctx, kind, id, recursive):
     A sysroot with entry points, an entry point with traces, or a trace with checkpoints is removed only with
     --recursive.
     """
+    from fwm.repo import remove as rm
     r = open_repo(ctx, write=True)
     if kind == "sysroot":
         rm.remove_sysroot(r, id, recursive)
@@ -214,6 +215,7 @@ def record_validation_cmd(ctx, checkpoint, run_dir):
     It passes when every HART's final instruction count equals the trace's. Prints "passed" or "failed" and why;
     fails with status 4 if the checkpoint failed.
     """
+    from fwm.repo.validation import record_validation, PASSED
     ckpt = record_validation(open_repo(ctx, write=True), checkpoint, run_dir)
     click.echo(f"{ckpt.validation_status}: {ckpt.validation_detail}")
     if ckpt.validation_status != PASSED:
@@ -231,6 +233,9 @@ def verify_cmd(ctx, kind, id):
     Verifying everything also reports the leftovers of interrupted commands, which `fwm repo gc` removes. Prints each
     problem found, and fails if there is any.
     """
+    from fwm.repo.checkpoint import verify_checkpoint
+    from fwm.repo.sysroot import verify_sysroot
+    from fwm.repo.trace import verify_trace
     r = open_repo(ctx)
     if kind is not None and id is None:
         raise click.UsageError(f"give the {kind} to verify")
@@ -317,6 +322,7 @@ _TRANSFER_HELP = """
 @_transfer_options
 @click.pass_context
 def pull_cmd(ctx, source, entries, everything, no_traces, no_checkpoints):
+    from fwm.repo.transfer import pull
     _transfer(pull, open_repo(ctx, write=True), source, entries, everything, no_traces, no_checkpoints)
 
 
@@ -334,6 +340,7 @@ pull_cmd.help = """
 @_transfer_options
 @click.pass_context
 def push_cmd(ctx, dest, entries, everything, no_traces, no_checkpoints):
+    from fwm.repo.transfer import push
     _transfer(push, open_repo(ctx), dest, entries, everything, no_traces, no_checkpoints)
 
 
@@ -356,6 +363,7 @@ def subrepo_cmd(ctx, new_repo, entries, no_traces, no_checkpoints):
 
     NEW_REPO must not exist, or must be an empty directory. Prints its path.
     """
+    from fwm.repo.subrepo import create_subrepo
     result = create_subrepo(open_repo(ctx), new_repo, entries, traces=not no_traces, checkpoints=not no_checkpoints)
     Logger.get_logger().info(result.summary())
     click.echo(os.path.abspath(new_repo))
