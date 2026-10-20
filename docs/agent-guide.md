@@ -71,7 +71,7 @@ Stored content is made read-only, so delete a repository with `chmod -R u+w <dir
   - commands that write should run on one host.
 - **Fast read-only commands:** on GPFS every imported module costs file lookups, a few ms each and sometimes 100 ms on a busy login node, so importing everything made `fwm list` take seconds:
   - `list`, `show`, `mkgen` and shell completion must not import pydantic. `list` and `show` must not import colorama or `importlib.metadata` either. `tests/cli/test_imports.py` checks this;
-  - keep heavy imports out of the modules they load: `fwm/cli/` (except the writer subcommands), `lookup.py`, `query.py`, `repo.py`, `fwm/database/` (except `catalog_store.py`, which loads pydantic: read a catalog only in the commands that need one), `fwm/utils/fs.py`, `log.py`, `version.py`. Where one of these needs a heavy module, import it inside the function, with a comment;
+  - keep heavy imports out of the modules they load: `fwm/cli/` (completing a subcommand imports its module, so `repo.py` imports the readers, catalogs and copying inside its commands), `lookup.py`, `query.py`, `repo.py`, `fwm/database/` (except `catalog_store.py`, which loads pydantic: read a catalog only in the commands that need one), `fwm/utils/fs.py`, `log.py`, `version.py`. Where one of these needs a heavy module, import it inside the function, with a comment;
   - a new subcommand goes in `_SUBCOMMANDS` in `fwm/cli/fwm.py`, with its one-line short help, not `cli.add_command()`. `fwm --help` and completing a subcommand name read the help from there, so they import no subcommand.
 - **Schema changes:** bump `SCHEMA_VERSION` in `fwm/database/db.py` and don't write migrations. The user rebuilds repositories, which so far are all test repositories. Give them the list of repository paths to delete.
 - **Generated Makefiles:**
@@ -157,8 +157,9 @@ Verify formats and options in `riscv-isa-sim` / `riscv-fesvr` source before desi
   - What the destination has is kept under the `--exist-ok` rules. A trace is matched by its recording, so a destination trace with another UUID is kept and the checkpoints attach to it.
   - Destination rows never change; there are no updates or hard links.
   - Conflicts are all checked first, and then nothing is copied.
-  - Each entry point is staged, verified against its catalogs and committed on its own, so reruns complete an interrupted copy.
-  - Two repositories are open at once: the destination is bound to `database_proxy` (`Repo.bound()`), and the source is read through `bind_ctx` after `Repo.open(..., bind=False)`.
+  - Each entry point is read from the source in a short read transaction of its own (a long one would hold up the source's writers), then staged, checked to be exactly what its catalogs list, and committed on its own, so reruns complete an interrupted copy.
+  - Two repositories are open at once. The side that isn't `--repo-path` (pull's source, push's destination) is opened with `Repo.open(..., bind=False)`. During the copy the destination is bound to `database_proxy` (`Repo.bound()`, which binds back what was bound before), and the source is read through its `bind_ctx()`.
+  - `subrepo` undoes a failed copy by removing what it created: the new directories, or only the content of an existing empty directory, which keeps its mode, group and ACLs.
   - `pull`'s completion reads its `SOURCE` argument, not `--repo-path`.
 
 **Kept deliberately:**
