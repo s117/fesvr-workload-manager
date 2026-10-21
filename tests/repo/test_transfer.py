@@ -477,6 +477,22 @@ def test_subrepo_failed(source, tmp_path, existed):
         assert os.listdir(tmp_path).count("x") == 0
 
 
+def test_subrepo_failed_keeps_others(source, tmp_path, monkeypatch):
+    """A failed subrepo removes only its own: what was put meanwhile in a directory it created stays."""
+    from fwm.repo import subrepo as subrepo_module
+    real_push = subrepo_module.push
+
+    def push(*args, **kwargs):
+        (tmp_path / "out" / "b").mkdir()  # e.g. another subrepo, next to this one
+        return real_push(*args, **kwargs)
+
+    monkeypatch.setattr(subrepo_module, "push", push)
+    with source.repo.bound():
+        with pytest.raises(NotFoundError):
+            create_subrepo(source.repo, str(tmp_path / "out" / "a"), ["nope"])
+    assert os.listdir(tmp_path / "out") == ["b"]
+
+
 def test_subrepo_failed_cleanup(source, tmp_path, monkeypatch, caplog):
     """When the new repository can't be removed, the error of the copy is the one reported."""
     from fwm.repo import subrepo as subrepo_module

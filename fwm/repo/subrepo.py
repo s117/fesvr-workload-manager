@@ -19,14 +19,22 @@ def _first_missing(path: str) -> Optional[str]:
 
 def _undo_init(path: str, created: Optional[str]) -> None:
     """
-    Remove the repository created at path: with the directories created for it, or, if path was an existing empty
-    directory, its content only, so the directory keeps its permissions, group and ACLs.
+    Remove the repository created at path, and the directories created for it, up to created, while they are empty:
+    another command may have put something in them meanwhile, e.g. a second subrepo next to this one. If path was an
+    existing empty directory (created is None), only its content is removed, so it keeps its permissions and group.
     """
-    if created is not None:
-        remove_tree(created)
-    else:
+    if created is None:
         for name in os.listdir(path):
             remove_tree(os.path.join(path, name))
+        return
+    remove_tree(path)
+    directory = path
+    while directory != created:
+        directory = os.path.dirname(directory)
+        try:
+            os.rmdir(directory)
+        except OSError:  # not empty: it is used by something else now
+            return
 
 
 def create_subrepo(source: Repo, path: str, entry_names: Sequence[str], traces: bool = True,
