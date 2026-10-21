@@ -2,6 +2,8 @@ import json
 import os
 import shutil
 import sqlite3
+import subprocess
+import sys
 from datetime import datetime
 from types import SimpleNamespace
 
@@ -9,8 +11,9 @@ import pytest
 
 from fwm.database.catalog_store import load_catalog
 from fwm.database.schema import (
-    CheckpointHart, DecoupledCheckpoint, DecoupledTrace, NativeEntry, Sysroot, TraceHart, Workload
+    CheckpointHart, DecoupledCheckpoint, DecoupledTrace, NativeEntry, Sysroot, TraceHart, TreeCatalog, Workload
 )
+from fwm.database.db import database_proxy
 from fwm.repo import transfer as transfer_module
 from fwm.repo.checkpoint import verify_checkpoint
 from fwm.repo.entry import add_entry
@@ -353,6 +356,78 @@ def test_unlisted_file_in_source(copy, source, dest):
     with pytest.raises(FwmValidationError, match="doesn't match its catalog:\n  unlisted: not in the catalog"):
         copy("a")
     assert snapshot(dest)["sysroots"] == {}
+
+
+def run_fwm(*args):
+    """Run fwm in a process of its own, as another command would."""
+    subprocess.run([sys.executable, "-m", "fwm", *args], check=True, capture_output=True)
+
+
+def test_sysroot_replaced_while_read(copy, source, dest, monkeypatch):
+    """Entry points of one sysroot that saw it with different content: nothing is copied."""
+    real_read_entry = transfer_module._read_entry
+
+    def read_entry(source_repo, name, *args):
+        if name == "b":  # sr1 was replaced after a was read
+            with sqlite3.connect(os.path.join(source.path, "fwm.db")) as db:
+                db.execute("UPDATE catalogfile SET digest = ? WHERE path = 'app/input.txt'", ("0" * 64,))
+        return real_read_entry(source_repo, name, *args)
+
+    monkeypatch.setattr(transfer_module, "_read_entry", read_entry)
+    with pytest.raises(FwmValidationError, match="sysroot 'sr1' of .* changed while it was read: copy again"):
+        copy("a", "b")
+    assert snapshot(dest)["sysroots"] == {}
+
+
+def test_everything_while_entry_removed(copy, source, dest, monkeypatch):
+    """With --all, a sysroot whose entry points were removed while the source was read is copied on its own."""
+    real_read_entry = transfer_module._read_entry
+
+    def read_entry(source_repo, name, *args):
+        if name == "c":
+            run_fwm("--repo-path", source.path, "repo", "remove", "entry", "c", "-r")
+        return real_read_entry(source_repo, name, *args)
+
+    monkeypatch.setattr(transfer_module, "_read_entry", read_entry)
+    copy(everything=True)
+    assert sorted(snapshot(dest)["sysroots"]) == ["sr1", "sr2", "sr3"]
+    assert sorted(snapshot(dest)["entries"]) == ["a", "b"]
+
+
+@pytest.mark.parametrize("table, column, where, value, match", [
+    ("sysroot", "name", "name = 'sr1'", "../out", "invalid sysroot name '../out'"),
+    ("nativeentry", "name", "name = 'a'", "a/b", "invalid entry point name 'a/b'"),
+    ("decoupledcheckpoint", "name", "name = 'a.1'", "../../out", "invalid checkpoint name '../../out'"),
+    ("catalogfile", "path", "path = 'boot.elf'", "../../out", "trace .* has an invalid path in its catalog"),
+    ("catalogdir", "path", "path = 'app'", "/abs", "sysroot 'sr1' .* has an invalid path in its catalog"),
+])
+def test_invalid_source(copy, source, dest, tmp_path, table, column, where, value, match):
+    """Names and catalog paths read from the source become paths: an invalid one (a database changed by hand) is
+    refused before anything is copied."""
+    with sqlite3.connect(os.path.join(source.path, "fwm.db")) as db:
+        assert db.execute(f"UPDATE {table} SET {column} = ? WHERE {where}", (value,)).rowcount > 0
+    around = sorted(os.listdir(tmp_path))
+    with pytest.raises(FwmValidationError, match=match):
+        copy(everything=True)
+    assert snapshot(dest)["sysroots"] == {}
+    assert sorted(os.listdir(tmp_path)) == around  # nothing written outside the repositories
+    assert os.listdir(os.path.join(dest.path, ".staging")) == []
+
+
+def test_present_sysroot_compared_once(copy, source, dest, monkeypatch):
+    """A sysroot the destination has is compared once, however many entry points copied use it."""
+    copy("a", "b")
+    real_load_catalog = transfer_module.load_catalog
+    destination_loads = []
+
+    def load_catalog(tree):
+        if TreeCatalog._meta.database is database_proxy:  # (the source is read through its bind_ctx())
+            destination_loads.append(tree)
+        return real_load_catalog(tree)
+
+    monkeypatch.setattr(transfer_module, "load_catalog", load_catalog)
+    copy("a", "b")
+    assert len(destination_loads) == 1
 
 
 def test_read_only_source(source, dest):

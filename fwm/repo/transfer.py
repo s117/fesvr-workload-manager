@@ -33,7 +33,7 @@ from fwm.database.schema import (
 )
 from fwm.repo.errors import AlreadyExistsError, FwmValidationError, NotFoundError, RepoUnusableError
 from fwm.repo.lookup import entry_metadata, trace_harts
-from fwm.repo.repo import Repo, copy_source, REPO_DB_FILE, REPO_PERM_MASK
+from fwm.repo.repo import Repo, check_name, copy_source, REPO_DB_FILE, REPO_PERM_MASK
 from fwm.utils.file_catalog import catalog_differences, verify_catalog
 from fwm.utils.fs import set_tree_writable
 from fwm.utils.log import Logger
@@ -121,22 +121,18 @@ def _read_trace(trace: DecoupledTrace, checkpoints: bool) -> _Trace:
                   checkpoints=ckpts)
 
 
-def _read_entry(source: Repo, name: str, sysroots: Dict[str, _Sysroot], traces: bool,
-                checkpoints: bool) -> Optional[_Unit]:
+def _read_entry(source: Repo, name: str, traces: bool, checkpoints: bool) -> Optional[_Unit]:
     """
-    Read an entry point and what is copied with it, in a read transaction of its own. A sysroot already read (in
-    sysroots) isn't read again. Return None if the source has no such entry point.
+    Read an entry point and what is copied with it, its sysroot included, in a read transaction of its own. Return
+    None if the source has no such entry point.
     """
     # DEFERRED: a read takes no write lock, even on a connection opened for writing (which begins IMMEDIATE)
     with source.db.atomic("DEFERRED"):
         entry = NativeEntry.get_or_none(NativeEntry.name == name)
         if entry is None:
             return None
-        sysroot_name = entry.sysroot.name
-        if sysroot_name not in sysroots:
-            sysroots[sysroot_name] = _read_sysroot(entry.sysroot)
-        return _Unit(sysroot=sysroots[sysroot_name], entry=_Entry(
-            name=entry.name, workload=_fields(entry.workload), sysroot=sysroot_name,
+        return _Unit(sysroot=_read_sysroot(entry.sysroot), entry=_Entry(
+            name=entry.name, workload=_fields(entry.workload), sysroot=entry.sysroot.name,
             row=_fields(entry, "workload", "sysroot"),
             traces=[_read_trace(t, checkpoints) for t in entry.traces.order_by(DecoupledTrace.recording_started)]
             if traces else []))
@@ -152,34 +148,79 @@ def _read_source(source: Repo, entry_names: Sequence[str], everything: bool, tra
     :raise NotFoundError: An entry point isn't in the source.
     """
     with source.db.bind_ctx(ALL_MODELS):
-        with source.db.atomic("DEFERRED"):
-            if everything:
+        if everything:
+            with source.db.atomic("DEFERRED"):
                 names = [e.name for e in NativeEntry.select(NativeEntry.name).order_by(NativeEntry.name)]
-                lone_sysroots = [s.name for s in Sysroot.select().order_by(Sysroot.name)
-                                 if s.entries.count() == 0]
-            else:
-                names = list(dict.fromkeys(entry_names))
+        else:
+            names = list(dict.fromkeys(entry_names))
+            with source.db.atomic("DEFERRED"):
                 missing = [n for n in names if NativeEntry.get_or_none(NativeEntry.name == n) is None]
-                if missing:
-                    raise NotFoundError(f"no entry point named {', '.join(repr(n) for n in missing)} in {source.path}")
-                lone_sysroots = []
+            if missing:
+                raise NotFoundError(f"no entry point named {', '.join(repr(n) for n in missing)} in {source.path}")
 
-        sysroots: Dict[str, _Sysroot] = {}
         units = []
         for name in names:
-            unit = _read_entry(source, name, sysroots, traces, checkpoints)
+            unit = _read_entry(source, name, traces, checkpoints)
             if unit is None:
                 if everything:
                     continue  # removed since it was listed
                 raise NotFoundError(f"entry point '{name}' was removed from {source.path}")
             units.append(unit)
-        for name in lone_sysroots:
-            if name not in sysroots:
+
+        if everything:
+            # the sysroots that no entry point read brings, listed only now: they include one whose entry points were
+            # removed since they were listed
+            used = {unit.sysroot.name for unit in units}
+            with source.db.atomic("DEFERRED"):
+                others = [s.name for s in Sysroot.select(Sysroot.name).order_by(Sysroot.name) if s.name not in used]
+            for name in others:
                 with source.db.atomic("DEFERRED"):
                     sysroot = Sysroot.get_or_none(Sysroot.name == name)
                     if sysroot is not None:  # else removed since it was listed
                         units.append(_Unit(sysroot=_read_sysroot(sysroot), entry=None))
     return units
+
+
+def _check_source(source: Repo, units: List[_Unit]) -> None:
+    """
+    Check what was read from the source before anything is copied:
+    - its names and catalog paths, which become paths in the destination, as an import checks them (a source database
+      changed by hand could otherwise make the copy write outside the destination);
+    - that the entry points of a sysroot saw the same sysroot: each was read in a transaction of its own, and the
+      sysroot may have been replaced in between. They then share one copy of it.
+
+    :raise FwmValidationError: A name or path is invalid, or a sysroot changed while it was read.
+    """
+    def check_paths(catalog: FileCatalog, what: str) -> None:
+        for path in sorted({f.path for f in catalog.files} | {link.path for link in catalog.links} |
+                           {d.path for d in catalog.dirs}):
+            if os.path.isabs(path) or any(part in ("", ".", "..") for part in path.split("/")):
+                raise FwmValidationError(f"{what} of {source.path} has an invalid path in its catalog: {path!r}")
+
+    sysroots: Dict[str, _Sysroot] = {}
+    try:
+        for unit in units:
+            name = unit.sysroot.name
+            if name not in sysroots:
+                check_name("sysroot", name)
+                check_paths(unit.sysroot.catalog, f"sysroot '{name}'")
+                sysroots[name] = unit.sysroot
+            elif catalog_differences(sysroots[name].catalog, unit.sysroot.catalog):
+                raise FwmValidationError(f"sysroot '{name}' of {source.path} changed while it was read: copy again")
+            unit.sysroot = sysroots[name]
+            if unit.entry is None:
+                continue
+            check_name("entry point", unit.entry.name)
+            check_name("workload", unit.entry.workload["name"])
+            for trace in unit.entry.traces:
+                check_paths(trace.catalog, f"trace {trace.uuid}")
+                for ckpt in trace.checkpoints:
+                    check_name("checkpoint", ckpt.name)
+                    check_paths(ckpt.catalog, f"checkpoint {trace.uuid}:{ckpt.name}")
+    except FwmValidationError as e:
+        if source.path in str(e):
+            raise
+        raise FwmValidationError(f"{source.path}: {e}")
 
 
 # --- what the destination lacks
@@ -257,7 +298,12 @@ def _plan_traces(plan: _Plan, entry: _Entry, dest_entry: Optional[NativeEntry]) 
         _plan_checkpoints(plan, trace, None)
 
 
-def _plan(unit: _Unit) -> _Plan:
+# The differences between a sysroot of the source and the destination's of the same name, by that name and the
+# destination's catalog: rows never change, and _check_source() made sure the source has one sysroot of each name
+_Compared = Dict[Tuple[str, int], List[str]]
+
+
+def _plan(unit: _Unit, compared: _Compared) -> _Plan:
     """Compare a unit with the destination, the repository the models are bound to."""
     plan = _Plan()
     sysroot = unit.sysroot
@@ -266,7 +312,10 @@ def _plan(unit: _Unit) -> _Plan:
         plan.sysroot = sysroot
         plan.items.append(Item(ADDED, "sysroot", sysroot.name))
     else:
-        differences = catalog_differences(sysroot.catalog, load_catalog(existing_sysroot.file_catalog))
+        key = (sysroot.name, existing_sysroot.__data__["file_catalog"])  # (its id, without a query)
+        if key not in compared:
+            compared[key] = catalog_differences(sysroot.catalog, load_catalog(existing_sysroot.file_catalog))
+        differences = compared[key]
         if differences:
             plan.conflicts.append(f"sysroot '{sysroot.name}' exists, with different content: {len(differences)} "
                                   f"path(s) differ, e.g. {differences[0]}")
@@ -329,9 +378,9 @@ def _stage(dest: Repo, stack: contextlib.ExitStack, source_path: str, catalog: F
     return staged
 
 
-def _copy_unit(source: Repo, dest: Repo, unit: _Unit) -> List[Item]:
+def _copy_unit(source: Repo, dest: Repo, unit: _Unit, compared: _Compared) -> List[Item]:
     """Copy what the destination lacks of a unit, in one transaction. Return its items."""
-    plan = _plan(unit)
+    plan = _plan(unit, compared)
     if plan.conflicts:  # a command changed the destination since the check of every unit
         raise AlreadyExistsError(f"{unit.describe()} conflicts with {dest.path}:\n" +
                                  "\n".join(f"  {c}" for c in plan.conflicts))
@@ -354,13 +403,13 @@ def _copy_unit(source: Repo, dest: Repo, unit: _Unit) -> List[Item]:
                 dest, stack, source.checkpoint_path(ckpt.source_trace, ckpt.name), ckpt.catalog,
                 f"checkpoint {ckpt.source_trace}:{ckpt.name}", file_name=ckpt.name)
 
-        plan = _commit(dest, unit, staged)
+        plan = _commit(dest, unit, staged, compared)
     for warning in plan.warnings:
         Logger.get_logger().warning(warning)
     return plan.items
 
 
-def _commit(dest: Repo, unit: _Unit, staged: Dict[str, str]) -> _Plan:
+def _commit(dest: Repo, unit: _Unit, staged: Dict[str, str], compared: _Compared) -> _Plan:
     """
     Add the rows of what the destination lacks of a unit, and place its staged files, in one transaction. Return the
     plan committed.
@@ -369,7 +418,7 @@ def _commit(dest: Repo, unit: _Unit, staged: Dict[str, str]) -> _Plan:
     try:
         with dest.importing() as place:
             # another command may have changed the destination meanwhile
-            plan = _plan(unit)
+            plan = _plan(unit, compared)
             if plan.conflicts:
                 raise AlreadyExistsError(f"{unit.describe()} conflicts with {dest.path}:\n" +
                                          "\n".join(f"  {c}" for c in plan.conflicts))
@@ -451,16 +500,18 @@ def transfer(source: Repo, dest: Repo, entry_names: Sequence[str] = (), everythi
     if _same_repo(source.path, dest.path):
         raise RepoUnusableError(f"cannot copy {source.path} into itself")
     units = _read_source(source, entry_names, everything, traces, traces and checkpoints)
+    _check_source(source, units)
     result = TransferResult()
+    compared: _Compared = {}
     with dest.bound():
         # (a sysroot several entry points share conflicts once)
-        conflicts = list(dict.fromkeys(c for unit in units for c in _plan(unit).conflicts))
+        conflicts = list(dict.fromkeys(c for unit in units for c in _plan(unit, compared).conflicts))
         if conflicts:
             raise AlreadyExistsError(f"{len(conflicts)} conflict(s) with {dest.path}, nothing was copied:\n" +
                                      "\n".join(f"  {c}" for c in conflicts))
         reported = set()
         for unit in units:
-            for item in _copy_unit(source, dest, unit):
+            for item in _copy_unit(source, dest, unit, compared):
                 if (item.kind, item.id) not in reported:
                     reported.add((item.kind, item.id))
                     result.items.append(item)
