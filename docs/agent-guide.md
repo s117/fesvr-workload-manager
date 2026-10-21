@@ -158,8 +158,9 @@ Verify formats and options in `riscv-isa-sim` / `riscv-fesvr` source before desi
   - Destination rows never change; there are no updates or hard links.
   - Conflicts are all checked first, and then nothing is copied.
   - Each entry point is read from the source in a short read transaction of its own (a long one would hold up the source's writers), then staged, checked to be exactly what its catalogs list, and committed on its own, so reruns complete an interrupted copy.
+  - Before anything is copied, what was read is checked (`_check_source`): names and catalog paths as an import checks them (a source's database is not trusted), and that the entry points of a sysroot saw the same one. A sysroot the destination has is compared once per copy.
   - Two repositories are open at once. The side that isn't `--repo-path` (pull's source, push's destination) is opened with `Repo.open(..., bind=False)`. During the copy the destination is bound to `database_proxy` (`Repo.bound()`, which binds back what was bound before), and the source is read through its `bind_ctx()`.
-  - `subrepo` undoes a failed copy by removing what it created: the new directories, or only the content of an existing empty directory, which keeps its mode, group and ACLs.
+  - `subrepo` undoes a failed copy by removing what it created: the new directories, or only the content of an existing empty directory, which keeps its mode, group and ACLs. Directories it created are removed only while empty: another command may be using them.
   - `pull`'s completion reads its `SOURCE` argument, not `--repo-path`.
 
 **Kept deliberately:**
