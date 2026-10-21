@@ -361,3 +361,32 @@ def test_subrepo(run, populated, tmp_path, caplog):
     assert run("repo", "subrepo", str(tmp_path / "sub2"), "nope")[0] == 3
     assert not os.path.exists(tmp_path / "sub2")
     assert run("repo", "subrepo", str(tmp_path / "sub2"))[0] == 2
+
+
+def test_transfer_options(run, populated, tmp_path):
+    """--no-traces and --no-checkpoints reach each command; push and subrepo only read this repository."""
+    from fwm.utils.fs import set_tree_readonly
+
+    repo_path = str(tmp_path / "repo")
+    set_tree_readonly(repo_path)
+    repos = {}
+    for name in ("p1", "p2", "p3"):
+        repos[name] = str(tmp_path / name)
+        assert run("repo", "init", repos[name], repo=False)[0] == 0
+
+    code, out, _ = run("repo", "push", repos["p1"], "e", "--no-checkpoints")
+    assert code == 0 and "added trace" in out and "checkpoint" not in out
+    code, out, _ = run("repo", "push", repos["p2"], "--all", "--no-traces")
+    assert code == 0 and "added entry e" in out and "trace" not in out
+    code, out, _ = run("--repo-path", repos["p3"], "repo", "pull", repo_path, "e", "--no-checkpoints", repo=False)
+    assert code == 0 and "added trace" in out and "checkpoint" not in out
+    sub = str(tmp_path / "sub")
+    assert run("repo", "subrepo", sub, "e", "--no-checkpoints")[0] == 0
+    code, out, _ = run("--repo-path", sub, "list", "checkpoints", "--json", repo=False)
+    assert (code, json.loads(out)) == (0, [])
+    code, out, _ = run("--repo-path", sub, "list", "traces", "--json", repo=False)
+    assert (code, len(json.loads(out))) == (0, 1)
+
+    # the choice of entry points is checked before the repository is opened
+    code, _, err = run("--repo-path", str(tmp_path / "missing"), "repo", "push", repos["p1"], repo=False)
+    assert code == 2 and "give the entry points to copy, or --all" in err

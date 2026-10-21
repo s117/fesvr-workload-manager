@@ -178,12 +178,12 @@ fwm --repo-path /shared/repo repo push ~/merged --all   # merge everything into 
 - **Rows are copied as they are:** names, trace UUIDs, provenance, metadata, SimPoint data and validation results.
 - **What the receiving repository has is kept,** under the rules of `--exist-ok`:
   - a sysroot of the same name and content;
-  - an entry point of the same name and launch fields, with its own metadata;
+  - an entry point of the same name, sysroot, workload and launch fields, with its own metadata;
   - a trace made of the same recording, with its own UUID, to which the copied checkpoints attach;
   - a checkpoint of the same name and content, with its own validation result.
 
   Copying again adds nothing, and its rows never change.
-- **Conflicts:** the same name with something else is a conflict. Then nothing is copied, and the command fails with status 5.
+- **Conflicts:** the same name with something else is a conflict. Every entry point is checked before anything is copied, and then nothing is: the command fails with status 5. If another command changes the receiving repository during the copy, a conflict found then stops it, keeping the entry points already committed.
 - **Interruptions:** each entry point is committed on its own, like an import. An interrupted copy can be run again to complete it. `subrepo` removes its new repository if the copy fails (an empty directory it was created in is left empty, as it was).
 - **Read access is enough** to copy from a repository. Completion offers the entry points of the repository copied from: for `pull`, those of its `<source>`.
 - **Output:** each item prints as `added|present <kind> <id>` (`subrepo` prints the new repository's path), and a summary goes to stderr.
@@ -220,7 +220,7 @@ The Makefiles leave other simulator outputs, such as `bbv_proc_0.bb.gz` from `-s
 - **Commands that change the repository** (`repo init`, `add`, `set-metadata`, `remove`, `gc`, `record-validation`, `pull`, and `push` / `subrepo` for the repository they write) should run on one host, e.g. a Snakemake controller. The database uses SQLite's rollback journal, which works on a shared filesystem, and they wait for each other.
 - **Compute jobs** run the generated Makefiles. Only the `from-sysroot` and record runs open the database, read-only, when `fwm spawn` checks the sysroot out.
 - **Read-only use:** `list`, `show`, `verify`, `mkgen`, `repo bootstrap`, `spawn`, `repo push` / `subrepo` (copying from it) and completion work in a repository you can't write to, e.g. one shared with your group.
-- **Interrupted commands:** a command killed by its scheduler (SIGTERM) cleans up after itself. A harder kill can leave staging or files that no row refers to. `fwm repo verify` reports them and `fwm repo gc` removes them; it never leaves rows whose files are missing.
+- **Interrupted commands:** a command killed by its scheduler (SIGTERM) cleans up after itself. A harder kill can leave staging or files that no row refers to. `fwm repo verify` reports them and `fwm repo gc` removes them; it never leaves rows whose files are missing. A command committing at the moment `verify` runs can show as leftovers too: run it again.
 
 ## Development
 

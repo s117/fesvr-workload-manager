@@ -137,7 +137,7 @@ Exit status:
 | 1 | unexpected error |
 | 2 | usage error, including an unusable repository path: not a repository, another schema version, or read-only for a command that changes it |
 | 3 | not found |
-| 4 | failed check: invalid input, a recording that doesn't match its entry point, a checkpoint that doesn't belong to its trace, a failed validation, problems found by `verify` |
+| 4 | failed check: invalid input, a recording that doesn't match its entry point, a checkpoint that doesn't belong to its trace, a failed validation, problems found by `verify`. Also, from `repo pull` / `push` / `subrepo`, a repository changed by another command while it was read or copied to ("changed while … : copy again" / "run it again"): running it again can succeed |
 | 5 | already exists (see Reruns) |
 
 ### JSON
@@ -185,7 +185,7 @@ A different item under the same name fails with status 5. Without `--exist-ok`, 
 
 - **SIGTERM and SIGHUP,** which batch schedulers send to stop a job, end fwm through its cleanup, like Ctrl-C: an interrupted import leaves nothing behind, and an interrupted removal leaves the repository as it was.
 - **A harder kill** (SIGKILL, a node failure) can leave a staging copy, or files that no row refers to. A removal deletes its files only after committing, so a kill never leaves rows whose files are missing.
-- **`fwm repo verify`** without arguments reports such leftovers, and **`fwm repo gc`** removes them. A staging copy counts as a leftover only when no process holds its lock and it is older than ten minutes, so gc can run while imports do.
+- **`fwm repo verify`** without arguments reports such leftovers, and **`fwm repo gc`** removes them. An import or copy committing at the moment `verify` runs can show as leftovers too: check again before acting on them. A staging copy counts as a leftover only when no process holds its lock and it is older than ten minutes, so gc can run while imports do.
 
 ## Validating a checkpoint
 
