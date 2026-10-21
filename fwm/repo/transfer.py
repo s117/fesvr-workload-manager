@@ -10,8 +10,10 @@ What the destination already has is kept, under the rules of `repo add --exist-o
 - an entry point of the same name, sysroot, workload and launch fields (with its own metadata and description);
 - a trace of the entry point made of the same recording (with its own UUID: the checkpoints copied attach to it);
 - a checkpoint of that trace with the same name and content (with its own validation result).
-The same name with something else is a conflict, and then nothing is copied. Rows of the destination never change, so
-copying the same entry points again adds nothing.
+The same name with something else is a conflict. Every entry point is checked before anything is copied, and then
+nothing is; a conflict that appears later (another command changed the destination meanwhile) stops the copy, keeping
+the entry points already committed. Rows of the destination never change, so copying the same entry points again adds
+nothing.
 
 Each entry point is copied in a transaction of its own, like an import: its files are staged in the destination,
 checked against their catalogs, and placed as its rows are committed. An interrupted copy keeps the entry points already
@@ -298,13 +300,19 @@ def _plan_traces(plan: _Plan, entry: _Entry, dest_entry: Optional[NativeEntry]) 
         _plan_checkpoints(plan, trace, None)
 
 
-# The differences between a sysroot of the source and the destination's of the same name, by that name and the
-# destination's catalog: rows never change, and _check_source() made sure the source has one sysroot of each name
-_Compared = Dict[Tuple[str, int], List[str]]
+# The differences between a sysroot of the source and the destination's of the same name (_check_source() made sure
+# the source has one sysroot of each name), by that name and the destination's row: its id and creation time, since a
+# sysroot removed and imported again may get the same id (SQLite reuses the largest one)
+_Compared = Dict[Tuple[str, int, Any], List[str]]
 
 
-def _plan(unit: _Unit, compared: _Compared) -> _Plan:
-    """Compare a unit with the destination, the repository the models are bound to."""
+def _plan(unit: _Unit, compared: Optional[_Compared]) -> _Plan:
+    """
+    Compare a unit with the destination, the repository the models are bound to.
+
+    :param compared: Comparisons of sysroots to reuse, and to add to; None to compare afresh, as the check made with
+                     the write lock held does.
+    """
     plan = _Plan()
     sysroot = unit.sysroot
     existing_sysroot = Sysroot.get_or_none(Sysroot.name == sysroot.name)
@@ -312,10 +320,13 @@ def _plan(unit: _Unit, compared: _Compared) -> _Plan:
         plan.sysroot = sysroot
         plan.items.append(Item(ADDED, "sysroot", sysroot.name))
     else:
-        key = (sysroot.name, existing_sysroot.__data__["file_catalog"])  # (its id, without a query)
-        if key not in compared:
-            compared[key] = catalog_differences(sysroot.catalog, load_catalog(existing_sysroot.file_catalog))
-        differences = compared[key]
+        key = (sysroot.name, existing_sysroot.__data__["id"], existing_sysroot.creation_time)
+        if compared is None or key not in compared:
+            differences = catalog_differences(sysroot.catalog, load_catalog(existing_sysroot.file_catalog))
+            if compared is not None:
+                compared[key] = differences
+        else:
+            differences = compared[key]
         if differences:
             plan.conflicts.append(f"sysroot '{sysroot.name}' exists, with different content: {len(differences)} "
                                   f"path(s) differ, e.g. {differences[0]}")
@@ -361,6 +372,8 @@ def _stage(dest: Repo, stack: contextlib.ExitStack, source_path: str, catalog: F
     Copy a tree (or, with file_name, the file source_path into a folder, as file_name) into the destination's staging
     area, and check that the copy is what its catalog describes, and nothing else. Return the staged path.
     """
+    if not os.path.lexists(source_path):
+        raise NotFoundError(f"{what} was removed from the source while it was copied ({source_path} is gone)")
     staged: str = stack.enter_context(dest.staging())
     if file_name is None:
         copy_source(source_path, staged)
@@ -403,13 +416,13 @@ def _copy_unit(source: Repo, dest: Repo, unit: _Unit, compared: _Compared) -> Li
                 dest, stack, source.checkpoint_path(ckpt.source_trace, ckpt.name), ckpt.catalog,
                 f"checkpoint {ckpt.source_trace}:{ckpt.name}", file_name=ckpt.name)
 
-        plan = _commit(dest, unit, staged, compared)
+        plan = _commit(dest, unit, staged)
     for warning in plan.warnings:
         Logger.get_logger().warning(warning)
     return plan.items
 
 
-def _commit(dest: Repo, unit: _Unit, staged: Dict[str, str], compared: _Compared) -> _Plan:
+def _commit(dest: Repo, unit: _Unit, staged: Dict[str, str]) -> _Plan:
     """
     Add the rows of what the destination lacks of a unit, and place its staged files, in one transaction. Return the
     plan committed.
@@ -417,8 +430,8 @@ def _commit(dest: Repo, unit: _Unit, staged: Dict[str, str], compared: _Compared
     created_dirs: List[str] = []  # checkpoint folders of new traces, which a failure must not leave behind
     try:
         with dest.importing() as place:
-            # another command may have changed the destination meanwhile
-            plan = _plan(unit, compared)
+            # another command may have changed the destination meanwhile: compare afresh
+            plan = _plan(unit, None)
             if plan.conflicts:
                 raise AlreadyExistsError(f"{unit.describe()} conflicts with {dest.path}:\n" +
                                          "\n".join(f"  {c}" for c in plan.conflicts))
@@ -493,9 +506,12 @@ def transfer(source: Repo, dest: Repo, entry_names: Sequence[str] = (), everythi
     :param report: Called with each item once its entry point is committed (or found present). An item shared by
                    several entry points, like their sysroot, is reported once.
     :raise RepoUnusableError: source and dest are the same repository.
-    :raise NotFoundError: An entry point isn't in the source.
-    :raise AlreadyExistsError: Something conflicts with the destination: then nothing is copied.
-    :raise FwmValidationError: A copied file doesn't match its catalog.
+    :raise NotFoundError: An entry point isn't in the source, or something copied was removed from it meanwhile.
+    :raise AlreadyExistsError: Something conflicts with the destination: found before copying, nothing is copied;
+                               found later (the destination changed meanwhile), the entry points committed stay.
+    :raise FwmValidationError: A copied file doesn't match its catalog; a name or path read from the source is
+                               invalid; the source changed while it was read, or the destination while it was copied
+                               to (copying again can succeed).
     """
     if _same_repo(source.path, dest.path):
         raise RepoUnusableError(f"cannot copy {source.path} into itself")

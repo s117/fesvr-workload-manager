@@ -146,7 +146,11 @@ def lines(result):
 
 def test_copy_one_entry(copy, source, dest):
     a = source.traces["a"]
-    result = copy("a")
+    umask = os.umask(0o077)  # the checkpoint folder's mode is set, not left to the umask
+    try:
+        result = copy("a")
+    finally:
+        os.umask(umask)
     assert lines(result) == ["added sysroot sr1", "added entry a", f"added trace {a}",
                              f"added checkpoint {a}:a.1", f"added checkpoint {a}:a.2"]
     assert result.summary() == "added 1 sysroot, 1 entry point, 1 trace, 2 checkpoints"
@@ -154,7 +158,7 @@ def test_copy_one_entry(copy, source, dest):
     assert snapshot(dest) == snapshot(source.repo, entries={"a"})
     assert verify_all(dest) == []
     for path in (dest.sysroot_dir("sr1"), dest.trace_dir(a), dest.checkpoint_path(a, "a.1")):
-        assert not os.access(path, os.W_OK)
+        assert os.stat(path).st_mode & 0o222 == 0
     assert os.stat(dest.checkpoint_dir(a)).st_mode & 0o777 == 0o755
 
 
@@ -430,6 +434,77 @@ def test_present_sysroot_compared_once(copy, source, dest, monkeypatch):
     assert len(destination_loads) == 1
 
 
+def while_staging(monkeypatch, what, *commands):
+    """Run fwm commands (each a list of arguments) when the copy first stages something whose name starts with what."""
+    real_stage = transfer_module._stage
+    ran = []
+
+    def stage(dest_repo, stack, source_path, catalog, name, *args, **kwargs):
+        if not ran and name.startswith(what):
+            ran.append(name)
+            for command in commands:
+                run_fwm(*command)
+        return real_stage(dest_repo, stack, source_path, catalog, name, *args, **kwargs)
+
+    monkeypatch.setattr(transfer_module, "_stage", stage)
+    return ran
+
+
+def test_dest_replaces_sysroot_while_copying(copy, source, dest, tmp_path, sysroot_src, monkeypatch):
+    """The destination's sysroot, the same as the source's when the copy began, replaced by another of the same name
+    (whose catalog may get the same id): a conflict, found with the write lock held."""
+    with dest.bound():
+        add_sysroot(dest, str(sysroot_src), "sr1")
+    while_staging(monkeypatch, "trace", ["--repo-path", dest.path, "repo", "remove", "sysroot", "sr1"],
+                  ["--repo-path", dest.path, "repo", "add", "sysroot", str(tmp_path / "src" / "sr2"), "sr1"])
+    with pytest.raises(AlreadyExistsError, match="sysroot 'sr1' exists, with different content"):
+        copy("a")
+    assert snapshot(dest)["entries"] == {}
+    assert verify_all(dest) == []
+    assert os.listdir(os.path.join(dest.path, ".staging")) == []
+
+
+def test_dest_adds_same_sysroot_while_copying(copy, source, dest, sysroot_src, monkeypatch):
+    """What another command added meanwhile is present: the copy staged of it is dropped."""
+    while_staging(monkeypatch, "trace", ["--repo-path", dest.path, "repo", "add", "sysroot", str(sysroot_src), "sr1"])
+    assert lines(copy("a"))[:2] == ["present sysroot sr1", "added entry a"]
+    assert verify_all(dest) == []
+    assert os.listdir(os.path.join(dest.path, ".staging")) == []
+
+
+def test_dest_adds_conflict_while_copying(copy, source, dest, sysroot_src, write_entry_point, monkeypatch):
+    while_staging(monkeypatch, "trace", ["--repo-path", dest.path, "repo", "add", "sysroot", str(sysroot_src), "sr1"],
+                  ["--repo-path", dest.path, "repo", "add", "entry", "sr1", "w1", "a",
+                   write_entry_point(command="prog.rv64 mine")])
+    with pytest.raises(AlreadyExistsError, match="entry point 'a' exists, and differs from this one"):
+        copy("a")
+    assert [t for t in snapshot(dest)["traces"]] == []
+    assert verify_all(dest) == []
+    assert os.listdir(os.path.join(dest.path, ".staging")) == []
+
+
+def test_dest_removes_present_sysroot_while_copying(copy, source, dest, sysroot_src, monkeypatch):
+    """What was present and was removed meanwhile wasn't staged: the copy stops, and copying again completes it."""
+    with dest.bound():
+        add_sysroot(dest, str(sysroot_src), "sr1")
+    while_staging(monkeypatch, "trace", ["--repo-path", dest.path, "repo", "remove", "sysroot", "sr1"])
+    with pytest.raises(FwmValidationError, match="changed while entry point 'a' was copied: run it again"):
+        copy("a")
+    assert verify_all(dest) == []
+    monkeypatch.undo()
+    copy("a")
+    assert snapshot(dest) == snapshot(source.repo, entries={"a"})
+
+
+def test_source_removes_while_copying(copy, source, dest, monkeypatch):
+    """Something removed from the source after it was read is not found, as when it is removed before."""
+    while_staging(monkeypatch, "trace", ["--repo-path", source.path, "repo", "remove", "entry", "a", "-r"])
+    with pytest.raises(NotFoundError, match=r"trace .* was removed from the source while it was copied"):
+        copy("a")
+    assert snapshot(dest)["entries"] == {}
+    assert verify_all(dest) == []
+
+
 def test_read_only_source(source, dest):
     before = snapshot(source.repo)
     source.repo.close()
@@ -482,6 +557,7 @@ def test_reading_lets_writers_commit(source, dest, monkeypatch):
     assert snapshot(dest) == snapshot(source.repo, entries={"a", "c"})
 
 
+@pytest.mark.skipif(os.geteuid() == 0, reason="root can write anything")
 def test_read_only_dest(source, dest):
     set_tree_readonly(dest.path)
     with source.repo.bound():
@@ -528,6 +604,7 @@ def test_subrepo(source, tmp_path):
     with source.repo.bound():
         result = create_subrepo(source.repo, path, ["a", "c"], checkpoints=False)
         assert result.summary() == "added 2 sysroots, 2 entry points, 2 traces"
+        assert sorted(e.name for e in NativeEntry.select()) == ["a", "b", "c"]  # still bound to the source
     sub = Repo.open(path, bind=False)
     assert snapshot(sub) == snapshot(source.repo, entries={"a", "c"}, checkpoints=False)
     assert verify_all(sub) == []
