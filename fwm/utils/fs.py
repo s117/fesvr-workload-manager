@@ -77,7 +77,10 @@ def copy_tree(src: str, dst: str) -> None:
         result = subprocess.run(["cp", "-a", "--reflink=auto", "--", src, dst], capture_output=True, text=True,
                                 check=False)
         if result.returncode != 0:
-            raise OSError(f"failed to copy {src} to {dst}: {result.stderr.strip()}")
+            # cp killed (e.g. by a file size limit or the OOM killer) says nothing
+            why = result.stderr.strip() or (f"cp was killed by signal {-result.returncode}" if result.returncode < 0
+                                             else f"cp exited with status {result.returncode}")
+            raise OSError(f"failed to copy {src} to {dst}: {why}")
     elif os.path.isdir(src) and not os.path.islink(src):
         shutil.copytree(src, dst, symlinks=True)
     else:

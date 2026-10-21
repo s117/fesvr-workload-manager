@@ -1,4 +1,6 @@
 import pathlib
+import subprocess
+import sys
 
 import pytest
 
@@ -157,3 +159,15 @@ def test_remove_tree_readonly(tmp_path):
     remove_tree(str(root))
     assert not root.exists()
     remove_tree(str(root))  # a missing path is ignored
+
+
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="GNU cp")
+def test_copy_tree_cp_killed(tmp_path):
+    """A cp killed by a signal prints nothing: the error says how it ended (here, beyond a file size limit)."""
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "big").write_bytes(b"x" * (2 << 20))
+    script = (f"import resource; resource.setrlimit(resource.RLIMIT_FSIZE, (1 << 20, 1 << 20)); "
+              f"from fwm.utils.fs import copy_tree; copy_tree({str(tmp_path / 'src')!r}, {str(tmp_path / 'dst')!r})")
+    result = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True)
+    assert result.returncode != 0
+    assert "cp was killed by signal 25" in result.stderr  # SIGXFSZ
