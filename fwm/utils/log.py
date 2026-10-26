@@ -7,16 +7,19 @@ class Logger:
         plain_format = "%(message)s"
         detailed_format = "%(levelname)-8s - %(message)s (%(filename)s:%(lineno)d)"
 
-        def __init__(self):
+        def __init__(self, color: bool = True):
+            """:param color: Color the messages: for a terminal, not for a log file."""
             super().__init__()
-            # imported when the first message is logged, not with the module: most commands never log
-            import colorama
-            grey = colorama.Fore.WHITE + colorama.Style.DIM
-            yellow = colorama.Fore.YELLOW
-            # white = colorama.Fore.WHITE
-            red = colorama.Fore.RED
-            bold_red = colorama.Fore.RED + colorama.Style.BRIGHT
-            reset = colorama.Style.RESET_ALL
+            if color:
+                # imported when the first message is logged, not with the module: most commands never log
+                import colorama
+                grey = colorama.Fore.WHITE + colorama.Style.DIM
+                yellow = colorama.Fore.YELLOW
+                red = colorama.Fore.RED
+                bold_red = colorama.Fore.RED + colorama.Style.BRIGHT
+                reset = colorama.Style.RESET_ALL
+            else:
+                grey = yellow = red = bold_red = reset = ""
             self.FORMATS = {
                 logging.DEBUG: grey + self.detailed_format + reset,
                 # logging.INFO: white + self.plain_format + reset,
@@ -44,7 +47,7 @@ class Logger:
         # every message goes to stderr: stdout carries the commands' output (e.g. --json), which scripts parse
         stderr_stream = logging.StreamHandler(stream=sys.stderr)
         stderr_stream.setLevel(logging.DEBUG)
-        stderr_stream.setFormatter(cls.ColorFormatter())
+        stderr_stream.setFormatter(cls.ColorFormatter(color=sys.stderr.isatty()))
         logger.addHandler(stderr_stream)
 
         cls.__logger = logger
