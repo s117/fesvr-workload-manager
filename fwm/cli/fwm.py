@@ -23,7 +23,6 @@ _SUBCOMMANDS = {
     "show": ("fwm.cli.subcmds.show", "show", "Show a workload, sysroot, entry point, trace or checkpoint."),
     "spawn": ("fwm.cli.subcmds.spawn", "spawn", "Make a working copy of an entry point's sysroot."),
     "mkgen": ("fwm.cli.subcmds.mkgen", "mkgen", "Generate a run directory that begins a simulation."),
-    "check": ("fwm.cli.subcmds.check", "check", "Check the outputs of a run before importing them."),
     "completion": ("fwm.cli.subcmds.completion", "completion", "Print the script that enables shell completion."),
 }
 

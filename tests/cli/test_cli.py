@@ -10,7 +10,7 @@ from fwm.cli.fwm import cli
 from tests.data_loader.test_sim_version import SPIKE_VERSION
 from tests.cli.conftest import COMMANDS, write_checkpoints, write_simpoint_info
 from tests.fesvr_files import (
-    provenance,
+    final_state_json, provenance,
     write_recording, write_checkpoint, recording_sha256, Command, CheckpointHart, encode_hart_state,
     default_hart_state_entries, exit_command
 )
@@ -210,17 +210,17 @@ def test_mkgen(run, populated, tmp_path, caplog, write_entry_point):
 
 
 def test_bootstrap(run, populated, tmp_path, caplog):
-    code, out, _ = run("repo", "bootstrap", "record", "e", "-o", str(tmp_path / "r1"))
+    code, out, _ = run("repo", "bootstrap", "mkgen", "record-fesvr-trace", "e", "-o", str(tmp_path / "r1"))
     assert (code, out) == (0, str(tmp_path / "r1" / "Makefile") + "\n")
     assert run_kind(tmp_path / "r1") == "record"
     desc = tmp_path / "d.txt"
     desc.write_text("c: 100\n")
-    assert run("repo", "bootstrap", "create-checkpoints", "e", str(desc), "-o", str(tmp_path / "r2"))[0] == 0
+    assert run("repo", "bootstrap", "mkgen", "create-checkpoints", "e", str(desc), "-o", str(tmp_path / "r2"))[0] == 0
     assert (tmp_path / "r2" / "ckpt.desc").is_file()
     assert run_kind(tmp_path / "r2") == "create-checkpoints"
 
     desc.write_text("c: 9000\n")
-    code, _, err = run("repo", "bootstrap", "create-checkpoints", "e", str(desc), "-o", str(tmp_path / "r3"))
+    code, _, err = run("repo", "bootstrap", "mkgen", "create-checkpoints", "e", str(desc), "-o", str(tmp_path / "r3"))
     assert code == 4
     assert "exits after 5000 instructions" in err
 
@@ -237,7 +237,7 @@ def test_read_only_repo(run, populated, tmp_path, write_entry_point):
         assert run("repo", "verify")[0] == 0
         for i, args in enumerate([("mkgen", "from-sysroot", "e"), ("mkgen", "from-fesvr-trace", populated),
                                   ("mkgen", "from-checkpoint", "e.2.0.40"), ("mkgen", "from-simpoint", "e.2.0.40"),
-                                  ("repo", "bootstrap", "record", "e")]):
+                                  ("repo", "bootstrap", "mkgen", "record-fesvr-trace", "e")]):
             assert run(*args, "-o", str(tmp_path / f"run{i}"))[0] == 0, args
         assert json.loads((tmp_path / "run1" / "run.json").read_text())["trace"]["uuid"] == populated
         # no journal or other file is left behind by reading
@@ -410,16 +410,19 @@ def help_sections(*args):
     return sections
 
 
-@pytest.mark.parametrize("args", [[], ["repo"]])
+@pytest.mark.parametrize("args", [[], ["repo"], ["repo", "compose"], ["repo", "bootstrap"]])
 def test_help_sections(args):
     """A group's help lists each of its commands once, in its section."""
     sections = help_sections(*args)
-    group = cli if not args else cli.get_command(click.Context(cli), args[0])
+    group = cli
+    for name in args:
+        group = group.get_command(click.Context(group), name)
     listed = [name for names in sections.values() for name in names]
     assert sorted(listed) == sorted(group.list_commands(click.Context(group)))
+    assert "Commands" not in sections  # every command is in a section
     if not args:
         assert sections["Daily"] == ["list", "show", "mkgen", "spawn"]
-    else:
+    elif args == ["repo"]:
         assert sections["The repository"] == ["init", "verify", "gc"]
         assert sections["Copying between repositories"] == ["pull", "push", "subrepo"]
 
@@ -465,9 +468,33 @@ def test_compose_needs_write_access(run, populated, sysroot_src, write_entry_poi
 
 
 @pytest.mark.parametrize("args", [
+    ["check", "recording"], ["repo", "bootstrap", "record", "e"], ["repo", "bootstrap", "create-checkpoints", "t", "d"],
     ["repo", "add", "sysroot"], ["repo", "remove", "entry", "e"],
     ["repo", "set-metadata", "e", "f"], ["repo", "record-validation", "c", "d"],
 ])
 def test_old_command_names(run, args):
     code, _, err = run(*args)
     assert code == 2 and "No such command" in err
+
+
+def test_bootstrap_only_reads(run, populated, tmp_path):
+    """Every `fwm repo bootstrap` command works on a repository the user can't write to (check-fesvr-trace on none)."""
+    from fwm.utils.fs import set_tree_readonly
+
+    rec = tmp_path / "rec2"
+    write_recording(str(rec), harts=[COMMANDS])
+    final_state = tmp_path / "final-state2.json"
+    final_state.write_text(final_state_json(5000))
+    desc = tmp_path / "ckpt.desc"
+    desc.write_text("c: 1000\n")
+    calls = {
+        ("mkgen", "record-fesvr-trace"): ["e", "-o", str(tmp_path / "r1")],
+        ("mkgen", "create-checkpoints"): [populated, str(desc), "-o", str(tmp_path / "r2")],
+        ("check-fesvr-trace",): [str(rec), "--final-state", str(final_state)],
+    }
+    bootstrap = cli.get_command(click.Context(cli), "repo").get_command(click.Context(cli), "bootstrap")
+    assert sorted(leaf_commands(bootstrap)) == sorted(calls)  # a new command must be added here
+    set_tree_readonly(str(tmp_path / "repo"))
+    for command, args in calls.items():
+        assert run("repo", "bootstrap", *command, *args)[0] == 0, command
+    assert run("repo", "bootstrap", "check-fesvr-trace", str(rec), repo=False)[0] == 0

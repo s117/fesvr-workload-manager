@@ -87,7 +87,7 @@ def test_record_replay_checkpoint(env, tmp_path):
 
     # record, with a SimPoint profile
     r1 = base / "r1"
-    fwm(env, "repo", "bootstrap", "record", "e", "-o", str(r1))
+    fwm(env, "repo", "bootstrap", "mkgen", "record-fesvr-trace", "e", "-o", str(r1))
     assert make(r1, "SIM_FLAGS_EXTRA=-s1000000") == 0
     assert (r1 / "trace" / "boot.elf").is_file()
     assert (r1 / "bbv_proc_0.bb.gz").is_file()
@@ -111,7 +111,7 @@ def test_record_replay_checkpoint(env, tmp_path):
     assert fwm_status(env, *add_trace) == 5
     assert fwm(env, *add_trace, "--exist-ok") == trace
     # the check a batch job runs on the node that recorded
-    checked = json.loads(fwm(env, "check", "recording", str(r1 / "trace"), "--final-state",
+    checked = json.loads(fwm(env, "repo", "bootstrap", "check-fesvr-trace", str(r1 / "trace"), "--final-state",
                              str(r1 / "final-state.json"), "--json"))
     assert (checked["exit_status"], checked["harts"][0]["instret"]) == (view["exit_status"], total)
 
@@ -121,18 +121,18 @@ def test_record_replay_checkpoint(env, tmp_path):
     linked.write_text(json.dumps({**json.loads(open(ENTRY_POINT).read()), "copy_spawn": False}))
     fwm(env, "repo", "compose", "add", "entry", "sr", "wl", "e-linked", str(linked))
     r1l = base / "r1-linked"
-    fwm(env, "repo", "bootstrap", "record", "e-linked", "-o", str(r1l))
+    fwm(env, "repo", "bootstrap", "mkgen", "record-fesvr-trace", "e-linked", "-o", str(r1l))
     assert make(r1l) == 0
     boot_elf = json.loads(linked.read_text())["boot_elf"].lstrip("/")
     assert (r1l / "sysroot" / boot_elf).is_symlink()
     assert instret(r1l) == total
     assert (r1l / "console.stdout").read_bytes() == (r1 / "console.stdout").read_bytes()
-    fwm(env, "check", "recording", str(r1l / "trace"), "--final-state", str(r1l / "final-state.json"))
+    fwm(env, "repo", "bootstrap", "check-fesvr-trace", str(r1l / "trace"), "--final-state", str(r1l / "final-state.json"))
     fwm(env, "repo", "verify")
 
     # a record run stopped by SIGTERM (e.g. a job's time limit): spike exits 0, but its final state says so
     r1t = base / "r1-term"
-    fwm(env, "repo", "bootstrap", "record", "e", "-o", str(r1t))
+    fwm(env, "repo", "bootstrap", "mkgen", "record-fesvr-trace", "e", "-o", str(r1t))
     proc = subprocess.Popen(["make", "-s", "-C", str(r1t), "run"], start_new_session=True,
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     # once spike runs the program: a signal while it starts up leaves the dump "unfinished"
@@ -155,7 +155,7 @@ def test_record_replay_checkpoint(env, tmp_path):
     state = final_state(r1t)
     assert (state["finish_reason"], state["signal"]) == ("interrupted", "SIGTERM")
     assert 0 < state["hart_state"][0]["instret"] < total
-    checked = subprocess.run([sys.executable, "-m", "fwm", "check", "recording", str(r1t / "trace"), "--final-state",
+    checked = subprocess.run([sys.executable, "-m", "fwm", "repo", "bootstrap", "check-fesvr-trace", str(r1t / "trace"), "--final-state",
                               str(r1t / "final-state.json")], env=env, capture_output=True, text=True)
     assert checked.returncode == 4 and "SIGTERM stopped it" in checked.stderr
 
@@ -180,7 +180,7 @@ def test_record_replay_checkpoint(env, tmp_path):
     first, second = total // 3, 2 * total // 3
     desc.write_text(f"e.0.0.40: {first}\ne.1.0.60: {second}\n")
     r3 = base / "r3"
-    fwm(env, "repo", "bootstrap", "create-checkpoints", trace, str(desc), "-o", str(r3))
+    fwm(env, "repo", "bootstrap", "mkgen", "create-checkpoints", trace, str(desc), "-o", str(r3))
     assert make(r3) == 0
     assert sorted(os.listdir(r3 / "checkpoints")) == ["e.0.0.40", "e.1.0.60"]
     # a checkpoint of the description that wasn't created is caught at import

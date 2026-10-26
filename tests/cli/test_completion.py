@@ -72,8 +72,8 @@ def test_names(complete, run, populated, write_entry_point):
     assert values(complete("repo", "compose", "set-checkpoint-validation")) == ["e.2.0.40"]
     assert values(complete("repo", "compose", "set-metadata")) == ["e", "e2"]
     assert complete("mkgen", "from-simpoint") == [("e.2.0.40", "e, weight 0.4")]
-    assert values(complete("repo", "bootstrap", "record")) == ["e", "e2"]
-    assert values(complete("repo", "bootstrap", "create-checkpoints", incomplete=trace_uuid[:4])) == [trace_uuid]
+    assert values(complete("repo", "bootstrap", "mkgen", "record-fesvr-trace")) == ["e", "e2"]
+    assert values(complete("repo", "bootstrap", "mkgen", "create-checkpoints", incomplete=trace_uuid[:4])) == [trace_uuid]
 
     # new names aren't completed
     assert complete("repo", "compose", "add", "entry", "sr", "wl") == []
@@ -202,3 +202,13 @@ def test_subcommand_names(complete):
     names = values(complete(repo=False))
     assert "completion" not in names
     assert {"list", "show", "mkgen", "spawn", "repo"} <= set(names)
+
+
+@pytest.mark.parametrize("args, names", [
+    (["repo"], ["bootstrap", "compose", "gc", "init", "pull", "push", "subrepo", "verify"]),
+    (["repo", "compose"], ["add", "remove", "set-checkpoint-validation", "set-metadata"]),
+    (["repo", "bootstrap"], ["check-fesvr-trace", "mkgen"]),
+    (["repo", "bootstrap", "mkgen"], ["create-checkpoints", "record-fesvr-trace"]),
+])
+def test_group_names(complete, args, names):
+    assert sorted(values(complete(*args, repo=False))) == names

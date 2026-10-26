@@ -50,6 +50,8 @@ def test_read_only_commands_load_no_heavy_module(populated, tmp_path, args):
 @pytest.mark.parametrize("args", [
     [], ["show", "trace"], ["mkgen", "from-checkpoint"],
     ["repo", "compose", "set-metadata"], ["repo", "compose", "remove", "entry"], ["repo", "compose", "add", "checkpoint"],
+    ["repo", "compose", "set-checkpoint-validation"], ["repo", "bootstrap", "mkgen", "record-fesvr-trace"],
+    ["repo", "bootstrap", "check-fesvr-trace"], ["repo"], ["repo", "compose"], ["repo", "bootstrap", "mkgen"],
     ["repo", "pull", "{repo}"], ["repo", "push", "{repo}"], ["repo", "subrepo", "new"],
 ])
 def test_completion_loads_no_heavy_module(populated, tmp_path, args):

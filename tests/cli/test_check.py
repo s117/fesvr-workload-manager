@@ -13,7 +13,7 @@ COMMANDS = [Command(), exit_command(3)]
 
 
 def check(*args):
-    result = CliRunner().invoke(cli, ["check", "recording", *args])
+    result = CliRunner().invoke(cli, ["repo", "bootstrap", "check-fesvr-trace", *args])
     return result.exit_code, result.stdout, result.stderr
 
 

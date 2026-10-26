@@ -133,7 +133,7 @@ def add_checkpoint_cmd(ctx, trace, desc, checkpoint_dir, simpoint_info, descript
     point with one trace) in CHECKPOINT_DIR, in one transaction.
 
     \b
-    For a run directory R of `fwm repo bootstrap create-checkpoints`:
+    For a run directory R of `fwm repo bootstrap mkgen create-checkpoints`:
       fwm repo compose add checkpoint <trace> R/ckpt.desc R/checkpoints
 
     Each checkpoint DESC lists must be in CHECKPOINT_DIR, which catches one spike didn't create (it creates none at or
