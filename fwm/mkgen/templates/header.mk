@@ -6,7 +6,8 @@
 # Override any variable on the make command line, e.g.
 #   make run SIM=/path/to/spike SIM_FLAGS_EXTRA=-e100000000
 #
-# spike options (-m, -p, -e, -s ...) go in SIM_FLAGS_EXTRA, FESVR options (+verbose ...) in FESVR_FLAGS_EXTRA.
+# spike options (-e, -s ...) go in SIM_FLAGS_EXTRA, FESVR options (+verbose ...) in FESVR_FLAGS_EXTRA. -m and -p are
+# set from the entry point: a replay or a checkpoint needs the same ones.
 #
 # spike's exit status:
 #   - without -e, it is the program's exit status (0 after creating the last checkpoint);

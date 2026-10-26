@@ -36,7 +36,7 @@ repo.add_command(compose)
 repo.add_command(bootstrap)
 
 
-@repo.command()
+@repo.command(short_help="Create an empty workload repository.")
 @click.argument("path", type=click.Path(file_okay=False))
 def init(path):
     """
@@ -89,8 +89,9 @@ def verify_cmd(ctx, kind, id):
         f"verified {len(items)} item(s), {failed} with problems" +
         (f"; {len(leftovers)} leftover(s), which `fwm repo gc` removes" if leftovers else ""))
     if failed or leftovers:
-        raise FwmValidationError(
-            f"{failed} item(s) failed the verification" + (f", {len(leftovers)} leftover(s)" if leftovers else ""))
+        problems = ([f"{failed} item(s) failed the verification"] if failed else []) + \
+            ([f"{len(leftovers)} leftover(s) found, which `fwm repo gc` removes"] if leftovers else [])
+        raise FwmValidationError("; ".join(problems))
 
 
 @repo.command("gc", short_help="Remove the leftovers of interrupted commands.")
@@ -118,7 +119,9 @@ def _transfer_options(f):
 
 
 def _check_entries(entries, everything):
-    if bool(entries) == everything:
+    if entries and everything:
+        raise click.UsageError("give either the entry points to copy or --all, not both")
+    if not entries and not everything:
         raise click.UsageError("give the entry points to copy, or --all")
 
 

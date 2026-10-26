@@ -26,10 +26,12 @@ def compose():
     """
 
 
-@compose.group(short_help="Import a sysroot, entry, trace or checkpoint.")
+@compose.group(cls=SectionedGroup, short_help="Import a sysroot, entry, trace or checkpoint.", sections=(
+    ("In the order they depend on each other", ("sysroot", "entry", "trace", "checkpoint")),
+))
 def add():
     """
-    Add a sysroot, an entry point, a trace or a checkpoint.
+    Import a sysroot, an entry point, a trace or a checkpoint.
     """
 
 
@@ -52,7 +54,7 @@ _exist_ok_option = click.option(
     help="If the same item is already in the repository, print it and succeed instead of failing with status 5.")
 
 
-@add.command("sysroot")
+@add.command("sysroot", short_help="Import a directory tree as a sysroot.")
 @click.argument("directory", type=click.Path(exists=True, file_okay=False))
 @click.argument("sysroot_name")
 @click.option("--description", "-d", help="A description of the sysroot.")
@@ -68,7 +70,7 @@ def add_sysroot_cmd(ctx, directory, sysroot_name, description, exist_ok):
     click.echo(add_sysroot(open_repo(ctx, write=True), directory, sysroot_name, description, exist_ok).name)
 
 
-@add.command("entry")
+@add.command("entry", short_help="Add an entry point: how to launch a workload in a sysroot.")
 @click.argument("sysroot_name", shell_complete=complete_sysroot)
 @click.argument("workload_name", shell_complete=complete_workload)
 @click.argument("entry_point_name")
@@ -80,25 +82,33 @@ def add_entry_cmd(ctx, sysroot_name, workload_name, entry_point_name, entry_poin
     """
     Add the entry point ENTRY_POINT_NAME: how to launch the workload WORKLOAD_NAME in the sysroot SYSROOT_NAME.
 
+    ENTRY_POINT_JSON holds the launch fields, e.g.:
+
     \b
-    ENTRY_POINT_JSON holds the launch fields, e.g.
-      {"command": "bfs -f road.sg -n64", "working_directory": "/app", "envs": null,
-       "stdin_file": null, "boot_elf": "/boot/pk", "mem_mb": 2048, "nprocs": 1,
+      {"command": "bfs -f road.sg -n64", "working_directory": "/app",
+       "envs": null, "stdin_file": null, "boot_elf": "/boot/pk",
+       "mem_mb": 2048, "nprocs": 1, "copy_spawn": true,
        "metadata": {"suite": "GAPBS", "language": ["C++"]}}
-    In paths, "/" is the sysroot's root and "." the working directory. "metadata" is optional and free-form: any JSON
-    object, kept and shown by fwm. With --exist-ok, an entry point that differs only in its metadata or description
-    is the same one, and keeps its own; change its metadata with `fwm repo compose set-metadata`.
+
+    In paths, "/" is the sysroot's root and "." the working directory. "copy_spawn" (optional, default true) says how
+    `fwm spawn` gives a run the sysroot: true copies it; false links each file to the repository's read-only file,
+    which is fast, but the program can't write to those files. "metadata" is optional and free-form: any JSON object,
+    kept and shown by fwm.
+
+    With --exist-ok, an entry point that differs only in its metadata or description is the same one, and keeps its
+    own; change its metadata with `fwm repo compose set-metadata`.
     """
     from fwm.repo.entry import add_entry
     click.echo(add_entry(open_repo(ctx, write=True), sysroot_name, workload_name, entry_point_name, entry_point_json,
                          description, exist_ok).name)
 
 
-@add.command("trace")
+@add.command("trace", short_help="Import a recording of an entry point's run as a trace.")
 @click.argument("entry", shell_complete=complete_entry)
 @click.argument("recording_dir", type=click.Path(exists=True, file_okay=False))
 @click.option("--final-state", type=click.Path(exists=True, dir_okay=False),
-              help="The +final-state-dump of the recording run: the instret of each HART.")
+              help="The +final-state-dump of the recording run: each HART's instruction count. Needed to validate "
+                   "the trace's checkpoints: leave it out only to import a truncated recording.")
 @click.option("--description", "-d", help="A description of the trace.")
 @_exist_ok_option
 @click.pass_context
@@ -116,7 +126,7 @@ def add_trace_cmd(ctx, entry, recording_dir, final_state, description, exist_ok)
                              exist_ok).uuid))
 
 
-@add.command("checkpoint")
+@add.command("checkpoint", short_help="Import the checkpoints that a run created from a trace.")
 @click.argument("trace", shell_complete=complete_trace)
 @click.argument("desc", type=click.Path(exists=True, dir_okay=False))
 @click.argument("checkpoint_dir", type=click.Path(exists=True, file_okay=False))

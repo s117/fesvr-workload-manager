@@ -4,7 +4,7 @@ from typing import Optional
 import click
 
 from fwm.cli.completion import complete_checkpoint, complete_entry, complete_simpoint_checkpoint, complete_trace
-from fwm.cli.fwm import open_repo
+from fwm.cli.fwm import open_repo, SectionedGroup
 from fwm.mkgen.makefile import (
     generate_from_sysroot, generate_from_fesvr_trace, generate_from_checkpoint, generate_from_simpoint
 )
@@ -24,32 +24,29 @@ def done(makefile: str, hint: Optional[str] = None) -> None:
         Logger.get_logger().info(hint)
 
 
-@click.group()
+@click.group(cls=SectionedGroup, sections=(
+    ("Where to begin", ("from-sysroot", "from-fesvr-trace", "from-checkpoint", "from-simpoint")),
+))
 def mkgen():
     """
     Generate a run directory that begins a simulation: its Makefile, and run.json, which describes what the run uses
     (sysroot, workload, entry point with its metadata, trace, checkpoint).
 
-    \b
-    Where to begin:
-      from-sysroot     ENTRY       the program from its start, in a fresh copy of its sysroot. It does its real
-                                   system calls, so it prints its console and writes its files. Linux only.
-      from-fesvr-trace TRACE       the program from its start, replaying a recorded trace: no sysroot needed, any
-                                   host. The program prints nothing and writes no file.
-      from-checkpoint  CHECKPOINT  the program from a checkpoint, to its end (or for n instructions with -e<n>).
-      from-simpoint    CHECKPOINT  a SimPoint checkpoint's interval, for sampled simulation: weigh its results by
-                                   the checkpoint's SimPoint weight (`fwm show checkpoint`).
+    Then run `make -C <dir> run`, overriding its variables on the command line, e.g.:
 
     \b
-    Then run `make -C <dir> run`, overriding its variables on the command line, e.g.
-      make -C <dir> run SIM=/path/to/721sim SIM_FLAGS_EXTRA="-e100000000" FESVR_FLAGS_EXTRA=+verbose
-    SIM defaults to spike, or to the environment variable FWM_SIM_CMD when generated. Every run writes
-    final-state.json: why it finished (e.g. target_exit, instret_limit for -e, interrupted, error), and each HART's
-    instruction count there.
+      make -C <dir> run SIM=/path/to/721sim SIM_FLAGS_EXTRA=-e100000000
+
+    SIM defaults to spike, or to the environment variable FWM_SIM_CMD when the run directory is generated. Put spike
+    options such as -e or -s in SIM_FLAGS_EXTRA (the Makefile sets -m and -p from the entry point), and FESVR options
+    such as +verbose in FESVR_FLAGS_EXTRA.
+
+    final-state.json, which every run writes, says why it finished (e.g. target_exit, instret_limit for -e,
+    interrupted, error), and the instruction count of each HART (simulated processor) there.
     """
 
 
-@mkgen.command("from-sysroot")
+@mkgen.command("from-sysroot", short_help="From the start, in a copy of its sysroot (Linux only).")
 @click.argument("entry", shell_complete=complete_entry)
 @out_dir_option
 @click.pass_context
@@ -63,7 +60,7 @@ def from_sysroot(ctx, entry, out_dir):
     done(generate_from_sysroot(open_repo(ctx), entry, out_dir))
 
 
-@mkgen.command("from-fesvr-trace")
+@mkgen.command("from-fesvr-trace", short_help="From the start, replaying its trace (any host).")
 @click.argument("trace", shell_complete=complete_trace)
 @out_dir_option
 @click.pass_context
@@ -77,7 +74,7 @@ def from_fesvr_trace(ctx, trace, out_dir):
     done(generate_from_fesvr_trace(open_repo(ctx), trace, out_dir))
 
 
-@mkgen.command("from-checkpoint")
+@mkgen.command("from-checkpoint", short_help="From a checkpoint to the end of the program.")
 @click.argument("checkpoint", shell_complete=complete_checkpoint)
 @out_dir_option
 @click.pass_context
@@ -97,7 +94,7 @@ def from_checkpoint(ctx, checkpoint, out_dir):
     done(makefile, hint)
 
 
-@mkgen.command("from-simpoint")
+@mkgen.command("from-simpoint", short_help="One SimPoint interval, from its checkpoint.")
 @click.argument("checkpoint", shell_complete=complete_simpoint_checkpoint)
 @out_dir_option
 @click.pass_context

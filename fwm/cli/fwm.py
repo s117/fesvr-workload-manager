@@ -115,11 +115,10 @@ class FwmGroup(click.Group):
               help='The workload repository. Defaults to the environment variable "FWM_REPO_PATH".')
 def cli(ctx, repo_path):
     """
-    The RISCV FESVR Workload Manager (fwm).
+    fwm, the RISC-V FESVR Workload Manager: the workloads of a repository, and the runs that simulate them.
 
-    \b
-    Exit status: 0 success, 1 unexpected error, 2 usage error or unusable repository, 3 not found, 4 failed
-    check, 5 already exists.
+    Exit status: 0 success, 1 unexpected error, 2 usage error or unusable repository, 3 not found, 4 failed check, 5
+    an item already in the repository.
     """
     ctx.ensure_object(dict)
     ctx.obj["repo_path"] = repo_path

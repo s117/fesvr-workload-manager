@@ -176,9 +176,10 @@ def test_cli(repo, sysroot_src, tmp_path):
         result = runner.invoke(cli, ["--repo-path", repo.path, *args])
         return result.exit_code, result.stdout
 
-    code, out = run("repo", "verify")
-    assert code == 4
-    assert out.count("leftover ") == 3
+    result = runner.invoke(cli, ["--repo-path", repo.path, "repo", "verify"])
+    assert result.exit_code == 4
+    assert result.stdout.count("leftover ") == 3
+    assert result.stderr.strip() == "error: 3 leftover(s) found, which `fwm repo gc` removes"
 
     code, out = run("repo", "gc", "--dry-run")
     assert code == 0

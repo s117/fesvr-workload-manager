@@ -19,15 +19,26 @@ def bootstrap():
     Make the repository's traces and checkpoints, for its creator. These commands only read the repository: they
     generate the runs and check their outputs, and `fwm repo compose` imports the results.
 
+    The steps, for an entry point E, with run directories R1 to R3:
+
     \b
-    The steps, for an entry point ENTRY:
-      1. fwm repo bootstrap mkgen record-fesvr-trace ENTRY -o R1; make -C R1 run
-      2. fwm repo bootstrap check-fesvr-trace R1/trace --final-state R1/final-state.json
-      3. fwm repo compose add trace ENTRY R1/trace --final-state R1/final-state.json  -> its UUID
-      4. fwm repo bootstrap mkgen create-checkpoints UUID DESC -o R2; make -C R2 run
-      5. fwm repo compose add checkpoint UUID R2/ckpt.desc R2/checkpoints
-      6. fwm mkgen from-checkpoint UUID:NAME -o R3; make -C R3 run  (to the end of the program)
+      1. fwm repo bootstrap mkgen record-fesvr-trace E -o R1
+         make -C R1 run SIM_FLAGS_EXTRA=-s<interval>   (-s: also profile BBVs)
+      2. fwm repo bootstrap check-fesvr-trace R1/trace \\
+           --final-state R1/final-state.json
+      3. fwm repo compose add trace E R1/trace \\
+           --final-state R1/final-state.json             -> the trace's UUID
+      4. fwm repo bootstrap mkgen create-checkpoints UUID DESC -o R2
+         make -C R2 run
+      5. fwm repo compose add checkpoint UUID R2/ckpt.desc R2/checkpoints \\
+           --simpoint-info S --sim-version V
+      6. fwm mkgen from-checkpoint UUID:NAME -o R3
+         make -C R3 run                       (to the end of the program)
       7. fwm repo compose set-checkpoint-validation UUID:NAME R3
+
+    DESC lists the checkpoints to create, as "<name>: <instruction count>" lines, and S is their SimPoint information,
+    both from a SimPoint analysis of R1's BBVs (basic block vectors); V is the output of `spike --version`. See fwm's
+    docs/fwm-bootstrap-interface.md, which fwm-bootstrap follows.
     """
 
 
@@ -52,10 +63,13 @@ def record_fesvr_trace(ctx, entry, out_dir):
 
     Outputs trace/, final-state.json, console.stdout and console.stderr.
 
+    Check the trace, then import it, with:
+
     \b
-    Check the trace, then import it, with
-      fwm repo bootstrap check-fesvr-trace <dir>/trace --final-state <dir>/final-state.json
-      fwm repo compose add trace ENTRY <dir>/trace --final-state <dir>/final-state.json
+      fwm repo bootstrap check-fesvr-trace <dir>/trace \\
+        --final-state <dir>/final-state.json
+      fwm repo compose add trace ENTRY <dir>/trace \\
+        --final-state <dir>/final-state.json
     """
     done(generate_record(open_repo(ctx), entry, out_dir))
 
@@ -72,8 +86,9 @@ def create_checkpoints(ctx, trace, desc, out_dir):
 
     Outputs ckpt.desc (a copy of DESC), checkpoints/ and final-state.json.
 
+    Import the checkpoints with:
+
     \b
-    Import the checkpoints with
       fwm repo compose add checkpoint TRACE <dir>/ckpt.desc <dir>/checkpoints
     """
     done(generate_create_checkpoints(open_repo(ctx), trace, desc, out_dir))
@@ -91,10 +106,12 @@ def check_fesvr_trace(recording_dir, final_state, as_json):
     (the program exited) and well formed, and agree with the final state, if one is given, which must say the program
     exited (finish_reason target_exit). It needs no repository: run it on the node that made the recording.
 
-    \b
     Prints the exit status and each HART's instruction count; with --json, an object of the trace's fields:
+
+    \b
       {"complete", "exit_status", "mem_mb", "num_harts", "boot_elf_sha256",
        "harts": [{"hart_id", "recording_sha256", "num_commands", "instret"}]}
+
     Fails with status 4 if the recording is truncated, malformed, or disagrees with the final state, or if the final
     state says the run ended otherwise (e.g. "interrupted" by a job's time limit, or an "error" of the simulator).
     """

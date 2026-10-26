@@ -410,7 +410,8 @@ def help_sections(*args):
     return sections
 
 
-@pytest.mark.parametrize("args", [[], ["repo"], ["repo", "compose"], ["repo", "bootstrap"]])
+@pytest.mark.parametrize("args", [[], ["repo"], ["repo", "compose"], ["repo", "compose", "add"], ["repo", "bootstrap"],
+                                  ["repo", "bootstrap", "mkgen"], ["mkgen"]])
 def test_help_sections(args):
     """A group's help lists each of its commands once, in its section."""
     sections = help_sections(*args)
@@ -498,3 +499,29 @@ def test_bootstrap_only_reads(run, populated, tmp_path):
     for command, args in calls.items():
         assert run("repo", "bootstrap", *command, *args)[0] == 0, command
     assert run("repo", "bootstrap", "check-fesvr-trace", str(rec), repo=False)[0] == 0
+
+
+def all_commands(command, path=()):
+    """Every command and group under command, as argument tuples (the root's too)."""
+    yield path
+    if isinstance(command, click.Group):
+        for name in command.list_commands(click.Context(command)):
+            yield from all_commands(command.get_command(click.Context(command), name), (*path, name))
+
+
+@pytest.mark.parametrize("path", list(all_commands(cli)), ids=lambda path: " ".join(path) or "fwm")
+def test_help_fits(path):
+    """Every help fits an 80-column terminal, and lists no short help cut short ("...")."""
+    result = CliRunner().invoke(cli, [*path, "--help"], terminal_width=80)
+    assert result.exit_code == 0
+    for line in result.stdout.splitlines():
+        assert len(line) <= 80, line
+        assert line.startswith("Usage:") or not line.endswith("..."), line  # ("[ARGS]..." in usage is fine)
+
+
+def test_transfer_entries_or_all(run, populated, tmp_path):
+    other = str(tmp_path / "other")
+    assert run("repo", "init", other, repo=False)[0] == 0
+    code, _, err = run("repo", "push", other, "e", "--all")
+    assert code == 2 and "give either the entry points to copy or --all, not both" in err
+

@@ -16,6 +16,7 @@ def completion(ctx, shell):
       zsh  (~/.zshrc):                    eval "$(fwm completion zsh)"
       bash (~/.bashrc):                   eval "$(fwm completion bash)"
       fish (~/.config/fish/config.fish):  fwm completion fish | source
+
     fwm must be on PATH, and the names are completed from --repo-path or FWM_REPO_PATH.
     """
     completion_class = get_completion_class(shell)

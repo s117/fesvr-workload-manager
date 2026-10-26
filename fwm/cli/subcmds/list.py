@@ -12,7 +12,7 @@ from fwm.repo.lookup import resolve_trace
 @click.command("list")
 @click.argument("kind", type=click.Choice(["workloads", "sysroots", "entries", "traces", "checkpoints"]),
                 default="entries", required=False)
-@click.argument("name_filter", metavar="FILTER", required=False, shell_complete=complete_list_filter)
+@click.argument("name_filter", metavar="[FILTER]", required=False, shell_complete=complete_list_filter)
 @click.option("--workload", shell_complete=complete_workload, help="Only the entry points of this workload.")
 @click.option("--sysroot", shell_complete=complete_sysroot, help="Only the entry points in this sysroot.")
 @click.option("--trace", "trace_ref", shell_complete=complete_trace, help="Only the checkpoints of this trace.")

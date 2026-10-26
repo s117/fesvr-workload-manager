@@ -18,9 +18,8 @@ def show(ctx, kind, id, as_json):
     """
     Show the details of a workload, sysroot, entry point, trace or checkpoint.
 
-    \b
-    A trace is given by its UUID (a unique prefix is enough), or by an entry point that has one trace.
-    A checkpoint is given by <trace>:<name>, or by its name when it is unique.
+    A trace is given by its UUID (a unique prefix is enough), or by an entry point that has one trace. A checkpoint is
+    given by <trace>:<name>, or by its name when it is unique.
     """
     r = open_repo(ctx)
     if kind == "workload":
