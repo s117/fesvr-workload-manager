@@ -76,11 +76,11 @@ def test_record_replay_checkpoint(env, tmp_path):
     base.mkdir()
     env = {**env, "FWM_REPO_PATH": str(base / "repo")}
     fwm(env, "repo", "init", str(base / "repo"))
-    fwm(env, "repo", "add", "sysroot", str(SYSROOT), "sr")
-    fwm(env, "repo", "add", "entry", "sr", "wl", "e", str(ENTRY_POINT))
+    fwm(env, "repo", "compose", "add", "sysroot", str(SYSROOT), "sr")
+    fwm(env, "repo", "compose", "add", "entry", "sr", "wl", "e", str(ENTRY_POINT))
     metadata = {"suite": "Toolchain test", "language": ["C"]}
     (base / "metadata.json").write_text(json.dumps(metadata))
-    fwm(env, "repo", "set-metadata", "e", str(base / "metadata.json"))
+    fwm(env, "repo", "compose", "set-metadata", "e", str(base / "metadata.json"))
     fwm(env, "repo", "verify")
     version = base / "sim-version.txt"
     version.write_bytes(subprocess.run([SPIKE, "--version"], check=True, capture_output=True).stdout)
@@ -95,7 +95,7 @@ def test_record_replay_checkpoint(env, tmp_path):
     assert (described["kind"], described["sysroot"]["name"], described["entry"]["metadata"]) == ("record", "sr",
                                                                                                   metadata)
     total = instret(r1)
-    add_trace = ("repo", "add", "trace", "e", str(r1 / "trace"), "--final-state", str(r1 / "final-state.json"))
+    add_trace = ("repo", "compose", "add", "trace", "e", str(r1 / "trace"), "--final-state", str(r1 / "final-state.json"))
     trace = fwm(env, *add_trace)
     view = json.loads(fwm(env, "show", "trace", trace, "--json"))
     assert view["complete"]
@@ -119,7 +119,7 @@ def test_record_replay_checkpoint(env, tmp_path):
     # sysroot is untouched
     linked = base / "linked.json"
     linked.write_text(json.dumps({**json.loads(open(ENTRY_POINT).read()), "copy_spawn": False}))
-    fwm(env, "repo", "add", "entry", "sr", "wl", "e-linked", str(linked))
+    fwm(env, "repo", "compose", "add", "entry", "sr", "wl", "e-linked", str(linked))
     r1l = base / "r1-linked"
     fwm(env, "repo", "bootstrap", "record", "e-linked", "-o", str(r1l))
     assert make(r1l) == 0
@@ -186,7 +186,7 @@ def test_record_replay_checkpoint(env, tmp_path):
     # a checkpoint of the description that wasn't created is caught at import
     beyond = base / "d-beyond.txt"
     beyond.write_text(desc.read_text() + f"e.2.0.00: {total * 2}\n")
-    assert fwm_status(env, "repo", "add", "checkpoint", trace, str(beyond), str(r3 / "checkpoints")) == 4
+    assert fwm_status(env, "repo", "compose", "add", "checkpoint", trace, str(beyond), str(r3 / "checkpoints")) == 4
     # the first one with its SimPoint, the second one without (other files of the directory are ignored)
     first_desc, second_desc = base / "d-first.txt", base / "d-second.txt"
     first_desc.write_text(f"e.0.0.40: {first}\n")
@@ -195,9 +195,9 @@ def test_record_replay_checkpoint(env, tmp_path):
     # (an interval far shorter than the rest of the program, so that from-simpoint stops before its end)
     info.write_text(json.dumps({"interval": 1000, "maxK": 3, "checkpoints": {"e.0.0.40": {"index": 0,
                                                                                         "weight": 0.4012}}}))
-    fwm(env, "repo", "add", "checkpoint", trace, str(first_desc), str(r3 / "checkpoints"),
+    fwm(env, "repo", "compose", "add", "checkpoint", trace, str(first_desc), str(r3 / "checkpoints"),
         "--simpoint-info", str(info), "--sim-version", str(version))
-    fwm(env, "repo", "add", "checkpoint", trace, str(second_desc), str(r3 / "checkpoints"))
+    fwm(env, "repo", "compose", "add", "checkpoint", trace, str(second_desc), str(r3 / "checkpoints"))
     ckpts = {c["name"]: c for c in json.loads(fwm(env, "list", "checkpoints", "--json"))}
     assert (ckpts["e.0.0.40"]["simpoint_weight"], ckpts["e.0.0.40"]["simpoint_max_k"]) == (0.4012, 3)
     assert ckpts["e.1.0.60"]["simpoint_weight"] is None
@@ -220,11 +220,11 @@ def test_record_replay_checkpoint(env, tmp_path):
         "from-checkpoint", trace, "e.0.0.40")
     assert described["checkpoint"]["simpoint_weight"] == 0.4012
     assert described["entry"]["metadata"] == metadata
-    assert fwm(env, "repo", "record-validation", "e.0.0.40", str(r4)).startswith("passed")
+    assert fwm(env, "repo", "compose", "set-checkpoint-validation", "e.0.0.40", str(r4)).startswith("passed")
     assert make(r4, "SIM_FLAGS_EXTRA=-e1000") == 2  # spike exits 1 when -e stops it, so make fails
     assert final_state(r4) == {"finish_reason": "instret_limit",
                                "hart_state": [{"instret": ckpts["e.0.0.40"]["harts"][0]["csr_count"] + 1000}]}
-    assert fwm_status(env, "repo", "record-validation", "e.0.0.40", str(r4)) == 4
+    assert fwm_status(env, "repo", "compose", "set-checkpoint-validation", "e.0.0.40", str(r4)) == 4
     assert "-e" in json.loads(fwm(env, "show", "checkpoint", "e.0.0.40", "--json"))["validation"]["detail"]
 
     # one SimPoint interval: -e stops it (spike exits 1, so make fails), and the final state says so, at its end

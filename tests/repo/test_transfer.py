@@ -389,7 +389,7 @@ def test_everything_while_entry_removed(copy, source, dest, monkeypatch):
 
     def read_entry(source_repo, name, *args):
         if name == "c":
-            run_fwm("--repo-path", source.path, "repo", "remove", "entry", "c", "-r")
+            run_fwm("--repo-path", source.path, "repo", "compose", "remove", "entry", "c", "-r")
         return real_read_entry(source_repo, name, *args)
 
     monkeypatch.setattr(transfer_module, "_read_entry", read_entry)
@@ -455,8 +455,8 @@ def test_dest_replaces_sysroot_while_copying(copy, source, dest, tmp_path, sysro
     (whose catalog may get the same id): a conflict, found with the write lock held."""
     with dest.bound():
         add_sysroot(dest, str(sysroot_src), "sr1")
-    while_staging(monkeypatch, "trace", ["--repo-path", dest.path, "repo", "remove", "sysroot", "sr1"],
-                  ["--repo-path", dest.path, "repo", "add", "sysroot", str(tmp_path / "src" / "sr2"), "sr1"])
+    while_staging(monkeypatch, "trace", ["--repo-path", dest.path, "repo", "compose", "remove", "sysroot", "sr1"],
+                  ["--repo-path", dest.path, "repo", "compose", "add", "sysroot", str(tmp_path / "src" / "sr2"), "sr1"])
     with pytest.raises(AlreadyExistsError, match="sysroot 'sr1' exists, with different content"):
         copy("a")
     assert snapshot(dest)["entries"] == {}
@@ -466,15 +466,15 @@ def test_dest_replaces_sysroot_while_copying(copy, source, dest, tmp_path, sysro
 
 def test_dest_adds_same_sysroot_while_copying(copy, source, dest, sysroot_src, monkeypatch):
     """What another command added meanwhile is present: the copy staged of it is dropped."""
-    while_staging(monkeypatch, "trace", ["--repo-path", dest.path, "repo", "add", "sysroot", str(sysroot_src), "sr1"])
+    while_staging(monkeypatch, "trace", ["--repo-path", dest.path, "repo", "compose", "add", "sysroot", str(sysroot_src), "sr1"])
     assert lines(copy("a"))[:2] == ["present sysroot sr1", "added entry a"]
     assert verify_all(dest) == []
     assert os.listdir(os.path.join(dest.path, ".staging")) == []
 
 
 def test_dest_adds_conflict_while_copying(copy, source, dest, sysroot_src, write_entry_point, monkeypatch):
-    while_staging(monkeypatch, "trace", ["--repo-path", dest.path, "repo", "add", "sysroot", str(sysroot_src), "sr1"],
-                  ["--repo-path", dest.path, "repo", "add", "entry", "sr1", "w1", "a",
+    while_staging(monkeypatch, "trace", ["--repo-path", dest.path, "repo", "compose", "add", "sysroot", str(sysroot_src), "sr1"],
+                  ["--repo-path", dest.path, "repo", "compose", "add", "entry", "sr1", "w1", "a",
                    write_entry_point(command="prog.rv64 mine")])
     with pytest.raises(AlreadyExistsError, match="entry point 'a' exists, and differs from this one"):
         copy("a")
@@ -487,7 +487,7 @@ def test_dest_removes_present_sysroot_while_copying(copy, source, dest, sysroot_
     """What was present and was removed meanwhile wasn't staged: the copy stops, and copying again completes it."""
     with dest.bound():
         add_sysroot(dest, str(sysroot_src), "sr1")
-    while_staging(monkeypatch, "trace", ["--repo-path", dest.path, "repo", "remove", "sysroot", "sr1"])
+    while_staging(monkeypatch, "trace", ["--repo-path", dest.path, "repo", "compose", "remove", "sysroot", "sr1"])
     with pytest.raises(FwmValidationError, match="changed while entry point 'a' was copied: run it again"):
         copy("a")
     assert verify_all(dest) == []
@@ -498,7 +498,7 @@ def test_dest_removes_present_sysroot_while_copying(copy, source, dest, sysroot_
 
 def test_source_removes_while_copying(copy, source, dest, monkeypatch):
     """Something removed from the source after it was read is not found, as when it is removed before."""
-    while_staging(monkeypatch, "trace", ["--repo-path", source.path, "repo", "remove", "entry", "a", "-r"])
+    while_staging(monkeypatch, "trace", ["--repo-path", source.path, "repo", "compose", "remove", "entry", "a", "-r"])
     with pytest.raises(NotFoundError, match=r"trace .* was removed from the source while it was copied"):
         copy("a")
     assert snapshot(dest)["entries"] == {}

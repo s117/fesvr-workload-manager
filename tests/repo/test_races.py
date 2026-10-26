@@ -149,14 +149,14 @@ def test_concurrent_processes(repo, entry, recording, checkpoints, sysroot_src):
     """Several fwm processes changing one repository at once wait for each other, and all succeed."""
     repo.close()  # this process doesn't hold the database meanwhile
     desc, directory = checkpoints
-    procs = [fwm_process(repo, "repo", "add", "sysroot", str(sysroot_src), f"sr{i}") for i in range(4)]
-    procs += [fwm_process(repo, "repo", "add", "sysroot", str(sysroot_src), "sr", "--exist-ok") for _ in range(2)]
-    traces = [fwm_process(repo, "repo", "add", "trace", "e", recording, "--exist-ok") for _ in range(3)]
+    procs = [fwm_process(repo, "repo", "compose", "add", "sysroot", str(sysroot_src), f"sr{i}") for i in range(4)]
+    procs += [fwm_process(repo, "repo", "compose", "add", "sysroot", str(sysroot_src), "sr", "--exist-ok") for _ in range(2)]
+    traces = [fwm_process(repo, "repo", "compose", "add", "trace", "e", recording, "--exist-ok") for _ in range(3)]
     results = [(p.wait(timeout=120), p.communicate()) for p in procs + traces]
     assert [code for code, _ in results] == [0] * len(results), [err for _, (_, err) in results]
     assert len({out for _, (out, _) in results[len(procs):]}) == 1  # one trace UUID, printed by all three
 
-    ckpts = [fwm_process(repo, "repo", "add", "checkpoint", "e", desc, directory, "--exist-ok") for _ in range(3)]
+    ckpts = [fwm_process(repo, "repo", "compose", "add", "checkpoint", "e", desc, directory, "--exist-ok") for _ in range(3)]
     outputs = [(p.wait(timeout=120), p.communicate()) for p in ckpts]
     assert [code for code, _ in outputs] == [0] * 3, [err for _, (_, err) in outputs]
     assert len({out for _, (out, _) in outputs}) == 1

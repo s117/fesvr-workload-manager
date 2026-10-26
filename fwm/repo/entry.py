@@ -70,7 +70,7 @@ def _existing_entry(existing: NativeEntry, sysroot_name: str, workload_name: str
     if entry_metadata(existing) != entry.metadata:
         Logger.get_logger().warning(
             f"entry point '{existing.name}' keeps its metadata, which differs from this one: change it with "
-            f"`fwm repo set-metadata`")
+            f"`fwm repo compose set-metadata`")
     return existing
 
 

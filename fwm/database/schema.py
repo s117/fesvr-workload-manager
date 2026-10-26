@@ -281,7 +281,8 @@ class DecoupledCheckpoint(BaseModel):
     # Version of the fwm that imported it.
     fwm_version = pw.CharField(default=fwm_version)
 
-    # The result of its validation (fwm repo record-validation): "passed", "failed", or null if not validated.
+    # The result of its validation (fwm repo compose set-checkpoint-validation): "passed", "failed", or null if not
+    # validated.
     validation_status = pw.CharField(null=True)
     validation_time = TimestampTzField(null=True)
     validation_detail = pw.TextField(null=True)

@@ -63,8 +63,8 @@ def _judge_recording(recording: Recording, state: Optional[FinalState], recordin
 
 def check_recording(recording_dir: str, final_state: Optional[str] = None) -> Tuple[Recording, Optional[FinalState]]:
     """
-    Check that a recording is complete and consistent, as `fwm repo add trace` would, without a repository: e.g. on the
-    node that ran it, so that a run cut short is caught there.
+    Check that a recording is complete and consistent, as `fwm repo compose add trace` would, without a repository: e.g.
+    on the node that ran it, so that a run cut short is caught there.
 
     :param final_state: The +final-state-dump of the recording run.
     :return: The recording, and the final state, if one is given.

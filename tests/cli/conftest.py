@@ -31,16 +31,16 @@ def run(tmp_path):
 @pytest.fixture
 def populated(run, sysroot_src, write_entry_point, tmp_path):
     """A repository with a sysroot, an entry point, a trace and a checkpoint; return the trace UUID."""
-    assert run("repo", "add", "sysroot", str(sysroot_src), "sr")[:2] == (0, "sr\n")
-    assert run("repo", "add", "entry", "sr", "wl", "e", write_entry_point(), "-d", "an entry")[:2] == (0, "e\n")
+    assert run("repo", "compose", "add", "sysroot", str(sysroot_src), "sr")[:2] == (0, "sr\n")
+    assert run("repo", "compose", "add", "entry", "sr", "wl", "e", write_entry_point(), "-d", "an entry")[:2] == (0, "e\n")
     rec = tmp_path / "rec"
     write_recording(str(rec), harts=[COMMANDS])
     final_state = tmp_path / "final-state.json"
     final_state.write_text(final_state_json(5000))
-    code, out, _ = run("repo", "add", "trace", "e", str(rec), "--final-state", str(final_state))
+    code, out, _ = run("repo", "compose", "add", "trace", "e", str(rec), "--final-state", str(final_state))
     assert code == 0
     trace_uuid = out.strip()
-    assert run("repo", "add", "checkpoint", trace_uuid[:8], *write_checkpoints(tmp_path / "ckpt-run", "e.2.0.40"),
+    assert run("repo", "compose", "add", "checkpoint", trace_uuid[:8], *write_checkpoints(tmp_path / "ckpt-run", "e.2.0.40"),
                "--simpoint-info", str(write_simpoint_info(tmp_path, {"e.2.0.40": (2, 0.4)})))[:2] == \
         (0, f"{trace_uuid}:e.2.0.40\n")
     return trace_uuid

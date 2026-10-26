@@ -111,12 +111,12 @@ def test_trace_without_instret(repo, sysroot_src, write_entry_point, tmp_path):
 def test_cli(repo, load_run):
     runner = CliRunner()
     final_state(load_run, 5000)
-    result = runner.invoke(cli, ["--repo-path", repo.path, "repo", "record-validation", "c", str(load_run)])
+    result = runner.invoke(cli, ["--repo-path", repo.path, "repo", "compose", "set-checkpoint-validation", "c", str(load_run)])
     assert result.exit_code == 0
     assert result.stdout.startswith("passed: ")
 
     (load_run / "final-state.json").write_text(final_state_json(reason="error", error="the replay diverged"))
-    result = runner.invoke(cli, ["--repo-path", repo.path, "repo", "record-validation", "c", str(load_run)])
+    result = runner.invoke(cli, ["--repo-path", repo.path, "repo", "compose", "set-checkpoint-validation", "c", str(load_run)])
     assert result.exit_code == 4
     assert result.stdout.startswith("failed: the run didn't end with the program's exit: the simulator failed")
 

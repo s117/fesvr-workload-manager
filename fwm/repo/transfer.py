@@ -5,7 +5,7 @@ An entry point brings its workload and its sysroot, and, unless they are left ou
 The rows are copied as they are: names, trace UUIDs, provenance, metadata, descriptions, creation times, SimPoint data,
 validation results. Nothing is imported or judged again.
 
-What the destination already has is kept, under the rules of `repo add --exist-ok`:
+What the destination already has is kept, under the rules of `repo compose add --exist-ok`:
 - a sysroot of the same name and content;
 - an entry point of the same name, sysroot, workload and launch fields (with its own metadata and description);
 - a trace of the entry point made of the same recording (with its own UUID: the checkpoints copied attach to it);
@@ -349,7 +349,7 @@ def _plan(unit: _Unit, compared: Optional[_Compared]) -> _Plan:
         metadata = json.loads(entry.row["metadata"]) if entry.row["metadata"] is not None else None
         if entry_metadata(existing) != metadata:
             plan.warnings.append(f"entry point '{entry.name}' keeps its metadata, which differs from the one copied: "
-                                 f"change it with `fwm repo set-metadata`")
+                                 f"change it with `fwm repo compose set-metadata`")
         plan.items.append(Item(PRESENT, "entry", entry.name))
     _plan_traces(plan, entry, existing)
     return plan

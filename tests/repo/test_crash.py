@@ -94,7 +94,7 @@ def test_sigterm_during_import_cleans_up(repo, sysroot_src, tmp_path):
 
         catalog_module.create_catalog = slow_create_catalog
         from fwm.cli.fwm import cli
-        cli(["--repo-path", {repo.path!r}, "repo", "add", "sysroot", {str(sysroot_src)!r}, "sr"])
+        cli(["--repo-path", {repo.path!r}, "repo", "compose", "add", "sysroot", {str(sysroot_src)!r}, "sr"])
     """)
     proc = subprocess.Popen([sys.executable, "-c", script], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     try:

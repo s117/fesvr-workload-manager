@@ -31,7 +31,7 @@ def make_old(path):
 
 
 def kill_import(repo, sysroot_src, tmp_path):
-    """Start `fwm repo add sysroot` and SIGKILL it in the middle, as an out-of-memory killer would."""
+    """Start `fwm repo compose add sysroot` and SIGKILL it in the middle, as an out-of-memory killer would."""
     ready = tmp_path / "ready"
     script = textwrap.dedent(f"""
         import time
@@ -43,7 +43,7 @@ def kill_import(repo, sysroot_src, tmp_path):
 
         catalog_module.create_catalog = stuck_create_catalog
         from fwm.cli.fwm import cli
-        cli(["--repo-path", {repo.path!r}, "repo", "add", "sysroot", {str(sysroot_src)!r}, "sr"])
+        cli(["--repo-path", {repo.path!r}, "repo", "compose", "add", "sysroot", {str(sysroot_src)!r}, "sr"])
     """)
     proc = subprocess.Popen([sys.executable, "-c", script], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:

@@ -19,7 +19,7 @@ def check():
 @click.option("--json", "as_json", is_flag=True, help="Print JSON, for scripts.")
 def check_recording_cmd(recording_dir, final_state, as_json):
     """
-    Check RECORDING_DIR, a recording (+dev-traffic-record), as `fwm repo add trace` would: it must be complete (the
+    Check RECORDING_DIR, a recording (+dev-traffic-record), as `fwm repo compose add trace` would: it must be complete (the
     program exited) and well formed, and agree with the final state, if one is given, which must say the program
     exited (finish_reason target_exit).
 

@@ -10,7 +10,7 @@ from fwm.mkgen.makefile import generate_record, generate_create_checkpoints
 def bootstrap():
     """
     Generate the runs that make the repository's traces and checkpoints, for its creator. Import their results with
-    `fwm repo add trace` and `fwm repo add checkpoint`.
+    `fwm repo compose add trace` and `fwm repo compose add checkpoint`.
 
     Like `fwm mkgen`, they generate a run directory (a Makefile and run.json) to run with `make -C <dir> run`, and
     only read the repository.
@@ -29,7 +29,7 @@ def record(ctx, entry, out_dir):
 
     \b
     Import the trace with
-      fwm repo add trace ENTRY <dir>/trace --final-state <dir>/final-state.json
+      fwm repo compose add trace ENTRY <dir>/trace --final-state <dir>/final-state.json
     """
     done(generate_record(open_repo(ctx), entry, out_dir))
 
@@ -48,6 +48,6 @@ def create_checkpoints(ctx, trace, desc, out_dir):
 
     \b
     Import the checkpoints with
-      fwm repo add checkpoint TRACE <dir>/ckpt.desc <dir>/checkpoints
+      fwm repo compose add checkpoint TRACE <dir>/ckpt.desc <dir>/checkpoints
     """
     done(generate_create_checkpoints(open_repo(ctx), trace, desc, out_dir))

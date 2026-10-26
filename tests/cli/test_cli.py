@@ -77,7 +77,7 @@ def test_list_tables(run, populated):
 
 
 def test_list_filters(run, populated, write_entry_point):
-    run("repo", "add", "entry", "sr", "other-wl", "other", write_entry_point())
+    run("repo", "compose", "add", "entry", "sr", "other-wl", "other", write_entry_point())
     _, out, _ = run("list", "entries", "--workload", "wl", "--json")
     assert [e["name"] for e in json.loads(out)] == ["e"]
     _, out, _ = run("list", "entries", "oth", "--json")
@@ -88,7 +88,7 @@ def test_list_filters(run, populated, write_entry_point):
 def test_metadata(run, populated, sysroot_src, write_entry_point, tmp_path):
     metadata = {"suite": "Toolchain test", "description": "A helloworld.", "language": ["C"],
                 "auxiliary": {"validator": {"verify": [{"cmd": "diff a b", "stdout": "a.cmp"}]}}}
-    assert run("repo", "add", "entry", "sr", "wl", "m", write_entry_point(metadata=metadata))[0] == 0
+    assert run("repo", "compose", "add", "entry", "sr", "wl", "m", write_entry_point(metadata=metadata))[0] == 0
     assert json.loads(run("show", "entry", "m", "--json")[1])["metadata"] == metadata
     code, out, _ = run("show", "entry", "m")
     assert code == 0
@@ -100,19 +100,19 @@ def test_metadata(run, populated, sysroot_src, write_entry_point, tmp_path):
     # replaced, and removed, keeping the traces
     new = tmp_path / "metadata.json"
     new.write_text('{"suite": "GAPBS"}')
-    assert run("repo", "set-metadata", "e", str(new))[:2] == (0, "e\n")
+    assert run("repo", "compose", "set-metadata", "e", str(new))[:2] == (0, "e\n")
     view = json.loads(run("show", "entry", "e", "--json")[1])
     assert (view["metadata"], view["traces"]) == ({"suite": "GAPBS"}, [populated])
     new.write_text("null")
-    assert run("repo", "set-metadata", "e", str(new))[0] == 0
+    assert run("repo", "compose", "set-metadata", "e", str(new))[0] == 0
     assert json.loads(run("show", "entry", "e", "--json")[1])["metadata"] is None
 
     for bad in ('["GAPBS"]', '{"suite": '):
         new.write_text(bad)
-        code, _, err = run("repo", "set-metadata", "e", str(new))
+        code, _, err = run("repo", "compose", "set-metadata", "e", str(new))
         assert code == 4, err
     new.write_text("{}")
-    assert run("repo", "set-metadata", "missing", str(new))[0] == 3
+    assert run("repo", "compose", "set-metadata", "missing", str(new))[0] == 3
 
 
 def test_exit_codes(run, populated, write_entry_point, tmp_path):
@@ -121,15 +121,15 @@ def test_exit_codes(run, populated, write_entry_point, tmp_path):
     assert code == 3
     assert "error: no entry point named 'missing'" in err
     # already exists
-    code, _, err = run("repo", "add", "entry", "sr", "wl", "e", write_entry_point(command="other"))
+    code, _, err = run("repo", "compose", "add", "entry", "sr", "wl", "e", write_entry_point(command="other"))
     assert code == 5
     assert "already exists" in err
     # failed check
-    code, _, err = run("repo", "remove", "sysroot", "sr")
+    code, _, err = run("repo", "compose", "remove", "sysroot", "sr")
     assert code == 4
     assert "--recursive" in err
     # usage error
-    assert run("repo", "remove", "nothing", "x")[0] == 2
+    assert run("repo", "compose", "remove", "nothing", "x")[0] == 2
 
 
 def test_verify(run, populated, tmp_path):
@@ -148,13 +148,13 @@ def test_verify(run, populated, tmp_path):
 
 def test_remove(run, populated, tmp_path):
     trace_uuid = populated
-    assert run("repo", "remove", "checkpoint", "e.2.0.40")[0] == 0
+    assert run("repo", "compose", "remove", "checkpoint", "e.2.0.40")[0] == 0
     # empty after its last checkpoint, which is fine
     assert run("repo", "verify")[0] == 0
-    assert run("repo", "remove", "trace", trace_uuid)[0] == 0
-    assert run("repo", "remove", "entry", "e")[0] == 0
+    assert run("repo", "compose", "remove", "trace", trace_uuid)[0] == 0
+    assert run("repo", "compose", "remove", "entry", "e")[0] == 0
     assert json.loads(run("list", "workloads", "--json")[1]) == []  # gone with its last entry point
-    assert run("repo", "remove", "sysroot", "sr", "--recursive")[0] == 0
+    assert run("repo", "compose", "remove", "sysroot", "sr", "--recursive")[0] == 0
     for kind in ("workloads", "sysroots", "entries", "traces", "checkpoints"):
         assert json.loads(run("list", kind, "--json")[1]) == []
     assert not (tmp_path / "repo" / "traces" / trace_uuid).exists()
@@ -196,7 +196,7 @@ def test_mkgen(run, populated, tmp_path, caplog, write_entry_point):
 
     # a checkpoint without SimPoint information
     desc, checkpoints = write_checkpoints(tmp_path / "plain", "plain")
-    assert run("repo", "add", "checkpoint", "e", desc, checkpoints)[0] == 0
+    assert run("repo", "compose", "add", "checkpoint", "e", desc, checkpoints)[0] == 0
     caplog.clear()
     assert run("mkgen", "from-checkpoint", "plain", "-o", str(tmp_path / "r5"))[0] == 0
     assert "from-simpoint" not in caplog.text
@@ -243,7 +243,7 @@ def test_read_only_repo(run, populated, tmp_path, write_entry_point):
         # no journal or other file is left behind by reading
         assert sorted(os.listdir(repo_path)) == [".staging", "checkpoints", "fwm.db", "sysroots", "traces"]
 
-        code, out, err = run("repo", "add", "entry", "sr", "wl", "e2", write_entry_point())
+        code, out, err = run("repo", "compose", "add", "entry", "sr", "wl", "e2", write_entry_point())
         assert (code, out) == (2, "")
         assert "is read-only for you" in err
     finally:
@@ -267,14 +267,14 @@ def test_provenance(run, populated, tmp_path):
     # a recording made by an older spike, without one, is refused
     old = tmp_path / "old"
     write_recording(str(old), harts=[[Command(payload=0x3000), exit_command(0)]], prov=None)
-    code, out, err = run("repo", "add", "trace", "e", str(old))
+    code, out, err = run("repo", "compose", "add", "trace", "e", str(old))
     assert (code, out) == (4, "")
     assert "has no recording_provenance.json: it was made by a spike older than" in err
 
     # the spike's version comes from the provenance now: add trace takes no --sim-version
     version = tmp_path / "sim-version.txt"
     version.write_text(SPIKE_VERSION)
-    assert run("repo", "add", "trace", "e", str(old), "--sim-version", str(version))[0] == 2
+    assert run("repo", "compose", "add", "trace", "e", str(old), "--sim-version", str(version))[0] == 2
 
 
 def test_add_checkpoints(run, populated, tmp_path):
@@ -287,7 +287,7 @@ def test_add_checkpoints(run, populated, tmp_path):
     desc = tmp_path / "r3" / "ckpt.desc"
     desc.write_text("e.5.0.25: 3000\ne.7.0.35: 4000\n")
     info = write_simpoint_info(tmp_path, {"e.5.0.25": (5, 0.2468), "e.7.0.35": (7, 0.3532)})
-    add = ("repo", "add", "checkpoint", populated, str(desc), str(checkpoints), "--simpoint-info", str(info))
+    add = ("repo", "compose", "add", "checkpoint", populated, str(desc), str(checkpoints), "--simpoint-info", str(info))
     code, out, _ = run(*add)
     assert code == 0
     assert out.splitlines() == [f"{populated}:e.5.0.25", f"{populated}:e.7.0.35"]
@@ -305,7 +305,7 @@ def test_add_checkpoints(run, populated, tmp_path):
     assert code == 4
     assert "e.9.0.40 (99999)" in err
     # the former interface
-    assert run("repo", "add", "checkpoint", populated, str(checkpoints / "e.5.0.25"), "--desc", str(desc))[0] == 2
+    assert run("repo", "compose", "add", "checkpoint", populated, str(checkpoints / "e.5.0.25"), "--desc", str(desc))[0] == 2
 
 
 def test_list_json_is_show_json(run, populated):
@@ -348,7 +348,7 @@ def test_pull_and_push(run, populated, sysroot_src, tmp_path, caplog):
     third = str(tmp_path / "third")
     assert run("repo", "init", third, repo=False)[0] == 0
     (sysroot_src / "app" / "input.txt").write_text("changed\n")
-    assert run("--repo-path", third, "repo", "add", "sysroot", str(sysroot_src), "sr", repo=False)[0] == 0
+    assert run("--repo-path", third, "repo", "compose", "add", "sysroot", str(sysroot_src), "sr", repo=False)[0] == 0
     code, out, err = run("--repo-path", third, "repo", "pull", repo_path, "--no-traces", "e", repo=False)
     assert (code, out) == (5, "")
     assert "sysroot 'sr' exists, with different content" in err
@@ -422,3 +422,52 @@ def test_help_sections(args):
     else:
         assert sections["The repository"] == ["init", "verify", "gc"]
         assert sections["Copying between repositories"] == ["pull", "push", "subrepo"]
+
+
+def leaf_commands(group, prefix=()):
+    """The commands of a group and of its sub-groups, as argument tuples, e.g. ("add", "trace")."""
+    ctx = click.Context(group)
+    for name in group.list_commands(ctx):
+        command = group.get_command(ctx, name)
+        if isinstance(command, click.Group):
+            yield from leaf_commands(command, (*prefix, name))
+        else:
+            yield (*prefix, name)
+
+
+def test_compose_needs_write_access(run, populated, sysroot_src, write_entry_point, tmp_path):
+    """Every `fwm repo compose` command opens the repository for writing: a read-only one is refused (status 2)."""
+    from fwm.utils.fs import set_tree_readonly
+
+    rec = tmp_path / "rec2"
+    write_recording(str(rec), harts=[COMMANDS])
+    run_dir = tmp_path / "validate"
+    run_dir.mkdir()
+    metadata = tmp_path / "metadata.json"
+    metadata.write_text("{}")
+    desc, checkpoints = write_checkpoints(tmp_path / "ckpts", "e.9")
+    calls = {
+        ("add", "sysroot"): [str(sysroot_src), "sr2"],
+        ("add", "entry"): ["sr", "wl", "e2", write_entry_point()],
+        ("add", "trace"): ["e", str(rec)],
+        ("add", "checkpoint"): [populated, desc, checkpoints],
+        ("remove",): ["checkpoint", "e.2.0.40"],
+        ("set-metadata",): ["e", str(metadata)],
+        ("set-checkpoint-validation",): ["e.2.0.40", str(run_dir)],
+    }
+    compose = cli.get_command(click.Context(cli), "repo").get_command(click.Context(cli), "compose")
+    assert sorted(leaf_commands(compose)) == sorted(calls)  # a new command must be added here
+    set_tree_readonly(str(tmp_path / "repo"))
+    for command, args in calls.items():
+        code, out, err = run("repo", "compose", *command, *args)
+        assert (code, out) == (2, ""), command
+        assert "is read-only for you" in err, command
+
+
+@pytest.mark.parametrize("args", [
+    ["repo", "add", "sysroot"], ["repo", "remove", "entry", "e"],
+    ["repo", "set-metadata", "e", "f"], ["repo", "record-validation", "c", "d"],
+])
+def test_old_command_names(run, args):
+    code, _, err = run(*args)
+    assert code == 2 and "No such command" in err

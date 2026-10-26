@@ -83,7 +83,7 @@ def mode(path) -> int:
 def import_checkpoints(repo: Repo, trace_ref: str, files: Sequence[str], simpoint_info: Optional[Dict] = None,
                        **kwargs: Any) -> List[DecoupledCheckpoint]:
     """
-    Import checkpoint files as `fwm repo add checkpoint` takes them: copied into a new checkpoint directory, with a
+    Import checkpoint files as `fwm repo compose add checkpoint` takes them: copied into a new checkpoint directory, with a
     description file requesting each one where it was taken. A checkpoint is named after its file.
 
     :param simpoint_info: The content of the SimPoint information file, if any.

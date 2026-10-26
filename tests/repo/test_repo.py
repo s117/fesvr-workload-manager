@@ -207,7 +207,7 @@ def test_entry_metadata(repo, sysroot_src, write_entry_point, caplog):
     # metadata doesn't make an entry point different: the stored one is kept, with a warning
     again = add_entry(repo, "sr", "wl", "e", write_entry_point(metadata={"suite": "other"}), exist_ok=True)
     assert entry_metadata(again) == metadata
-    assert "set-metadata" in caplog.text
+    assert "`fwm repo compose set-metadata`" in caplog.text
     caplog.clear()
     add_entry(repo, "sr", "wl", "e", write_entry_point(metadata=metadata), exist_ok=True)
     assert "set-metadata" not in caplog.text

@@ -86,7 +86,8 @@ def from_checkpoint(ctx, checkpoint, out_dir):
     Load CHECKPOINT (<trace>:<name>, or a unique name) and simulate from it to the end of the program, or for n
     instructions with SIM_FLAGS_EXTRA=-e<n>.
 
-    Outputs final-state.json. A run to the end can validate the checkpoint (`fwm repo record-validation`).
+    Outputs final-state.json. A run to the end can validate the checkpoint
+    (`fwm repo compose set-checkpoint-validation`).
     """
     r = open_repo(ctx)
     makefile = generate_from_checkpoint(r, checkpoint, out_dir)

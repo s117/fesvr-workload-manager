@@ -41,43 +41,43 @@ def other_commands(name):
 def add_trace(run, tmp_path, entry, name):
     rec = tmp_path / f"rec-{name}"
     write_recording(str(rec), harts=[other_commands(name)])
-    code, out, _ = run("repo", "add", "trace", entry, str(rec))
+    code, out, _ = run("repo", "compose", "add", "trace", entry, str(rec))
     assert code == 0
     return out.strip()
 
 
 def add_checkpoint(run, tmp_path, trace, name, commands):
     desc, checkpoints = write_checkpoints(tmp_path / f"r3-{trace}-{name}", name, commands=commands)
-    assert run("repo", "add", "checkpoint", trace, desc, checkpoints)[0] == 0
+    assert run("repo", "compose", "add", "checkpoint", trace, desc, checkpoints)[0] == 0
 
 
 def test_names(complete, run, populated, write_entry_point):
     trace_uuid = populated
-    assert run("repo", "add", "entry", "sr", "other-wl", "e2", write_entry_point())[0] == 0
+    assert run("repo", "compose", "add", "entry", "sr", "other-wl", "e2", write_entry_point())[0] == 0
 
     assert complete("spawn") == [("e", "wl @ sr"), ("e2", "other-wl @ sr")]
     assert complete("list", "--sysroot") == [("sr", "2 entry points")]
-    assert complete("repo", "add", "entry") == [("sr", "2 entry points")]
-    assert complete("repo", "add", "entry", "sr") == [("other-wl", "1 entry point"), ("wl", "1 entry point")]
+    assert complete("repo", "compose", "add", "entry") == [("sr", "2 entry points")]
+    assert complete("repo", "compose", "add", "entry", "sr") == [("other-wl", "1 entry point"), ("wl", "1 entry point")]
     assert complete("list", "--workload", incomplete="w") == [("wl", "1 entry point")]
     assert complete("mkgen", "from-sysroot") == [("e", "wl @ sr"), ("e2", "other-wl @ sr")]
-    assert complete("repo", "add", "trace", incomplete="e2") == [("e2", "other-wl @ sr")]
+    assert complete("repo", "compose", "add", "trace", incomplete="e2") == [("e2", "other-wl @ sr")]
     # (the order of a random UUID and a name depends on the UUID)
     assert complete("mkgen", "from-fesvr-trace") == naturally_sorted([
         (trace_uuid, "e, complete, 1 checkpoint"),
         ("e", f"its trace {trace_uuid}"),
     ])
-    assert values(complete("repo", "add", "checkpoint", incomplete=trace_uuid[:4])) == [trace_uuid]
+    assert values(complete("repo", "compose", "add", "checkpoint", incomplete=trace_uuid[:4])) == [trace_uuid]
     assert complete("mkgen", "from-checkpoint") == [("e.2.0.40", "e, weight 0.4")]
-    assert values(complete("repo", "record-validation")) == ["e.2.0.40"]
-    assert values(complete("repo", "set-metadata")) == ["e", "e2"]
+    assert values(complete("repo", "compose", "set-checkpoint-validation")) == ["e.2.0.40"]
+    assert values(complete("repo", "compose", "set-metadata")) == ["e", "e2"]
     assert complete("mkgen", "from-simpoint") == [("e.2.0.40", "e, weight 0.4")]
     assert values(complete("repo", "bootstrap", "record")) == ["e", "e2"]
     assert values(complete("repo", "bootstrap", "create-checkpoints", incomplete=trace_uuid[:4])) == [trace_uuid]
 
     # new names aren't completed
-    assert complete("repo", "add", "entry", "sr", "wl") == []
-    assert complete("repo", "add", "sysroot", str(populated)) == []
+    assert complete("repo", "compose", "add", "entry", "sr", "wl") == []
+    assert complete("repo", "compose", "add", "sysroot", str(populated)) == []
 
 
 def test_by_kind(complete, populated):
@@ -87,7 +87,7 @@ def test_by_kind(complete, populated):
     assert values(complete("show", "entry")) == ["e"]
     assert values(complete("show", "trace")) == [v for v, _ in naturally_sorted([(trace_uuid, None), ("e", None)])]
     assert values(complete("show", "checkpoint")) == ["e.2.0.40"]
-    assert values(complete("repo", "remove", "entry")) == ["e"]
+    assert values(complete("repo", "compose", "remove", "entry")) == ["e"]
     assert values(complete("repo", "verify", "checkpoint")) == ["e.2.0.40"]
     # the kind is a choice
     assert values(complete("show", incomplete="s")) == ["sysroot"]
@@ -175,9 +175,9 @@ def test_transfer_entries(complete, run, populated, sysroot_src, write_entry_poi
     """pull completes the entry points of its SOURCE; push and subrepo those of --repo-path. Given ones are left out."""
     source = str(tmp_path / "source")
     assert run("repo", "init", source, repo=False)[0] == 0
-    assert run("--repo-path", source, "repo", "add", "sysroot", str(sysroot_src), "s", repo=False)[0] == 0
+    assert run("--repo-path", source, "repo", "compose", "add", "sysroot", str(sysroot_src), "s", repo=False)[0] == 0
     for name in ("x", "y"):
-        assert run("--repo-path", source, "repo", "add", "entry", "s", "w", name, write_entry_point(),
+        assert run("--repo-path", source, "repo", "compose", "add", "entry", "s", "w", name, write_entry_point(),
                    repo=False)[0] == 0
 
     assert complete("repo", "pull", source) == [("x", "w @ s"), ("y", "w @ s")]

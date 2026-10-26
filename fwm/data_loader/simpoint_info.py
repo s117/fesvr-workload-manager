@@ -1,6 +1,6 @@
 """
-The SimPoint information of checkpoints, given to `fwm repo add checkpoint --simpoint-info`, as produced from the
-SimPoint v3.2 outputs: the analysis parameters, and each checkpoint's SimPoint, by checkpoint name, e.g.
+The SimPoint information of checkpoints, given to `fwm repo compose add checkpoint --simpoint-info`, as produced from
+the SimPoint v3.2 outputs: the analysis parameters, and each checkpoint's SimPoint, by checkpoint name, e.g.
 
     {"interval": 100000000, "maxK": 10,
      "checkpoints": {"bfs-road-n64.3.0.25": {"index": 3, "weight": 0.2531}}}

@@ -165,7 +165,7 @@ _BY_KIND: Dict[str, Callable[[click.Context, str], Candidates]] = {
 
 
 def _by_kind(ctx: click.Context, incomplete: str) -> Candidates:
-    """The ID of the kind given by the preceding KIND argument (show, repo remove, repo verify)."""
+    """The ID of the kind given by the preceding KIND argument (show, repo compose remove, repo verify)."""
     candidates = _BY_KIND.get(ctx.params.get("kind") or "")
     return candidates(ctx, incomplete) if candidates else []
 
