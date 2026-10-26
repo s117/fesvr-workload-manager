@@ -195,3 +195,10 @@ def test_completion_expands_home(complete, run, populated, tmp_path, monkeypatch
     monkeypatch.setenv("HOME", str(tmp_path))
     assert values(complete("repo", "pull", "~/repo")) == ["e"]
     assert values(complete("--repo-path", "~/repo", "spawn", repo=False)) == ["e"]
+
+
+def test_subcommand_names(complete):
+    """`fwm <TAB>` offers the subcommands, but not completion's: its script is installed already."""
+    names = values(complete(repo=False))
+    assert "completion" not in names
+    assert {"list", "show", "mkgen", "spawn", "repo"} <= set(names)

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import importlib
 import signal
+from typing import Any, Dict, Iterable, List, Sequence, Tuple
 
 import click
 
@@ -27,13 +28,53 @@ _SUBCOMMANDS = {
 }
 
 
+# The sections of `fwm --help`: the daily commands of a repository's users first
+_SECTIONS = (
+    ("Daily", ("list", "show", "mkgen", "spawn")),
+    ("Setup and maintenance", ("completion", "repo")),
+)
+
+# Not offered when completing a subcommand name: once completion works, its script is already installed
+_NOT_COMPLETED = ("completion",)
+
+
+def format_sections(formatter: click.HelpFormatter, sections: Iterable[Tuple[str, Sequence[str]]],
+                    short_help: Dict[str, str]) -> None:
+    """Write the commands of short_help (name: short help) under titled sections; the others last, under "Commands"."""
+    in_sections = {name for _, names in sections for name in names}
+    rest = sorted(name for name in short_help if name not in in_sections)
+    width = max(len(name) for name in short_help)  # one column of names across the sections
+    for title, names in [*sections, ("Commands", rest)]:
+        rows = [(name.ljust(width), short_help[name]) for name in names if name in short_help]
+        if rows:
+            with formatter.section(title):
+                formatter.write_dl(rows)
+
+
+class SectionedGroup(click.Group):
+    """A command group whose help lists its commands under titled sections: sections=[(title, [name, ...]), ...]."""
+
+    def __init__(self, *args: Any, sections: Sequence[Tuple[str, Sequence[str]]] = (), **kwargs: Any):
+        super().__init__(*args, **kwargs)
+        self.sections = sections
+
+    def format_commands(self, ctx: click.Context, formatter: click.HelpFormatter) -> None:
+        commands = {name: self.get_command(ctx, name) for name in self.list_commands(ctx)}
+        visible = {name: command for name, command in commands.items() if command is not None and not command.hidden}
+        if not visible:
+            return
+        limit = formatter.width - 6 - max(len(name) for name in visible)
+        format_sections(formatter, self.sections,
+                        {name: command.get_short_help_str(limit) for name, command in visible.items()})
+
+
 class FwmGroup(click.Group):
     """
     The fwm command group: imports a subcommand when it runs, reports an FwmError as a message, and exits with its
     exit code.
     """
 
-    def list_commands(self, ctx: click.Context):
+    def list_commands(self, ctx: click.Context) -> List[str]:
         return sorted(_SUBCOMMANDS)
 
     def get_command(self, ctx: click.Context, cmd_name: str):
@@ -45,14 +86,13 @@ class FwmGroup(click.Group):
         return super().get_command(ctx, cmd_name)
 
     def format_commands(self, ctx: click.Context, formatter: click.HelpFormatter) -> None:
-        with formatter.section("Commands"):
-            formatter.write_dl([(name, _SUBCOMMANDS[name][2]) for name in self.list_commands(ctx)])
+        format_sections(formatter, _SECTIONS, {name: _SUBCOMMANDS[name][2] for name in self.list_commands(ctx)})
 
     def shell_complete(self, ctx: click.Context, incomplete: str):
         from click.shell_completion import CompletionItem
 
         names = [CompletionItem(name, help=_SUBCOMMANDS[name][2])
-                 for name in self.list_commands(ctx) if name.startswith(incomplete)]
+                 for name in self.list_commands(ctx) if name.startswith(incomplete) and name not in _NOT_COMPLETED]
         # the options: click.Group's own version would also import every subcommand for its help
         return names + click.Command.shell_complete(self, ctx, incomplete)
 

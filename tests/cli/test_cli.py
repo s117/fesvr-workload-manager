@@ -1,6 +1,9 @@
 import json
 import os
+from typing import Dict, List
 
+import click
+import pytest
 from click.testing import CliRunner
 
 from fwm.cli.fwm import cli
@@ -390,3 +393,32 @@ def test_transfer_options(run, populated, tmp_path):
     # the choice of entry points is checked before the repository is opened
     code, _, err = run("--repo-path", str(tmp_path / "missing"), "repo", "push", repos["p1"], repo=False)
     assert code == 2 and "give the entry points to copy, or --all" in err
+
+
+def help_sections(*args):
+    """The sections of a command's help: {title: [command, ...]}."""
+    text = CliRunner().invoke(cli, [*args, "--help"]).stdout
+    sections: Dict[str, List[str]] = {}
+    title = None
+    for line in text.splitlines():
+        if line and not line.startswith(" ") and line.endswith(":"):
+            title = line[:-1]
+            sections[title] = []
+        elif title not in (None, "Usage", "Options") and line.startswith("  ") and not line.startswith("   "):
+            sections[title].append(line.split()[0])
+    sections.pop("Options", None)
+    return sections
+
+
+@pytest.mark.parametrize("args", [[], ["repo"]])
+def test_help_sections(args):
+    """A group's help lists each of its commands once, in its section."""
+    sections = help_sections(*args)
+    group = cli if not args else cli.get_command(click.Context(cli), args[0])
+    listed = [name for names in sections.values() for name in names]
+    assert sorted(listed) == sorted(group.list_commands(click.Context(group)))
+    if not args:
+        assert sections["Daily"] == ["list", "show", "mkgen", "spawn"]
+    else:
+        assert sections["The repository"] == ["init", "verify", "gc"]
+        assert sections["Copying between repositories"] == ["pull", "push", "subrepo"]

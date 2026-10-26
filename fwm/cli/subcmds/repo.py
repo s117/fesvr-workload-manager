@@ -6,7 +6,7 @@ from fwm.cli.completion import (
     complete_by_kind, complete_checkpoint, complete_entry, complete_other_entry, complete_source_entry,
     complete_sysroot, complete_trace, complete_workload
 )
-from fwm.cli.fwm import open_repo
+from fwm.cli.fwm import open_repo, SectionedGroup
 from fwm.cli.subcmds.bootstrap import bootstrap
 from fwm.data_loader.sim_version import read_sim_version, SimVersionError
 from fwm.database.schema import Sysroot, DecoupledTrace, DecoupledCheckpoint
@@ -20,7 +20,12 @@ from fwm.utils.log import Logger
 # it runs, so that completing `fwm repo ...` (which imports this module) stays light
 
 
-@click.group()
+@click.group(cls=SectionedGroup, sections=(
+    ("The repository", ("init", "verify", "gc")),
+    ("Copying between repositories", ("pull", "push", "subrepo")),
+    ("Its content", ("add", "remove", "set-metadata", "record-validation")),
+    ("Making its traces and checkpoints", ("bootstrap",)),
+))
 def repo():
     """
     Create and change the workload repository.
@@ -165,7 +170,7 @@ def add_checkpoint_cmd(ctx, trace, desc, checkpoint_dir, simpoint_info, descript
         click.echo(f"{ckpt.trace.uuid}:{ckpt.name}")
 
 
-@repo.command("set-metadata")
+@repo.command("set-metadata", short_help="Replace an entry point's metadata.")
 @click.argument("entry", shell_complete=complete_entry)
 @click.argument("metadata_json", metavar="FILE", type=click.Path(exists=True, dir_okay=False))
 @click.pass_context
@@ -179,7 +184,7 @@ def set_metadata_cmd(ctx, entry, metadata_json):
     click.echo(set_entry_metadata(open_repo(ctx, write=True), entry, metadata_json).name)
 
 
-@repo.command("remove")
+@repo.command("remove", short_help="Remove a sysroot, entry point, trace or checkpoint.")
 @click.argument("kind", type=click.Choice(["sysroot", "entry", "trace", "checkpoint"]))
 @click.argument("id", shell_complete=complete_by_kind)
 @click.option("--recursive", "-r", is_flag=True, help="Also remove what depends on it.")
@@ -203,7 +208,7 @@ def remove_cmd(ctx, kind, id, recursive):
         rm.remove_checkpoint(r, id)
 
 
-@repo.command("record-validation")
+@repo.command("record-validation", short_help="Record whether a run validates a checkpoint.")
 @click.argument("checkpoint", shell_complete=complete_checkpoint)
 @click.argument("run_dir", type=click.Path(exists=True, file_okay=False))
 @click.pass_context
@@ -222,7 +227,7 @@ def record_validation_cmd(ctx, checkpoint, run_dir):
         raise FwmValidationError(f"checkpoint {ckpt.trace.uuid}:{ckpt.name} failed its validation")
 
 
-@repo.command("verify")
+@repo.command("verify", short_help="Check the content, and look for leftovers.")
 @click.argument("kind", type=click.Choice(["sysroot", "trace", "checkpoint"]), required=False)
 @click.argument("id", required=False, shell_complete=complete_by_kind)
 @click.pass_context
@@ -269,7 +274,7 @@ def verify_cmd(ctx, kind, id):
             f"{failed} item(s) failed the verification" + (f", {len(leftovers)} leftover(s)" if leftovers else ""))
 
 
-@repo.command("gc")
+@repo.command("gc", short_help="Remove the leftovers of interrupted commands.")
 @click.option("--dry-run", "-n", is_flag=True, help="Only print what would be removed.")
 @click.pass_context
 def gc_cmd(ctx, dry_run):
@@ -317,7 +322,7 @@ _TRANSFER_HELP = """
     """
 
 
-@repo.command("pull")
+@repo.command("pull", short_help="Copy entry points of another repository into this one.")
 @click.argument("source", type=click.Path(file_okay=False))  # (a missing one isn't a repository: status 2)
 @click.argument("entries", nargs=-1, shell_complete=complete_source_entry)
 @click.option("--all", "everything", is_flag=True,
@@ -336,7 +341,7 @@ pull_cmd.help = """
     """ + _TRANSFER_HELP
 
 
-@repo.command("push")
+@repo.command("push", short_help="Copy entry points of this repository into another one.")
 @click.argument("dest", type=click.Path(exists=True, file_okay=False))
 @click.argument("entries", nargs=-1, shell_complete=complete_other_entry)
 @click.option("--all", "everything", is_flag=True,
@@ -355,7 +360,7 @@ push_cmd.help = """
     """ + _TRANSFER_HELP
 
 
-@repo.command("subrepo")
+@repo.command("subrepo", short_help="Create a repository with some entry points of this one.")
 @click.argument("new_repo", type=click.Path(file_okay=False))
 @click.argument("entries", nargs=-1, required=True, shell_complete=complete_other_entry)
 @_transfer_options
