@@ -19,7 +19,7 @@ def check(*args):
 
 @pytest.fixture
 def no_repo(monkeypatch):
-    """`fwm check` needs no repository."""
+    """`fwm repo bootstrap check-fesvr-trace` needs no repository."""
     monkeypatch.delenv("FWM_REPO_PATH", raising=False)
 
 
