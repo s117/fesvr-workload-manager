@@ -1,4 +1,4 @@
-# fwm: the FESVR Workload Manager
+# fwm: the RISC-V FESVR Workload Manager
 
 fwm manages RISC-V simulation workloads for the custom spike in `riscv-isa-sim`, and replaces riscv-simenv.
 
@@ -26,13 +26,20 @@ sysroot ──(entry point)──> record-fesvr-trace ──> trace ──> crea
 | **sysroot** | A directory tree the program sees as `/`, imported read-only into the repository with a catalog (every file's permissions and SHA-256). |
 | **workload** | A name grouping the entry points that run the same program. |
 | **entry point** | How to launch a workload in a sysroot: the command, working directory, boot ELF (usually pk), stdin file, memory size and processor count, with optional free-form metadata. A workload can have entry points on several sysroots, and a sysroot can serve several workloads. |
-| **trace** | A recording (`+dev-traffic-record`) of a run of an entry point, identified by a UUID. It is *complete* if the program exited, or *truncated* if the run was stopped first (e.g. by `-e`). |
+| **trace** | A recording (`+dev-traffic-record`) of a run of an entry point, identified by a UUID. It is *complete* if the program exited, or *truncated* if the run was stopped first (e.g. by spike's `-e<n>` instruction limit). |
 | **checkpoint** | A snapshot taken while replaying a trace. It loads only with that trace. A SimPoint checkpoint carries its SimPoint index, interval, weight and the analysis's maxK. |
+| **HART** | A hardware thread: a simulated processor. fwm's workloads run on one. |
+| **BBV, SimPoint** | spike's `-s<interval>` writes the program's basic block vectors (BBVs), one per interval of instructions. SimPoint picks a few intervals that represent the whole run, each with a weight: simulating only those (from a checkpoint at the start of each) estimates the whole run. |
 
 ## Install
 
+On the group's machines, fwm comes with the bootstrap pipeline: `source /usr/local/usrapps/rotenberg/fwm-bootstrap/install/<arch>/shrc` puts `fwm` on `PATH`. The group's spike is in the newest `/usr/local/usrapps/rotenberg/anycore-riscv/install-linux-<commit>/bin`.
+
+Elsewhere, from a checkout:
+
 ```
-uv sync                # in this repository: creates .venv with fwm
+git clone git@github.com:ncstate-ece/Rotenberg-Student-jli95-fesvr-workload-manager.git fwm && cd fwm
+uv sync                # creates .venv with fwm
 uv run fwm --help
 # or install the command: uv tool install .
 ```
@@ -81,26 +88,36 @@ fwm repo compose add entry road.sg bfs bfs-road-n64 bfs-road-n64.json
 Record a run, and import the recording as a trace. The recording says how it was made (`recording_provenance.json`: when, on what machine, the command line, and the spike's and FESVR's builds), which the trace keeps:
 
 ```
-fwm repo bootstrap mkgen record-fesvr-trace bfs-road-n64 -o run1 && make -C run1 run SIM_FLAGS_EXTRA=-s100000000   # with a BBV
+fwm repo bootstrap mkgen record-fesvr-trace bfs-road-n64 -o run1 && make -C run1 run SIM_FLAGS_EXTRA=-s100000000   # with BBVs
 fwm repo compose add trace bfs-road-n64 run1/trace --final-state run1/final-state.json
 # prints the trace UUID
 ```
 
+Without `--final-state`, the trace has no instruction counts, and its checkpoints can't be validated. While an entry point has one trace, commands that take a trace also take the entry point's name, as below.
+
 Checkpoint files don't say how they were made, so their import takes the `spike --version` output for provenance:
 
 ```
-spike --version > sim-version.txt
+"${FWM_SIM_CMD:-spike}" --version > sim-version.txt
 ```
 
-Create checkpoints from a description file of `<name>: <instruction count>` lines (e.g. the SimPoints of the BBV), and import them in one transaction:
+Create checkpoints from a description file, and import them in one transaction. The description names each checkpoint and the instruction count where it is taken, e.g. `ckpts.txt` for two SimPoints:
 
 ```
-fwm repo bootstrap mkgen create-checkpoints bfs-road-n64 ckpts.txt -o run3 && make -C run3 run
-fwm repo compose add checkpoint bfs-road-n64 run3/ckpt.desc run3/checkpoints --simpoint-info simpoints.json \
+bfs-road-n64.3.0.25: 300000005
+bfs-road-n64.7.0.75: 700000012
+```
+
+```
+fwm repo bootstrap mkgen create-checkpoints bfs-road-n64 ckpts.txt -o run2 && make -C run2 run
+fwm repo compose add checkpoint bfs-road-n64 run2/ckpt.desc run2/checkpoints --simpoint-info simpoints.json \
     --sim-version sim-version.txt
 ```
 
-- **Every checkpoint of the description must be in `run3/checkpoints`,** which catches one spike didn't create: it creates none at or after the program's exit, without a word. Other files there are ignored.
+- **A SimPoint's count is the sum of the sizes of the BBV intervals before it, not index × interval:** spike's intervals are a little longer than `-s` says. fwm-bootstrap writes the description and `simpoints.json` from SimPoint's output; see [docs/fwm-bootstrap-interface.md](docs/fwm-bootstrap-interface.md), step 5.
+- **Names are just names.** `<entry>.<SimPoint index>.<weight>`, as here, is a readable convention; fwm reads nothing from a name.
+- **The run directory keeps a copy of the description,** `run2/ckpt.desc`, which the import reads.
+- **Every checkpoint of the description must be in `run2/checkpoints`,** which catches one spike didn't create: it creates none at or after the program's exit, without a word. Other files there are ignored.
 - **`--simpoint-info`** gives the SimPoint analysis, naming exactly the checkpoints of the description:
   ```json
   {"interval": 100000000, "maxK": 10,
@@ -110,8 +127,8 @@ fwm repo compose add checkpoint bfs-road-n64 run3/ckpt.desc run3/checkpoints --s
 Validate a checkpoint by running it to the end:
 
 ```
-fwm mkgen from-checkpoint bfs-road-n64.3.0.25 -o run4
-make -C run4 run; fwm repo compose set-checkpoint-validation bfs-road-n64.3.0.25 run4      # passed or failed, recorded
+fwm mkgen from-checkpoint bfs-road-n64.3.0.25 -o run3
+make -C run3 run; fwm repo compose set-checkpoint-validation bfs-road-n64.3.0.25 run3      # passed or failed, recorded
 ```
 
 ## Running workloads
@@ -136,11 +153,12 @@ make -C d run SIM=/path/to/721sim                  # make reports "Error 1": spi
 
 | Command | Purpose |
 | --- | --- |
-| `fwm list [workloads\|sysroots\|entries\|traces\|checkpoints] [filter] [--json]` | List. |
+| `fwm list [workloads\|sysroots\|entries\|traces\|checkpoints] [filter] [--workload w] [--sysroot s] [--trace t] [--json]` | List (entry points by default), those whose name contains the filter. |
 | `fwm show {workload\|sysroot\|entry\|trace\|checkpoint} <id> [--json]` | Show the details. |
 | `fwm mkgen {from-sysroot <entry> \| from-fesvr-trace <trace> \| from-checkpoint <ckpt> \| from-simpoint <ckpt>} [-o dir]` | Generate a run directory that begins a simulation. |
 | `fwm spawn [--force] [--mode auto\|copy\|link] <entry> <dest>` | Make a working copy of an entry point's sysroot: copied, or linked to the repository's files; `auto`, the default, follows its `copy_spawn` (the `from-sysroot` and record Makefiles do it). |
-| `fwm completion {bash\|zsh\|fish}` | Print the shell completion script (setup; it isn't offered on TAB). |
+
+**Setup:** `fwm completion {bash|zsh|fish}` prints the shell completion script (see [Shell completion](#shell-completion)). It isn't offered on TAB.
 
 **`fwm repo`**, for the repository's creator. The repository as a whole:
 
@@ -180,7 +198,7 @@ How to name things:
 
 Every `repo compose add` takes `--exist-ok`: if the same item is already in the repository, it prints it and succeeds. An entry point that differs only in its description or metadata is the same; it keeps its own. Without it, adding what exists fails with status 5. A recording that already is a trace of the entry point counts as existing, so a rerun never creates a second trace.
 
-Exit status: 0 success, 1 unexpected error, 2 usage error or unusable repository, 3 not found, 4 failed check, 5 already exists.
+Exit status: 0 success, 1 unexpected error, 2 usage error or unusable repository, 3 not found, 4 failed check, 5 an item already in the repository. (A destination that exists outside the repository, e.g. `spawn` into an existing directory, is a failed check: 4.)
 
 ## Merging and subsets
 
@@ -189,7 +207,7 @@ Exit status: 0 success, 1 unexpected error, 2 usage error or unusable repository
 ```
 fwm repo subrepo ~/small bfs-road-n64 pr-road           # a new repository with two entry points
 fwm --repo-path ~/small repo pull /shared/repo cc-road  # add a third one to it
-fwm --repo-path /shared/repo repo push ~/merged --all   # merge everything into another repository
+fwm --repo-path /shared/repo repo push ~/merged --all   # merge everything into another, existing repository
 ```
 
 - **Rows are copied as they are:** names, trace UUIDs, provenance, metadata, SimPoint data and validation results.

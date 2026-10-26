@@ -18,7 +18,7 @@ The database uses SQLite's rollback journal, not WAL, so it can sit on a shared 
  1. fwm repo compose add sysroot <dir> <sysroot> --exist-ok                                 controller
  2. fwm repo compose add entry <sysroot> <workload> <entry> <entry.json> --exist-ok         controller
     fwm repo compose set-metadata <entry> <metadata.json>     (only if the metadata changed)
- 3. spike --version > V                                                                    compute
+ 3. <the run's spike> --version > V                                                       compute
     fwm repo bootstrap mkgen record-fesvr-trace <entry> -o R1
     make -C R1 run SIM_FLAGS_EXTRA=-s<interval> || true
     fwm repo bootstrap check-fesvr-trace R1/trace --final-state R1/final-state.json  -> exit 4: cut short
@@ -26,14 +26,14 @@ The database uses SQLite's rollback journal, not WAL, so it can sit on a shared 
  4. fwm repo compose add trace <entry> R1/trace --final-state R1/final-state.json \
         --exist-ok                                                  -> trace UUID          controller
  5. SimPoint analysis of R1/bbv_proc_0.bb.gz -> description file D, SimPoint info S        pipeline
- 6. fwm repo bootstrap mkgen create-checkpoints <uuid> D -o R3                             compute
-    make -C R3 run || true
- 7. fwm repo compose add checkpoint <uuid> R3/ckpt.desc R3/checkpoints \
+ 6. fwm repo bootstrap mkgen create-checkpoints <uuid> D -o R2                             compute
+    make -C R2 run || true
+ 7. fwm repo compose add checkpoint <uuid> R2/ckpt.desc R2/checkpoints \
         --simpoint-info S --sim-version V --exist-ok                -> <uuid>:<name> per line  controller
  8. per checkpoint:                                                                        compute
-    fwm mkgen from-checkpoint <uuid>:<name> -o R4
-    make -C R4 run || true
-    fwm repo compose set-checkpoint-validation <uuid>:<name> R4    -> exit 0 passed, 4 failed  controller
+    fwm mkgen from-checkpoint <uuid>:<name> -o R3
+    make -C R3 run || true
+    fwm repo compose set-checkpoint-validation <uuid>:<name> R3    -> exit 0 passed, 4 failed  controller
 ```
 
 - **Step 2: `entry.json`** holds the entry point's launch fields: `command`, `working_directory`, `envs` (`null` or `{}`), `stdin_file` (or `null`), `boot_elf`, `mem_mb`, `nprocs` (must be 1), and optionally `copy_spawn` (default `true`). In paths, `/` is the sysroot's root and `.` the working directory. `boot_elf` and `stdin_file` must be regular files of the sysroot, not symlinks.
@@ -50,7 +50,7 @@ The database uses SQLite's rollback journal, not WAL, so it can sit on a shared 
    "checkpoints": {"bfs-road-n64.3.0.25": {"index": 3, "weight": 0.25312}, ...}}
   ```
   `interval` (> 0), `maxK` (> 0), and each checkpoint's `index` (≥ 0, distinct) and `weight` (in [0, 1]) are required; any other key is rejected. The weights needn't sum to 1, so a subset of the SimPoints can be imported.
-- **Step 7** imports all the checkpoints of the description in one transaction. Each must be in `R3/checkpoints`, so a checkpoint spike didn't create fails the import: spike creates none at or after the program's exit, and reports nothing about it. Other files there are ignored.
+- **Step 7** imports all the checkpoints of the description in one transaction. Each must be in `R2/checkpoints`, so a checkpoint spike didn't create fails the import: spike creates none at or after the program's exit, and reports nothing about it. Other files there are ignored.
 
 ## Running a Makefile
 
@@ -198,10 +198,9 @@ A replay stops at the first difference from its recording: a different command, 
 
 ## Truncated recordings
 
-A recording is truncated when its run was stopped before the program exited:
-- by `-e` (`instret_limit`), a signal (`interrupted`), or a simulator `error`: `fwm repo compose add trace --final-state` refuses any dump but `target_exit`, saying why the run finished;
-- import a truncated recording on purpose without `--final-state`;
-- the trace then has no instruction counts, so `repo bootstrap mkgen create-checkpoints` can't check the counts against the end of the recording, and its checkpoints can't be validated.
+A recording is truncated when its run was stopped before the program exited: by `-e` (`instret_limit`), by a signal (`interrupted`), or by a simulator `error`. `fwm repo compose add trace --final-state` refuses such a run's dump, saying why the run finished: it takes only `target_exit`.
+
+To import a truncated recording anyway, leave out `--final-state`. The trace then has no instruction counts, so `repo bootstrap mkgen create-checkpoints` can't check the requested counts against the end of the recording, and its checkpoints can't be validated.
 
 ## 721sim
 

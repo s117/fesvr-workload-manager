@@ -186,7 +186,7 @@ Verify formats and options in `riscv-isa-sim` / `riscv-fesvr` source before desi
 ## 7. Development
 
 ```sh
-uv run pytest                    # ~420 tests, ~15 s
+uv run pytest                    # ~550 tests, ~45 s
 uv run mypy fwm tests
 uv run ruff check fwm tests      # pyproject pins ruff's former default rules (E4, E7, E9, F)
 ```
