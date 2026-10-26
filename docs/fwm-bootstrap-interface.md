@@ -138,7 +138,7 @@ Exit status:
 | 2 | usage error, including an unusable repository path: not a repository, another schema version, or read-only for a command that changes it |
 | 3 | not found |
 | 4 | failed check: invalid input, a recording that doesn't match its entry point, a checkpoint that doesn't belong to its trace, a failed validation, problems found by `verify`. Also, from `repo pull` / `push` / `subrepo`, a repository changed by another command while it was read or copied to ("changed while … : copy again" / "run it again"): running it again can succeed |
-| 5 | already exists (see Reruns) |
+| 5 | already exists: an item of the repository (see Reruns), or a destination (`spawn` without `--force`, `repo init` or `repo subrepo` into a non-empty directory) |
 
 ### JSON
 

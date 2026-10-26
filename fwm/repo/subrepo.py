@@ -44,7 +44,8 @@ def create_subrepo(source: Repo, path: str, entry_names: Sequence[str], traces: 
     to (see transfer()). If the copy fails, the new repository is removed, so that it is created whole or not at all;
     an empty directory it was created in is left empty.
 
-    :raise FwmValidationError: path is inside source, or exists and is not an empty directory.
+    :raise FwmValidationError: path is inside source.
+    :raise AlreadyExistsError: path exists and is not an empty directory.
     """
     path = os.path.realpath(path)  # a link to an empty directory: create (and on failure, remove) the repository there
     source_path = os.path.realpath(source.path)

@@ -42,7 +42,7 @@ def test_init_and_open(tmp_path):
 
 def test_init_non_empty(tmp_path):
     (tmp_path / "file").write_text("x")
-    with pytest.raises(FwmValidationError):
+    with pytest.raises(AlreadyExistsError, match="not an empty directory"):
         Repo.init(str(tmp_path))
 
 

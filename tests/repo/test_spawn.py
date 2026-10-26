@@ -36,7 +36,7 @@ def test_copy(repo, entries, tmp_path):
     (dest / "app" / "input.txt").write_text("changed by the program")
     (dest / "app" / "output.txt").write_text("written by the program")
 
-    with pytest.raises(FwmValidationError, match="already exists"):
+    with pytest.raises(AlreadyExistsError, match="already exists: replace it with --force"):
         spawn(repo, "copied", str(dest))
     spawn(repo, "copied", str(dest), force=True)
     assert not (dest / "app" / "output.txt").exists()

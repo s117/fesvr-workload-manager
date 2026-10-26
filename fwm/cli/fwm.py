@@ -118,7 +118,7 @@ def cli(ctx, repo_path):
     fwm, the RISC-V FESVR Workload Manager: the workloads of a repository, and the runs that simulate them.
 
     Exit status: 0 success, 1 unexpected error, 2 usage error or unusable repository, 3 not found, 4 failed check, 5
-    an item already in the repository.
+    already exists (an item of the repository, or a destination such as spawn's).
     """
     ctx.ensure_object(dict)
     ctx.obj["repo_path"] = repo_path

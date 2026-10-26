@@ -676,7 +676,7 @@ def test_subrepo_refused(source, tmp_path):
     (tmp_path / "full").mkdir()
     (tmp_path / "full" / "file").write_text("x")
     with source.repo.bound():
-        with pytest.raises(FwmValidationError, match="not an empty directory"):
+        with pytest.raises(AlreadyExistsError, match="not an empty directory"):
             create_subrepo(source.repo, str(tmp_path / "full"), ["a"])
         with pytest.raises(FwmValidationError, match="inside the repository"):
             create_subrepo(source.repo, os.path.join(source.path, "sub"), ["a"])

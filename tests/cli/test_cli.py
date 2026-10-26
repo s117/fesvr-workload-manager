@@ -124,6 +124,11 @@ def test_exit_codes(run, populated, write_entry_point, tmp_path):
     code, _, err = run("repo", "compose", "add", "entry", "sr", "wl", "e", write_entry_point(command="other"))
     assert code == 5
     assert "already exists" in err
+    # ... and a destination outside the repository
+    (tmp_path / "taken").mkdir()
+    (tmp_path / "taken" / "f").write_text("x")
+    assert run("spawn", "e", str(tmp_path / "taken"))[0] == 5
+    assert run("repo", "init", str(tmp_path / "taken"), repo=False)[0] == 5
     # failed check
     code, _, err = run("repo", "compose", "remove", "sysroot", "sr")
     assert code == 4
@@ -166,7 +171,7 @@ def test_spawn(run, populated, tmp_path):
     assert code == 0
     assert "(copy)" in err
     assert (dest / "app" / "prog.rv64").is_file() and not (dest / "app" / "prog.rv64").is_symlink()
-    assert run("spawn", "e", str(dest))[0] == 4
+    assert run("spawn", "e", str(dest))[0] == 5  # exists
     code, _, err = run("spawn", "--force", "--mode", "link", "e", str(dest))
     assert code == 0
     assert "(link)" in err
@@ -360,7 +365,7 @@ def test_subrepo(run, populated, tmp_path, caplog):
     assert "added 1 sysroot, 1 entry point, 1 trace, 1 checkpoint" in caplog.text
     code, out, _ = run("--repo-path", sub, "list", "checkpoints", "--json", repo=False)
     assert (code, [c["name"] for c in json.loads(out)]) == (0, ["e.2.0.40"])
-    assert run("repo", "subrepo", sub, "e")[0] == 4  # not empty
+    assert run("repo", "subrepo", sub, "e")[0] == 5  # not empty
     assert run("repo", "subrepo", str(tmp_path / "sub2"), "nope")[0] == 3
     assert not os.path.exists(tmp_path / "sub2")
     assert run("repo", "subrepo", str(tmp_path / "sub2"))[0] == 2

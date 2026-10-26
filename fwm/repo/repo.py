@@ -8,7 +8,7 @@ from typing import Callable, Iterator, List, Tuple, TYPE_CHECKING
 import peewee as pw
 
 from fwm.database.db import database_proxy, open_db, SchemaVersionError
-from fwm.repo.errors import FwmValidationError, RepoUnusableError
+from fwm.repo.errors import AlreadyExistsError, FwmValidationError, RepoUnusableError
 from fwm.utils.fs import copy_tree, remove_tree, set_tree_readonly
 from fwm.utils.log import Logger
 
@@ -86,7 +86,7 @@ class Repo:
         :param bind: Bind the models to its database (see open_db()).
         """
         if os.path.exists(path) and (not os.path.isdir(path) or os.listdir(path)):
-            raise FwmValidationError(f"cannot create a repository at {path}: it exists and is not an empty directory")
+            raise AlreadyExistsError(f"cannot create a repository at {path}: it exists and is not an empty directory")
         os.makedirs(path, exist_ok=True)
         for d in (SYSROOTS_DIR, TRACES_DIR, CHECKPOINTS_DIR, STAGING_DIR):
             os.mkdir(os.path.join(path, d))

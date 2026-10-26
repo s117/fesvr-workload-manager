@@ -62,7 +62,7 @@ Stored content is made read-only, so delete a repository with `chmod -R u+w <dir
 
 - **The CLI is an interface** (see the interface doc):
   - stdout carries results, stderr messages;
-  - exit codes are 0 ok, 1 unexpected, 2 usage or unusable repository, 3 not found, 4 failed check, 5 already exists;
+  - exit codes are 0 ok, 1 unexpected, 2 usage or unusable repository, 3 not found, 4 failed check, 5 already exists (an item of the repository, or a destination: `spawn`, `repo init`, `subrepo`);
   - every `repo compose add` takes `--exist-ok`, and identical re-imports succeed with the same identifier;
   - `list --json` and `show --json` print the same views (`fwm/repo/query.py`).
 - **Crash safety:**

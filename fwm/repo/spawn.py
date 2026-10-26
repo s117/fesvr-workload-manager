@@ -22,7 +22,7 @@ from fwm.data_loader.file_catalog import FileCatalog
 from fwm.database.catalog_store import load_catalog
 from fwm.database.schema import NativeEntry
 from fwm.repo.lookup import get_entry
-from fwm.repo.errors import FwmValidationError
+from fwm.repo.errors import AlreadyExistsError, FwmValidationError
 from fwm.repo.repo import Repo
 from fwm.utils.file_catalog import verify_catalog, FailedDetail
 from fwm.utils.fs import copy_tree, remove_tree
@@ -104,7 +104,7 @@ def spawn(repo: Repo, entry_name: str, dest: str, force: bool = False, mode: Spa
         raise FwmValidationError(f"{dest} is inside the repository: spawn the sysroot somewhere else")
     if os.path.lexists(dest):
         if not force:
-            raise FwmValidationError(f"{dest} already exists")
+            raise AlreadyExistsError(f"{dest} already exists: replace it with --force")
         remove_tree(dest)
 
     how = spawn_mode(entry, mode)

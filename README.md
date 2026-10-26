@@ -198,7 +198,7 @@ How to name things:
 
 Every `repo compose add` takes `--exist-ok`: if the same item is already in the repository, it prints it and succeeds. An entry point that differs only in its description or metadata is the same; it keeps its own. Without it, adding what exists fails with status 5. A recording that already is a trace of the entry point counts as existing, so a rerun never creates a second trace.
 
-Exit status: 0 success, 1 unexpected error, 2 usage error or unusable repository, 3 not found, 4 failed check, 5 an item already in the repository. (A destination that exists outside the repository, e.g. `spawn` into an existing directory, is a failed check: 4.)
+Exit status: 0 success, 1 unexpected error, 2 usage error or unusable repository, 3 not found, 4 failed check, 5 already exists: an item of the repository, or a destination (`spawn` into an existing directory without `--force`, `repo init` or `subrepo` into a non-empty one).
 
 ## Merging and subsets
 
