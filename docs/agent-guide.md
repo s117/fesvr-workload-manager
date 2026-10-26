@@ -17,9 +17,14 @@ fwm keeps the pieces in a repository (SQLite plus files), and generates the Make
 sysroot --(entry point)--> record --> trace --> create checkpoints --> checkpoints
 ```
 
-**Two audiences.** Keep every new feature on the right side of this split:
-- **The repository's creator** imports sysroots and entry points, records, and imports traces and checkpoints: `fwm repo ...`, including `fwm repo bootstrap record` / `create-checkpoints`. In practice this is the pipeline **fwm-bootstrap** (`/usr/local/usrapps/rotenberg/fwm-bootstrap`, its own guide in `docs/agent-guide.md`).
-- **Its users** often have read-only access: `fwm list`, `show`, `verify`, `spawn` and `mkgen from-sysroot | from-fesvr-trace | from-checkpoint | from-simpoint`. Every one of these must work on a repository they can't write to.
+**Two audiences.** Keep every new feature on the right side of this split, which the CLI's layout follows (user decision, 2026-10-26):
+- **Its users** often have read-only access. Their commands are the top level: `fwm list`, `show`, `mkgen from-sysroot | from-fesvr-trace | from-checkpoint | from-simpoint` and `spawn` (plus `completion`, for setup, which isn't offered on TAB). Every one of these must work on a repository they can't write to.
+- **The repository's creator** uses `fwm repo`. In practice this is the pipeline **fwm-bootstrap** (`/usr/local/usrapps/rotenberg/fwm-bootstrap`, its own guide in `docs/agent-guide.md`):
+  - the repository as a whole: `init`, `verify`, `gc`, and copying between repositories: `pull`, `push`, `subrepo`;
+  - `fwm repo compose` changes the content, and each of its commands needs write access: `add {sysroot|entry|trace|checkpoint}`, `remove`, `set-metadata`, `set-checkpoint-validation`;
+  - `fwm repo bootstrap` makes traces and checkpoints, and none of its commands writes: `mkgen record-fesvr-trace`, `mkgen create-checkpoints` (run generators, like `fwm mkgen`), and `check-fesvr-trace` (no repository at all).
+  - Tests check both rules (`test_compose_needs_write_access`, `test_bootstrap_only_reads`): a new command goes in the group that matches its access, and in those tests.
+- **Names are an interface:** fwm-bootstrap calls these commands, so renaming one means updating it in the same step (it pins fwm). The run kinds stored in run directories (`record`, `create-checkpoints`, …) are not command names and don't change with them.
 
 **Repositories:**
 
@@ -35,7 +40,7 @@ The branch is `main`. Never push without being asked.
 | Path | What |
 | --- | --- |
 | `fwm/cli/fwm.py` | The click group: subcommands imported when they run (`_SUBCOMMANDS`), `--repo-path` / `FWM_REPO_PATH`, `open_repo(ctx, write=...)`, `FwmError` → exit code, SIGTERM/SIGHUP → `SystemExit(128+sig)` so cleanup runs |
-| `fwm/cli/subcmds/` | `repo` (`add`, `remove`, `verify`, `gc`, `set-metadata`, `record-validation`, `pull`, `push`, `subrepo`, and `bootstrap` from `bootstrap.py`), `list`, `show`, `spawn`, `mkgen`, `check`, `completion` |
+| `fwm/cli/subcmds/` | `list`, `show`, `mkgen`, `spawn`, `completion`; `repo` (`init`, `verify`, `gc`, `pull`, `push`, `subrepo`), with `compose` from `compose.py` and `bootstrap` (its `mkgen` and `check-fesvr-trace`) from `bootstrap.py`. Groups list their commands in sections (`SectionedGroup` in `fwm/cli/fwm.py`). |
 | `fwm/cli/completion.py`, `output.py` | Shell completion (opens the repository read-only); table, JSON and summary output |
 | `fwm/data_loader/` | Readers and pydantic models of spike's files: `recording.py`, `provenance.py`, `final_state.py`, `checkpoint.py` (+ digest), `ckpt_desc.py`, `simpoint_info.py`, `sim_version.py` (`spike --version`), `entry_point.py`, `file_catalog.py` |
 | `fwm/database/` | peewee models (`schema.py`), `db.py` (`open_db`, `SCHEMA_VERSION`, journal, busy timeout), `catalog_store.py`, `custom_field.py` (`TimestampTzField`) |
@@ -58,7 +63,7 @@ Stored content is made read-only, so delete a repository with `chmod -R u+w <dir
 - **The CLI is an interface** (see the interface doc):
   - stdout carries results, stderr messages;
   - exit codes are 0 ok, 1 unexpected, 2 usage or unusable repository, 3 not found, 4 failed check, 5 already exists;
-  - every `repo add` takes `--exist-ok`, and identical re-imports succeed with the same identifier;
+  - every `repo compose add` takes `--exist-ok`, and identical re-imports succeed with the same identifier;
   - `list --json` and `show --json` print the same views (`fwm/repo/query.py`).
 - **Crash safety:**
   - imports copy into `.staging/` (each with a flock'd `.lock`), then rename into place inside the DB transaction (`Repo.importing()`), and move back if the commit fails;
@@ -126,11 +131,11 @@ Verify formats and options in `riscv-isa-sim` / `riscv-fesvr` source before desi
 **Checkpoints:**
 - format v1: a 48-byte header, the portable `RVHSTATE` hart state (80 entries, including `count` and the load reservation), then a zlib memory image;
 - `content_sha256` = SHA-256 of `riscv-isa-sim/scripts/checkpoint-digest.py`'s output (`checkpoint_digest_lines()`), so it doesn't depend on compression;
-- created for one hart only; checkpoints at or after the program's exit are silently not created (hence `repo add checkpoint`'s check against the description);
+- created for one hart only; checkpoints at or after the program's exit are silently not created (hence `repo compose add checkpoint`'s check against the description);
 - spike creates checkpoints at the counts of a description file, `<name>: <count>`, and the run ends after the last one;
 - a count of 0 is allowed, and `+create-checkpoint` can combine with `+load-checkpoint`, counting from the restore. That is a good way to compare states.
 
-**Validation** (`record-validation`): a run from a checkpoint passes only on `target_exit` with the trace's per-hart `instret` and exit status. A replay stops at the first divergence, so reaching the end proves the output.
+**Validation** (`repo compose set-checkpoint-validation`): a run from a checkpoint passes only on `target_exit` with the trace's per-hart `instret` and exit status. A replay stops at the first divergence, so reaching the end proves the output.
 
 **BBV / SimPoint:** `-s<interval>` writes `bbv_proc_<hart>.bb.gz`. Intervals aren't exactly `<interval>` long, and the last partial one is dropped, so a SimPoint at interval `i` starts at the sum of the sizes of intervals `0..i-1`.
 
@@ -147,11 +152,11 @@ Verify formats and options in `riscv-isa-sim` / `riscv-fesvr` source before desi
 
 **User decisions (2026-10):**
 - **Spawning:** `copy_spawn` is an entry-point launch field; `fwm spawn [--mode auto|copy|link] ENTRY DEST`; `auto` links when `copy_spawn` is false. A linked sysroot has real directories, and each file is an absolute symlink to the repository's read-only file.
-- **Metadata:** an entry point has free-form `metadata`, replaced with `repo set-metadata`; `--exist-ok` ignores differences in it.
-- **Checkpoint import:** `repo add checkpoint <trace> <desc> <checkpoint-dir> [--simpoint-info] [--sim-version]`. The SimPoint info is `{"interval", "maxK", "checkpoints": {name: {"index", "weight"}}}`; weights are never decoded from names.
-- **Run generators:** `mkgen` is for users; `repo bootstrap` is for the creator and only reads the repository.
+- **Metadata:** an entry point has free-form `metadata`, replaced with `repo compose set-metadata`; `--exist-ok` ignores differences in it.
+- **Checkpoint import:** `repo compose add checkpoint <trace> <desc> <checkpoint-dir> [--simpoint-info] [--sim-version]`. The SimPoint info is `{"interval", "maxK", "checkpoints": {name: {"index", "weight"}}}`; weights are never decoded from names.
+- **Run generators:** `fwm mkgen` is for users; `fwm repo bootstrap mkgen` is for the creator and only reads the repository.
 - **Old spikes:** old dumps and recordings without provenance are refused rather than supported. The repositories get rebuilt instead.
-- **`--sim-version`:** `repo add trace` has none, because the provenance holds the recording spike's build. Checkpoints keep it, since their files carry no provenance.
+- **`--sim-version`:** `repo compose add trace` has none, because the provenance holds the recording spike's build. Checkpoints keep it, since their files carry no provenance.
 - **Copying between repositories** (2026-10-20): one mechanism, `fwm/repo/transfer.py`, serves merging and subsets.
   - `repo pull SOURCE` writes `--repo-path`; `repo push DEST` reads it; `repo subrepo NEW` is `init` + `push`, and removes `NEW` on failure.
   - It picks entry points (or `--all`), each bringing its sysroot, traces and checkpoints (`--no-traces`, `--no-checkpoints`).
@@ -168,7 +173,7 @@ Verify formats and options in `riscv-isa-sim` / `riscv-fesvr` source before desi
 **Kept deliberately:**
 - the Makefiles keep a minimal behaviour (no extra files, no BBV cleanup);
 - there is no `spawn --catalog`;
-- `check recording --json` has no `finish_reason` (a passing check always means `target_exit`).
+- `check-fesvr-trace --json` has no `finish_reason` (a passing check always means `target_exit`).
 
 ## 6. Working with the user
 

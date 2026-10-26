@@ -6,41 +6,41 @@ fwm-bootstrap is the workload preparation pipeline (Snakemake) that turns a work
 
 | Where | What runs there |
 | --- | --- |
-| One host, e.g. the Snakemake controller (`localrules`) | Commands that change the repository: `fwm repo init`, `repo add`, `repo set-metadata`, `repo remove`, `repo gc`, `repo record-validation`, `repo pull`; and `repo push` / `repo subrepo`, for the repository they write. |
+| One host, e.g. the Snakemake controller (`localrules`) | Commands that change the repository: `fwm repo init`, `repo gc`, `repo pull`, and every `repo compose` command (`add`, `remove`, `set-metadata`, `set-checkpoint-validation`); and `repo push` / `repo subrepo`, for the repository they write. |
 | Any compute node | The generated Makefiles (`make -C <run dir> run`). Only the record and `from-sysroot` runs open the database, read-only, when `fwm spawn` checks the sysroot out. |
-| Anywhere, even without write permission | `fwm list`, `show`, `verify`, `mkgen`, `repo bootstrap`, `spawn`, shell completion; `fwm check`, which needs no repository at all. A repository is only read when it is copied from (`repo pull`'s source, `repo push`'s and `repo subrepo`'s `--repo-path`). |
+| Anywhere, even without write permission | `fwm list`, `show`, `mkgen`, `spawn`, `repo verify`, shell completion, and every `repo bootstrap` command: `mkgen record-fesvr-trace`, `mkgen create-checkpoints`, and `check-fesvr-trace`, which needs no repository at all. A repository is only read when it is copied from (`repo pull`'s source, `repo push`'s and `repo subrepo`'s `--repo-path`). |
 
 The database uses SQLite's rollback journal, not WAL, so it can sit on a shared filesystem such as NFS and be read from several hosts. Commands that change it start their transaction with the write lock held and wait up to 30 seconds for each other. Keep them on one host anyway: SQLite's locking over a network filesystem is only as reliable as that filesystem's.
 
 ## Pipeline outline
 
 ```
- 1. fwm repo add sysroot <dir> <sysroot> --exist-ok                                   controller
- 2. fwm repo add entry <sysroot> <workload> <entry> <entry.json> --exist-ok           controller
-    fwm repo set-metadata <entry> <metadata.json>         (only if the metadata changed)
- 3. spike --version > V                                                                compute
-    fwm repo bootstrap record <entry> -o R1
+ 1. fwm repo compose add sysroot <dir> <sysroot> --exist-ok                                 controller
+ 2. fwm repo compose add entry <sysroot> <workload> <entry> <entry.json> --exist-ok         controller
+    fwm repo compose set-metadata <entry> <metadata.json>     (only if the metadata changed)
+ 3. spike --version > V                                                                    compute
+    fwm repo bootstrap mkgen record-fesvr-trace <entry> -o R1
     make -C R1 run SIM_FLAGS_EXTRA=-s<interval> || true
-    fwm check recording R1/trace --final-state R1/final-state.json      -> exit 4: cut short
+    fwm repo bootstrap check-fesvr-trace R1/trace --final-state R1/final-state.json  -> exit 4: cut short
     -> validate R1's console and sysroot with the suite's validator
- 4. fwm repo add trace <entry> R1/trace --final-state R1/final-state.json \
-        --exist-ok                                                       -> trace UUID   controller
- 5. SimPoint analysis of R1/bbv_proc_0.bb.gz -> description file D, SimPoint info S    pipeline
- 6. fwm repo bootstrap create-checkpoints <uuid> D -o R3                             compute
+ 4. fwm repo compose add trace <entry> R1/trace --final-state R1/final-state.json \
+        --exist-ok                                                  -> trace UUID          controller
+ 5. SimPoint analysis of R1/bbv_proc_0.bb.gz -> description file D, SimPoint info S        pipeline
+ 6. fwm repo bootstrap mkgen create-checkpoints <uuid> D -o R3                             compute
     make -C R3 run || true
- 7. fwm repo add checkpoint <uuid> R3/ckpt.desc R3/checkpoints \
-        --simpoint-info S --sim-version V --exist-ok                     -> <uuid>:<name> per line   controller
- 8. per checkpoint:                                                                    compute
+ 7. fwm repo compose add checkpoint <uuid> R3/ckpt.desc R3/checkpoints \
+        --simpoint-info S --sim-version V --exist-ok                -> <uuid>:<name> per line  controller
+ 8. per checkpoint:                                                                        compute
     fwm mkgen from-checkpoint <uuid>:<name> -o R4
     make -C R4 run || true
-    fwm repo record-validation <uuid>:<name> R4                          -> exit 0 passed, 4 failed   controller
+    fwm repo compose set-checkpoint-validation <uuid>:<name> R4    -> exit 0 passed, 4 failed  controller
 ```
 
 - **Step 2: `entry.json`** holds the entry point's launch fields: `command`, `working_directory`, `envs` (`null` or `{}`), `stdin_file` (or `null`), `boot_elf`, `mem_mb`, `nprocs` (must be 1), and optionally `copy_spawn` (default `true`). In paths, `/` is the sysroot's root and `.` the working directory. `boot_elf` and `stdin_file` must be regular files of the sysroot, not symlinks.
 - **Step 2's `copy_spawn`** decides how the record run gets the sysroot (`fwm spawn --mode auto`): `true` copies it; `false` links each file to the repository's read-only file, which takes no time or space, but the program can't open those files for writing, and `stat` reports them read-only. It is a launch field: `--exist-ok` compares it.
-- **Step 2's metadata.** `entry.json` may also hold `metadata`, any JSON object: put the suite's `index.yaml` `metadata` there (and its `auxiliary` data, if runs need it). fwm keeps it, shows it, and copies it into every `run.json`, but doesn't interpret it. `--exist-ok` doesn't compare it, so a rerun keeps the stored metadata and warns if it differs; `fwm repo set-metadata` replaces it (or removes it, with a file holding `null`) without touching the traces.
+- **Step 2's metadata.** `entry.json` may also hold `metadata`, any JSON object: put the suite's `index.yaml` `metadata` there (and its `auxiliary` data, if runs need it). fwm keeps it, shows it, and copies it into every `run.json`, but doesn't interpret it. `--exist-ok` doesn't compare it, so a rerun keeps the stored metadata and warns if it differs; `fwm repo compose set-metadata` replaces it (or removes it, with a file holding `null`) without touching the traces.
 - **Step 3** is the only step that needs the sysroot, and it must run on Linux. Steps 6 and 8 need only the trace and its checkpoints, so they can also run on ARM64 Linux or macOS.
-- **Step 3's check.** `fwm check recording` runs the checks of `repo add trace` on the compute node, without a repository. A run cut short by the job's time limit fails there (its final state says `interrupted`, and spike exits 0), so the job can be retried with more time, instead of failing later in the import on the controller.
+- **Step 3's check.** `fwm repo bootstrap check-fesvr-trace` runs the checks of `repo compose add trace` on the compute node, without a repository. A run cut short by the job's time limit fails there (its final state says `interrupted`, and spike exits 0), so the job can be retried with more time, instead of failing later in the import on the controller.
 - **Step 3's SimPoint profile.** `-s<interval>` makes spike write `bbv_proc_<hart>.bb.gz` in the run directory. Taking it in the record run saves a full replay; a replay with `-s` gives the same profile. It needs a spike built without `NO_SIMPOINT`.
 - **Step 5's description file.** A checkpoint's instruction count is the number of instructions retired before it. spike's BBV intervals are not exactly `<interval>` long (the first was 1,000,005 for a 1,000,000 interval), and spike drops the last partial interval. So the count of the interval with index `i` must be the sum of the sizes of intervals `0 … i-1`, not `i × interval`.
 - **Step 5's names.** A checkpoint's name is just a name; fwm reads nothing from it. riscv-simenv's `<entry>.<simpoint index>.<weight>` (e.g. `bfs-road-n64.3.0.25`) stays readable. Leave out riscv-simenv's `.gz`: an fwm checkpoint isn't a gzip file (spike compresses the memory image inside it).
@@ -54,22 +54,22 @@ The database uses SQLite's rollback journal, not WAL, so it can sit on a shared 
 
 ## Running a Makefile
 
-`fwm repo bootstrap ... -o <dir>` and `fwm mkgen ... -o <dir>` write `<dir>/Makefile` and `<dir>/run.json` (below), and print the Makefile's path on stdout. The directory must be new, empty, or a run directory fwm generated before for the same kind of run (e.g. `from-checkpoint`, of any checkpoint); another kind is refused (status 4), since its Makefile wouldn't remove the former outputs. Each Makefile has a single target, `run`, which removes that run's previous outputs, prepares what spike needs, and runs spike.
+`fwm repo bootstrap mkgen ... -o <dir>` and `fwm mkgen ... -o <dir>` write `<dir>/Makefile` and `<dir>/run.json` (below), and print the Makefile's path on stdout. The directory must be new, empty, or a run directory fwm generated before for the same kind of run (e.g. `from-checkpoint`, of any checkpoint); another kind is refused (status 4), since its Makefile wouldn't remove the former outputs. Each Makefile has a single target, `run`, which removes that run's previous outputs, prepares what spike needs, and runs spike.
 
 | Generated by | Outputs |
 | --- | --- |
-| `repo bootstrap record` | `trace/` (the recording), `final-state.json`, `console.stdout`, `console.stderr`, and the post-run `sysroot/` |
-| `repo bootstrap create-checkpoints` | `ckpt.desc` (the copied description, written when generated), `final-state.json`, and `checkpoints/` |
+| `repo bootstrap mkgen record-fesvr-trace` | `trace/` (the recording), `final-state.json`, `console.stdout`, `console.stderr`, and the post-run `sysroot/` |
+| `repo bootstrap mkgen create-checkpoints` | `ckpt.desc` (the copied description, written when generated), `final-state.json`, and `checkpoints/` |
 | `mkgen from-sysroot` | `final-state.json`, `console.stdout`, `console.stderr`, and the post-run `sysroot/` |
 | `mkgen from-fesvr-trace`, `from-checkpoint` | `final-state.json` |
 | `mkgen from-simpoint` | `final-state.json`, normally saying `instret_limit`: `-e$(INTERVAL)` stopped the run |
 
 **What the calling script does:**
 - **Run `make -C <dir> run || true`, and let fwm judge the run,** not make's exit status. A program that legitimately exits non-zero makes `make` fail, while spike stopped by SIGTERM (e.g. a job's time limit) exits 0. fwm judges each kind of run from its outputs:
-  - a record run, by `fwm repo add trace --final-state`, or before that, on the node that ran it, by `fwm check recording --final-state`;
-  - a create-checkpoints run, by `fwm repo add checkpoint`;
-  - a run from a checkpoint, by `fwm repo record-validation`.
-- **Provenance.** A recording says how it was made, in its `recording_provenance.json` (riscv-isa-sim fd01c25 / riscv-fesvr 8472993 or later): when it started and finished, the recording machine (`uname`), the simulator's command line and working directory, and the spike's and FESVR's builds. fwm requires it, and keeps it with the trace. Checkpoint files say nothing of how they were made: **save `spike --version`** and pass the file to `repo add checkpoint` with `--sim-version`; fwm checks it is build information. A recording replays reliably only with a spike of the same semantics, and these record which one made it.
+  - a record run, by `fwm repo compose add trace --final-state`, or before that, on the node that ran it, by `fwm repo bootstrap check-fesvr-trace --final-state`;
+  - a create-checkpoints run, by `fwm repo compose add checkpoint`;
+  - a run from a checkpoint, by `fwm repo compose set-checkpoint-validation`.
+- **Provenance.** A recording says how it was made, in its `recording_provenance.json` (riscv-isa-sim fd01c25 / riscv-fesvr 8472993 or later): when it started and finished, the recording machine (`uname`), the simulator's command line and working directory, and the spike's and FESVR's builds. fwm requires it, and keeps it with the trace. Checkpoint files say nothing of how they were made: **save `spike --version`** and pass the file to `repo compose add checkpoint` with `--sim-version`; fwm checks it is build information. A recording replays reliably only with a spike of the same semantics, and these record which one made it.
 - **Clean what the Makefile doesn't own,** such as BBV files, or use a fresh run directory.
 
 **`final-state.json`** (spike's `+final-state-dump`) says why the run finished, and each HART's instruction count there. spike writes it as `unfinished` when the run starts and replaces it at the end, so it is never empty. fwm requires this format: a dump without `finish_reason`, from a spike older than riscv-isa-sim eb87256 / riscv-fesvr 6f2d3b8, is refused, since such a spike's count at the program's exit depended on where the run started. Use riscv-isa-sim 872d191 / riscv-fesvr ecc3df3 or later: an earlier spike stopped by SIGTERM twice (under make, a scheduler's time limit or `kill -- -<pgid>`, which send it two) could leave an empty or broken dump; these ignore the repeat and write the dump atomically.
@@ -86,12 +86,12 @@ The database uses SQLite's rollback journal, not WAL, so it can sit on a shared 
 
 fwm takes a trace's counts only from a `target_exit` dump whose `exit_code` matches the recording's exit status, and validates a checkpoint only by a `target_exit` run (below).
 
-Each Makefile also starts with a line `# fwm-run: {...}` saying what the run is for, e.g. `{"kind": "from-checkpoint", "trace": "<uuid>", "checkpoint": "<name>"}`. `record-validation` uses it to check that a run directory belongs to the checkpoint.
+Each Makefile also starts with a line `# fwm-run: {...}` saying what the run is for, e.g. `{"kind": "from-checkpoint", "trace": "<uuid>", "checkpoint": "<name>"}`. `repo compose set-checkpoint-validation` uses it to check that a run directory belongs to the checkpoint.
 
 ### run.json
 
-**`run.json` describes what the run uses,** so its results can be decoded without the repository. The Makefile's `run` target leaves it alone. It is a snapshot taken when `mkgen` ran: a later validation or `set-metadata` shows in `fwm show`, not here. It holds:
-- **`kind`:** the command that generated it: `from-sysroot`, `from-fesvr-trace`, `from-checkpoint`, `from-simpoint`, `record` or `create-checkpoints`.
+**`run.json` describes what the run uses,** so its results can be decoded without the repository. The Makefile's `run` target leaves it alone. It is a snapshot taken when `mkgen` ran: a later validation or `repo compose set-metadata` shows in `fwm show`, not here. It holds:
+- **`kind`:** which command generated it: `from-sysroot`, `from-fesvr-trace`, `from-checkpoint`, `from-simpoint` (`fwm mkgen`), `record` (`repo bootstrap mkgen record-fesvr-trace`) or `create-checkpoints` (`repo bootstrap mkgen create-checkpoints`). These names don't follow renamed commands, so older run directories keep working.
 - **`generated`:** `time`, `command` (the generating command line), `fwm_version`, `repo` (the repository path) and `sim` (the Makefile's default `SIM`).
 - **`sysroot`, `workload`, `entry`:** always. The entry point's `metadata` is here.
 - **`trace`:** for every kind but `from-sysroot` and `record`.
@@ -117,16 +117,16 @@ The sections are the objects of `fwm show --json` (see JSON below), without thei
 | Command | stdout |
 | --- | --- |
 | `fwm repo init <path>` | the repository path |
-| `fwm repo add sysroot` / `add entry`, `repo set-metadata` | the name |
-| `fwm repo add trace` | the trace UUID |
-| `fwm check recording` | `complete: …` with the exit status and instret; with `--json`, `{complete, exit_status, mem_mb, num_harts, boot_elf_sha256, harts: [{hart_id, recording_sha256, num_commands, instret}]}` |
-| `fwm repo add checkpoint` | `<trace UUID>:<name>`, one line per checkpoint, in the order of the description |
-| `fwm repo record-validation` | `passed: <why>` or `failed: <why>` |
+| `fwm repo compose add sysroot` / `add entry`, `repo compose set-metadata` | the name |
+| `fwm repo compose add trace` | the trace UUID |
+| `fwm repo bootstrap check-fesvr-trace` | `complete: …` with the exit status and instret; with `--json`, `{complete, exit_status, mem_mb, num_harts, boot_elf_sha256, harts: [{hart_id, recording_sha256, num_commands, instret}]}` |
+| `fwm repo compose add checkpoint` | `<trace UUID>:<name>`, one line per checkpoint, in the order of the description |
+| `fwm repo compose set-checkpoint-validation` | `passed: <why>` or `failed: <why>` |
 | `fwm repo verify` | one line per problem: `<kind> <id>: <path>: <reason>`, or `leftover <path>: <reason>` |
 | `fwm repo gc` | one line per leftover removed (with `--dry-run`, found): `<path>: <reason>` |
 | `fwm repo pull`, `repo push` | one line per item, once its entry point is committed (an item several entry points share, like their sysroot, only once): `added\|present sysroot <name>`, `… entry <name>`, `… trace <UUID>` (a trace kept under another UUID: `present trace <its UUID> (<the copied UUID>)`), `… checkpoint <trace UUID>:<name>` |
 | `fwm repo subrepo` | the new repository's path |
-| `fwm mkgen ...`, `fwm repo bootstrap ...` | the Makefile path |
+| `fwm mkgen ...`, `fwm repo bootstrap mkgen ...` | the Makefile path |
 | `fwm list ... --json`, `fwm show ... --json` | JSON, below |
 
 Exit status:
@@ -168,7 +168,7 @@ Exit status:
 
 ## Reruns
 
-Every `repo add` takes `--exist-ok`, so a rule can simply be rerun:
+Every `repo compose add` takes `--exist-ok`, so a rule can simply be rerun:
 
 | Adding | With `--exist-ok`, succeeds and prints the existing item when |
 | --- | --- |
@@ -179,7 +179,7 @@ Every `repo add` takes `--exist-ok`, so a rule can simply be rerun:
 
 A different item under the same name fails with status 5. Without `--exist-ok`, adding anything that exists fails with status 5. A recording that already is a trace of the entry point counts as existing, so importing it twice never creates a second trace.
 
-`repo record-validation` can be rerun; the last result is kept.
+`repo compose set-checkpoint-validation` can be rerun; the last result is kept.
 
 ## Interruptions
 
@@ -191,7 +191,7 @@ A different item under the same name fails with status 5. Without `--exist-ok`, 
 
 A replay stops at the first difference from its recording: a different command, different data written to the host, or a recording that ran out. A checkpoint is therefore validated by loading it and running to the end of the program, without `-e`.
 
-`fwm repo record-validation <checkpoint> <run dir>`:
+`fwm repo compose set-checkpoint-validation <checkpoint> <run dir>`:
 - **Passes when** `final-state.json` says `target_exit`, with the trace's exit status and each HART's final instruction count of the trace. The run has then replayed the rest of the program exactly, up to its recorded exit.
 - **Fails** otherwise, with the reason: no `final-state.json`, a run that ended otherwise (its `finish_reason`, e.g. `error` with the simulator's message, `interrupted`, `instret_limit`), or different counts or exit status.
 - **Is refused** (status 4, nothing recorded) when the run directory isn't a `mkgen from-checkpoint` run of that checkpoint, or the trace has no final instruction counts (imported without `--final-state`, or truncated).
@@ -199,9 +199,9 @@ A replay stops at the first difference from its recording: a different command, 
 ## Truncated recordings
 
 A recording is truncated when its run was stopped before the program exited:
-- by `-e` (`instret_limit`), a signal (`interrupted`), or a simulator `error`: `fwm repo add trace --final-state` refuses any dump but `target_exit`, saying why the run finished;
+- by `-e` (`instret_limit`), a signal (`interrupted`), or a simulator `error`: `fwm repo compose add trace --final-state` refuses any dump but `target_exit`, saying why the run finished;
 - import a truncated recording on purpose without `--final-state`;
-- the trace then has no instruction counts, so `repo bootstrap create-checkpoints` can't check the counts against the end of the recording, and its checkpoints can't be validated.
+- the trace then has no instruction counts, so `repo bootstrap mkgen create-checkpoints` can't check the counts against the end of the recording, and its checkpoints can't be validated.
 
 ## 721sim
 
