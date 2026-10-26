@@ -73,7 +73,9 @@ Stored content is made read-only, so delete a repository with `chmod -R u+w <dir
   - `list`, `show`, `mkgen` and shell completion must not import pydantic. `list` and `show` must not import colorama or `importlib.metadata` either. `tests/cli/test_imports.py` checks this;
   - keep heavy imports out of the modules they load: `fwm/cli/` (completing a subcommand imports its module, so `repo.py` imports the readers, catalogs and copying inside its commands), `lookup.py`, `query.py`, `repo.py`, `fwm/database/` (except `catalog_store.py`, which loads pydantic: read a catalog only in the commands that need one), `fwm/utils/fs.py`, `log.py`, `version.py`. Where one of these needs a heavy module, import it inside the function, with a comment;
   - a new subcommand goes in `_SUBCOMMANDS` in `fwm/cli/fwm.py`, with its one-line short help, not `cli.add_command()`. `fwm --help` and completing a subcommand name read the help from there, so they import no subcommand.
-- **Schema changes:** bump `SCHEMA_VERSION` in `fwm/database/db.py` and don't write migrations. The user rebuilds repositories, which so far are all test repositories. Give them the list of repository paths to delete.
+- **Schema changes need the user's approval first** (since 2026-10-26). Two real repositories were built with fwm `162c105` (schema version 8), and a schema change would make them unusable: fwm refuses a database of another `SCHEMA_VERSION`. So:
+  - don't change `fwm/database/schema.py` or `SCHEMA_VERSION` (`fwm/database/db.py`) without asking, and look for a way that keeps the schema first;
+  - if a change is truly needed, it comes with a migration of existing repositories (from version 8 on), designed with the user.
 - **Generated Makefiles:**
   - every value is shell-quoted then make-escaped (`shell_value`), and newlines are refused;
   - each starts with `# fwm-run: {json}` (`read_run_info`), and writes `run.json`;
