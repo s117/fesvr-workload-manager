@@ -109,8 +109,19 @@ class FwmGroup(click.Group):
             ctx.exit(e.exit_code)
 
 
+def _print_version(ctx: click.Context, param: click.Parameter, value: bool) -> None:
+    if not value or ctx.resilient_parsing:
+        return
+    # imported here: finding the version loads many modules, which the other commands don't need
+    from fwm.version import fwm_build
+    click.echo(f"fwm {fwm_build()}")
+    ctx.exit()
+
+
 @click.group(cls=FwmGroup)
 @click.pass_context
+@click.option("--version", is_flag=True, expose_value=False, is_eager=True, callback=_print_version,
+              help="Print which fwm this is, and exit.")
 @click.option("--repo-path", envvar='FWM_REPO_PATH', type=click.Path(file_okay=False),
               help='The workload repository. Defaults to the environment variable "FWM_REPO_PATH".')
 def cli(ctx, repo_path):

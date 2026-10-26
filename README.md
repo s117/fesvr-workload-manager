@@ -44,6 +44,8 @@ uv run fwm --help
 # or install the command: uv tool install .
 ```
 
+`fwm --version` says which fwm you have: its version, and the git commit it was installed from.
+
 ## Shell completion
 
 fwm completes its commands and options on Tab, like riscv-simenv. It also completes the names in the repository: sysroots, workloads, entry points, traces and checkpoints. The names come from the repository given by `--repo-path` or `FWM_REPO_PATH`; without one, nothing is offered. Enable it in your shell's startup file:

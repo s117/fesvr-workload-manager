@@ -74,6 +74,11 @@ def test_subcommand_table(name):
     assert short_help.endswith(".") and len(short_help) <= 62  # one line in `fwm --help` at 80 columns
 
 
+def test_help_finds_no_version(tmp_path):
+    """Finding fwm's version loads importlib.metadata: only --version does it."""
+    assert "importlib.metadata" not in loaded_modules(str(tmp_path / "repo"), ["--help"])
+
+
 def test_mkgen_loads_no_pydantic(populated, tmp_path):
     # mkgen writes fwm's version (importlib.metadata) and logs (colorama), but reads no spike file
     modules = loaded_modules(str(tmp_path / "repo"), ["mkgen", "from-fesvr-trace", "e", "-o", str(tmp_path / "run")])
