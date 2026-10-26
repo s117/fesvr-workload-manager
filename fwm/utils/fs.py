@@ -66,6 +66,9 @@ def copy_tree(src: str, dst: str) -> None:
     """
     Copy a directory tree, or a file, preserving symlinks as links and the permission bits. dst must not exist.
 
+    The owner and group are not preserved: the copy takes the group of where it goes, e.g. a setgid directory's, so the
+    group that shares a repository can read what is copied into it.
+
     On Linux, GNU cp copies with reflinks where the file system supports them, which makes copying a large tree cheap.
     """
     import shutil
@@ -74,7 +77,7 @@ def copy_tree(src: str, dst: str) -> None:
     if os.path.lexists(dst):
         raise FileExistsError(dst)
     if sys.platform.startswith("linux") and shutil.which("cp"):
-        result = subprocess.run(["cp", "-a", "--reflink=auto", "--", src, dst], capture_output=True, text=True,
+        result = subprocess.run(["cp", "-a", "--no-preserve=ownership", "--reflink=auto", "--", src, dst], capture_output=True, text=True,
                                 check=False)
         if result.returncode != 0:
             # cp killed (e.g. by a file size limit or the OOM killer) says nothing

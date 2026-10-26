@@ -1,3 +1,4 @@
+import os
 import pathlib
 import subprocess
 import sys
@@ -172,3 +173,32 @@ def test_copy_tree_cp_killed(tmp_path):
     if result.returncode == 0:
         pytest.skip("the file size limit didn't stop cp here (e.g. it cloned the file)")
     assert "cp was killed by signal 25" in result.stderr  # SIGXFSZ
+
+
+def _other_group():
+    """A group of the user other than their primary one, or None."""
+    return next((g for g in os.getgroups() if g != os.getgid()), None)
+
+
+@pytest.mark.skipif(_other_group() is None, reason="the user has a single group")
+@pytest.mark.parametrize("with_cp", [True, False])
+def test_copy_tree_takes_the_group_of_where_it_goes(tmp_path, monkeypatch, with_cp):
+    """In a setgid directory (a group-shared repository), a copy takes the directory's group, not the original's."""
+    import shutil
+    from fwm.utils.fs import copy_tree
+
+    if not with_cp:
+        monkeypatch.setattr(shutil, "which", lambda name: None)
+    group = _other_group()
+    shared = tmp_path / "shared"
+    shared.mkdir()
+    os.chown(shared, -1, group)
+    shared.chmod(0o2770)
+    src = tmp_path / "src"
+    (src / "sub").mkdir(parents=True)
+    (src / "sub" / "file").write_text("data")
+    (src / "sub" / "file").chmod(0o640)
+    copy_tree(str(src), str(shared / "copy"))
+    for path in (shared / "copy", shared / "copy" / "sub", shared / "copy" / "sub" / "file"):
+        assert path.stat().st_gid == group, path
+    assert (shared / "copy" / "sub" / "file").stat().st_mode & 0o777 == 0o640

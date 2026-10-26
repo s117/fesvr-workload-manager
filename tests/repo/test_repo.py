@@ -604,3 +604,19 @@ def test_same_recording_another_provenance(repo, entry, tmp_path):
     write_recording(str(again), harts=[COMMANDS], prov=provenance(uname={**provenance()["uname"], "nodename": "other"}))
     assert add_trace(repo, "e", str(again), exist_ok=True).uuid == trace.uuid
     assert DecoupledTrace.get_by_id(trace.id).recorded_on == "recorder"
+
+
+@pytest.mark.skipif(not [g for g in os.getgroups() if g != os.getgid()], reason="the user has a single group")
+def test_import_in_group_shared_repo(tmp_path, sysroot_src):
+    """A repository in a setgid directory gives what is imported the directory's group: the group can read it."""
+    group = next(g for g in os.getgroups() if g != os.getgid())
+    shared = tmp_path / "shared"
+    shared.mkdir()
+    os.chown(shared, -1, group)
+    shared.chmod(0o2770)
+    repo = Repo.init(str(shared / "repo"))
+    add_sysroot(repo, str(sysroot_src), "sr")
+    for dirpath, dirnames, filenames in os.walk(repo.sysroot_dir("sr")):
+        for name in dirnames + filenames:
+            assert os.lstat(os.path.join(dirpath, name)).st_gid == group, name
+    repo.close()
