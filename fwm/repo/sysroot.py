@@ -9,7 +9,7 @@ from fwm.data_loader.file_catalog import FileCatalog
 from fwm.utils.file_catalog import (
     verify_catalog, find_absolute_links, catalog_differences, FailedDetail
 )
-from fwm.utils.fs import set_tree_writable
+from fwm.utils.fs import make_movable
 from fwm.utils.log import Logger
 
 
@@ -60,7 +60,7 @@ def add_sysroot(repo: Repo, src_dir: str, name: str, description: Optional[str] 
                 f"strings, so in a recording run the host resolves them from the host's root, not the sysroot's:\n" +
                 "\n".join(f"  {link.path} -> {link.dest}" for link in abs_links))
 
-        set_tree_writable(staged)  # to move it to another parent
+        make_movable(staged)
         with repo.importing() as place:
             # another import of this name may have committed meanwhile
             existing = Sysroot.get_or_none(Sysroot.name == name)

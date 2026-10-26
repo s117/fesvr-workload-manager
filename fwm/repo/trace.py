@@ -12,7 +12,7 @@ from fwm.repo.errors import AlreadyExistsError, FwmValidationError, NotFoundErro
 from fwm.repo.lookup import entry_target_path, get_entry, trace_harts
 from fwm.repo.repo import Repo, catalog_of, copy_source, DIGEST_ALGO, REPO_PERM_MASK
 from fwm.utils.file_catalog import verify_catalog, FailedDetail
-from fwm.utils.fs import set_tree_writable
+from fwm.utils.fs import make_movable
 from fwm.utils.log import Logger
 from fwm.utils.target_path import target_path_to_sysroot_relative
 
@@ -188,7 +188,7 @@ def _import_trace(repo: Repo, entry: NativeEntry, recording_dir: str, staged: st
 
     trace_uuid = uuid.uuid4()
     catalog = catalog_of(staged, recording_dir)
-    set_tree_writable(staged)
+    make_movable(staged)
     with repo.importing() as place:
         if NativeEntry.get_or_none(NativeEntry.name == entry.name) is None:
             raise NotFoundError(f"entry point '{entry.name}' was removed during the import")

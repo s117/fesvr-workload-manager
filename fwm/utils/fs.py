@@ -90,6 +90,16 @@ def copy_tree(src: str, dst: str) -> None:
         shutil.copy2(src, dst, follow_symlinks=False)
 
 
+def make_movable(path: str) -> None:
+    """
+    Let a directory be moved to another parent, as an import does with its staged copy: renaming a directory updates
+    its "..", which takes write permission on it. Only that directory gets it: the others keep their modes, which the
+    import then keeps, but for the write bits it removes.
+    """
+    if os.path.isdir(path) and not os.path.islink(path):
+        os.chmod(path, stat.S_IMODE(os.lstat(path).st_mode) | stat.S_IWUSR)
+
+
 def set_tree_writable(path: str) -> None:
     """
     Give the owner full access to every directory of a tree, so that its entries can be created, renamed or removed,

@@ -620,3 +620,30 @@ def test_import_in_group_shared_repo(tmp_path, sysroot_src):
         for name in dirnames + filenames:
             assert os.lstat(os.path.join(dirpath, name)).st_gid == group, name
     repo.close()
+
+
+def test_import_keeps_directory_modes(tmp_path, repo, sysroot_src):
+    """Directories are stored with their own modes, but for the write bits, even without the owner's read or execute
+    bits: the repository then passes its own verification, and copies to another one."""
+    from fwm.repo.transfer import push
+
+    (sysroot_src / "empty").mkdir()
+    (sysroot_src / "empty").chmod(0o400)
+    (sysroot_src / "ro").mkdir()
+    (sysroot_src / "ro" / "f").write_text("x")
+    (sysroot_src / "ro").chmod(0o500)
+    sysroot = add_sysroot(repo, str(sysroot_src), "sr")
+    assert mode(os.path.join(repo.sysroot_dir("sr"), "empty")) == 0o400
+    assert mode(os.path.join(repo.sysroot_dir("sr"), "ro")) == 0o500
+    assert mode(os.path.join(repo.sysroot_dir("sr"), "app", "data")) == 0o500  # 0o700 without the write bit
+    assert verify_sysroot(repo, sysroot) == []
+
+    other = Repo.init(str(tmp_path / "other"), bind=False)
+    with repo.bound():
+        push(repo, other.path, everything=True)
+    with other.bound():
+        assert verify_sysroot(other, Sysroot.get()) == []
+        assert mode(os.path.join(other.sysroot_dir("sr"), "empty")) == 0o400
+    other.close()
+    for d in ("empty", "ro"):
+        (sysroot_src / d).chmod(0o700)

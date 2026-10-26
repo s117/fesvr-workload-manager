@@ -37,7 +37,7 @@ from fwm.repo.errors import AlreadyExistsError, FwmValidationError, NotFoundErro
 from fwm.repo.lookup import entry_metadata, trace_harts
 from fwm.repo.repo import Repo, check_name, copy_source, REPO_DB_FILE, REPO_PERM_MASK
 from fwm.utils.file_catalog import catalog_differences, verify_catalog
-from fwm.utils.fs import set_tree_writable
+from fwm.utils.fs import make_movable
 from fwm.utils.log import Logger
 
 ADDED = "added"
@@ -387,7 +387,7 @@ def _stage(dest: Repo, stack: contextlib.ExitStack, source_path: str, catalog: F
     if problems:
         raise FwmValidationError(f"the copy of {what} from {source_path} doesn't match its catalog:\n" +
                                  "\n".join(f"  {path}: {reason}" for path, reason in problems))
-    set_tree_writable(staged)  # to move it to another parent
+    make_movable(staged)
     return staged
 
 
