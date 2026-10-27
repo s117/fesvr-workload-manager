@@ -16,28 +16,31 @@ def fwm_build() -> str:
     """
     Which fwm this is, for `fwm --version`: the package version, and where it was installed from when the installer
     recorded it (PEP 610): the git commit of an install from git, or the source tree of an editable install, with that
-    tree's commit.
+    tree's commit. It never fails: what can't be found is left out.
     """
     import json
     import subprocess
+    import urllib.parse
     from importlib import metadata
 
     version = fwm_version()
     try:
-        recorded = metadata.distribution(PACKAGE).read_text("direct_url.json")
-    except metadata.PackageNotFoundError:
-        recorded = None
-    if not recorded:
+        origin = json.loads(metadata.distribution(PACKAGE).read_text("direct_url.json") or "null")
+        url = origin["url"]
+    except (metadata.PackageNotFoundError, ValueError, TypeError, KeyError):
         return version
-    origin = json.loads(recorded)
     commit = (origin.get("vcs_info") or {}).get("commit_id")
     if commit:
-        return f"{version} (commit {commit[:12]}, from {origin.get('url', '?')})"
-    url = origin.get("url", "")
-    if (origin.get("dir_info") or {}).get("editable") and url.startswith("file://"):
-        tree = url[len("file://"):]
-        described = subprocess.run(["git", "-C", tree, "describe", "--always", "--dirty", "--abbrev=12"],
-                                   capture_output=True, text=True)
-        where = f"commit {described.stdout.strip()}, " if described.returncode == 0 else ""
+        return f"{version} (commit {commit[:12]}, from {url})"
+    parsed = urllib.parse.urlparse(url)
+    if (origin.get("dir_info") or {}).get("editable") and parsed.scheme == "file":
+        tree = urllib.parse.unquote(parsed.path)
+        try:
+            # safe.directory: the tree may be another user's checkout, which git refuses to read otherwise
+            described = subprocess.run(["git", "-c", "safe.directory=*", "-C", tree, "describe", "--always", "--dirty",
+                                        "--abbrev=12"], capture_output=True, text=True)
+            where = f"commit {described.stdout.strip()}, " if described.returncode == 0 else ""
+        except OSError:  # no git
+            where = ""
         return f"{version} ({where}editable install of {tree})"
     return f"{version} (from {url})"

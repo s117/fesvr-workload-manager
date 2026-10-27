@@ -44,7 +44,7 @@ uv run fwm --help
 # or install the command: uv tool install .
 ```
 
-`fwm --version` says which fwm you have: its version, and the git commit it was installed from.
+`fwm --version` says which fwm you have: its version, and the git commit it was installed from when installed from git (as fwm-bootstrap installs it), or the source tree and its commit for an editable install (`uv sync` here).
 
 ## Shell completion
 
