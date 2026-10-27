@@ -373,7 +373,7 @@ def test_run_json(repo, trace, tmp_path, monkeypatch):
     entry = get_entry("e")
     sysroot = {k: v for k, v in query.sysroot_view(repo, get_sysroot("sr")).items() if k != "entries"}
     workload = {k: v for k, v in query.workload_view(entry.workload).items() if k != "entries"}
-    entry_view = {k: v for k, v in query.entry_view(entry).items() if k not in ("traces", "num_checkpoints")}
+    entry_view = {k: v for k, v in query.entry_view(entry).items() if k != "traces"}
     trace_view = {k: v for k, v in query.trace_view(repo, trace).items() if k != "checkpoints"}
     ckpt_view = query.checkpoint_view(repo, resolve_checkpoint("c"))
     assert entry_view["metadata"] == {"suite": "GAPBS", "language": ["C++"]}

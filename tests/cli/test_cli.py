@@ -45,8 +45,9 @@ def test_list_and_show(run, populated):
 
     code, out, _ = run("show", "entry", "e", "--json")
     view = json.loads(out)
-    assert (view["description"], view["workload"], view["sysroot"], view["traces"], view["num_checkpoints"]) == (
-        "an entry", "wl", "sr", [trace_uuid], 1)
+    assert (view["description"], view["workload"], view["sysroot"], view["traces"]) == (
+        "an entry", "wl", "sr", [{"uuid": trace_uuid, "checkpoints": ["e.2.0.40"]}])
+    assert "num_checkpoints" not in view
     trace = json.loads(run("show", "trace", trace_uuid, "--json")[1])
     assert (trace["complete"], trace["exit_status"], trace["harts"][0]["instret"], trace["checkpoints"]) == (
         True, 0, 5000, ["e.2.0.40"])
@@ -84,7 +85,7 @@ def test_metadata(run, populated, sysroot_src, write_entry_point, tmp_path):
     new.write_text('{"suite": "GAPBS"}')
     assert run("repo", "compose", "set-metadata", "e", str(new))[:2] == (0, "e\n")
     view = json.loads(run("show", "entry", "e", "--json")[1])
-    assert (view["metadata"], view["traces"]) == ({"suite": "GAPBS"}, [populated])
+    assert (view["metadata"], [t["uuid"] for t in view["traces"]]) == ({"suite": "GAPBS"}, [populated])
     new.write_text("null")
     assert run("repo", "compose", "set-metadata", "e", str(new))[0] == 0
     assert json.loads(run("show", "entry", "e", "--json")[1])["metadata"] is None
@@ -501,3 +502,19 @@ def test_transfer_entries_or_all(run, populated, tmp_path):
     code, _, err = run("repo", "push", other, "e", "--all")
     assert code == 2 and "give either the entry points to copy or --all, not both" in err
 
+
+
+def test_show_entry_traces(run, populated, tmp_path):
+    """An entry point's view gives each of its traces with its checkpoints."""
+    first = populated
+    rec = tmp_path / "rec-second"
+    write_recording(str(rec), harts=[[Command(payload=0x3000), exit_command(0)]])
+    code, out, _ = run("repo", "compose", "add", "trace", "e", str(rec))
+    assert code == 0
+    second = out.strip()
+
+    view = json.loads(run("show", "entry", "e", "--json")[1])
+    assert view["traces"] == [{"uuid": first, "checkpoints": ["e.2.0.40"]}, {"uuid": second, "checkpoints": []}]
+    out = run("show", "entry", "e")[1]
+    assert f"traces:\n  -\n    uuid: {first}\n    checkpoints: e.2.0.40\n  -\n    uuid: {second}\n    checkpoints: -\n" \
+        in out

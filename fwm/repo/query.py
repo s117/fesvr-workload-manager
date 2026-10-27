@@ -72,9 +72,10 @@ def entry_view(entry: NativeEntry) -> View:
         "nprocs": entry.nprocs,
         "copy_spawn": entry.copy_spawn,
         "metadata": entry_metadata(entry),
-        "traces": [str(t.uuid) for t in entry.traces.order_by(DecoupledTrace.creation_time)],
-        "num_checkpoints": DecoupledCheckpoint.select().join(DecoupledTrace).where(
-            DecoupledTrace.native_entry == entry).count(),
+        # each trace with its checkpoints' names (unique in their trace), ordered as trace_view orders them
+        "traces": [{"uuid": str(t.uuid),
+                    "checkpoints": [c.name for c in t.checkpoints.order_by(DecoupledCheckpoint.name)]}
+                   for t in entry.traces.order_by(DecoupledTrace.creation_time)],
     }
 
 

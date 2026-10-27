@@ -34,7 +34,7 @@ def describe_run(repo: Repo, entry: NativeEntry, trace: Optional[DecoupledTrace]
         "sysroot": _without(query.sysroot_view(repo, entry.sysroot), "entries"),
         "workload": _without(query.workload_view(entry.workload), "entries"),
         # not what the repository holds besides: it changes, and the run doesn't use it
-        "entry": _without(query.entry_view(entry), "traces", "num_checkpoints"),
+        "entry": _without(query.entry_view(entry), "traces"),
     }
     if trace is not None:
         sections["trace"] = _without(query.trace_view(repo, trace), "checkpoints")
