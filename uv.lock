@@ -275,9 +275,9 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "click", specifier = ">=8.1.7" },
+    { name = "click", specifier = ">=8.4.0" },
     { name = "colorama", specifier = ">=0.4.6" },
-    { name = "peewee", specifier = ">=3.17.6" },
+    { name = "peewee", specifier = ">=4.5.0" },
     { name = "pydantic", specifier = ">=2.9.0" },
 ]
 
