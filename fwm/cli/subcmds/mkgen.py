@@ -56,7 +56,8 @@ def from_sysroot(ctx, entry, out_dir):
     Run an entry point's program from its start, in a fresh copy of its sysroot. Linux only.
 
     The program does its real system calls. It prints its console, also saved in console.stdout and console.stderr,
-    and writes its files in the run's sysroot/.
+    and writes its files in the run's sysroot/. The host answers those calls, so the instruction count can differ
+    from the trace's (e.g. with where the console goes): count instructions with a replay.
 
     \b
     Examples:

@@ -151,8 +151,8 @@ fwm mkgen from-simpoint bfs-road-n64.3.0.25 -o d   # one SimPoint interval from 
 make -C d run SIM=/path/to/721sim                  # make reports "Error 1": spike exits 1 when -e stops it
 ```
 
-- **`from-sysroot`** does the program's real system calls, so it prints its console (also saved to `console.stdout` and `console.stderr`) and writes its files in `sysroot/`.
-- **`from-fesvr-trace`, `from-checkpoint` and `from-simpoint`** replay the trace: the program prints nothing and writes no file.
+- **`from-sysroot`** does the program's real system calls, so it prints its console (also saved to `console.stdout` and `console.stderr`) and writes its files in `sysroot/`. Their answers come from the host, so its instruction count can differ from the trace's. For example, the program's stdout going to `/dev/null` rather than a file changed it by about 200 out of 1.5 million.
+- **`from-fesvr-trace`, `from-checkpoint` and `from-simpoint`** replay the trace: the program prints nothing and writes no file, and every run repeats the recorded one exactly, instruction counts included.
 - **`from-simpoint`** stops after the checkpoint's SimPoint interval (`-e$(INTERVAL)`, overridable with `INTERVAL=<n>`); weigh its results by the checkpoint's `simpoint_weight`.
 
 ### An AI skill for fwm's users

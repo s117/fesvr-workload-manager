@@ -141,6 +141,8 @@ Verify formats and options in `riscv-isa-sim` / `riscv-fesvr` source before desi
 
 **Validation** (`repo compose set-checkpoint-validation`): a run from a checkpoint passes only on `target_exit` with the trace's per-hart `instret` and exit status. A replay stops at the first divergence, so reaching the end proves the output.
 
+**Real runs aren't reproducible to the instruction.** A record or `from-sysroot` run gets its system calls answered by the host, and the program's path can depend on the answers. Measured on 2026-10-27, a small static glibc program took 1503320 instructions with its stdout to a file and 1503515 with it to `/dev/null`, with the same output. So never check a `from-sysroot` run's `instret` against the trace's; only replays (`from-fesvr-trace`, `from-checkpoint`, `from-simpoint`) repeat the recording exactly. A trace's own count is that of its record run.
+
 **BBV / SimPoint:** `-s<interval>` writes `bbv_proc_<hart>.bb.gz`. Intervals aren't exactly `<interval>` long, and the last partial one is dropped, so a SimPoint at interval `i` starts at the sum of the sizes of intervals `0..i-1`.
 
 **Signals:**

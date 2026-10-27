@@ -209,7 +209,8 @@ The exit statuses mislead:
 
 **A run ended correctly when:**
 - **`from-simpoint`:** `instret_limit`, and `instret` = the checkpoint's `requested_count` + `simpoint_interval`;
-- **a run to the program's end:** `target_exit`, with `instret` and `exit_code` equal to the trace's `harts[].instret` and `exit_status`. Anything else means the run diverged from its recording.
+- **`from-fesvr-trace` and `from-checkpoint`** (replays, to the program's end): `target_exit`, with `instret` and `exit_code` equal to the trace's `harts[].instret` and `exit_status`. Anything else means the run diverged from its recording.
+- **`from-sysroot`:** `target_exit`, with the `exit_code` you expect (usually the trace's `exit_status`). Don't expect its `instret` to equal the trace's. A real run's system calls are answered by the host, and the program's path can depend on their answers. For example, with the program's stdout going to `/dev/null` rather than a file, a run took about 200 more instructions out of 1.5 million, with the same output.
 
 ```bash
 python3 -c 'import json; s = json.load(open("run1/final-state.json")); print(s["finish_reason"], s.get("hart_state"))'
@@ -273,6 +274,7 @@ sum of weights: 1.0  weighted mean of M: 100000.0
 
 - **A replay prints nothing.** Only `from-sysroot` shows the program's output.
 - **`from-sysroot` runs only on Linux.** The other kinds run on any host.
+- **Only replays repeat the recorded run exactly.** A `from-sysroot` run's instruction count can differ from the trace's, e.g. with where make's output goes. Count instructions with a replay (`from-fesvr-trace`, `from-checkpoint`, `from-simpoint`).
 - **Checkpoint names that repeat across traces** need the `TRACE:NAME` form. A bare ambiguous name fails with status 4, and the message lists the full forms.
 - **`from-simpoint` needs SimPoint information.** On another checkpoint it fails with status 4; use `from-checkpoint` for those.
 - **Quote globs** in `fwm list` filters, or the shell expands them.
