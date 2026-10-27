@@ -18,12 +18,12 @@ def _exit_on_signal(signum, frame):
 # every module from a shared filesystem takes seconds. Its short help is kept here, so that `fwm --help` and completing
 # a subcommand name import none of them
 _SUBCOMMANDS = {
-    "repo": ("fwm.cli.subcmds.repo", "repo", "Create and change the workload repository."),
-    "list": ("fwm.cli.subcmds.list", "list_cmd", "List workloads, sysroots, entry points, traces or checkpoints."),
-    "show": ("fwm.cli.subcmds.show", "show", "Show a workload, sysroot, entry point, trace or checkpoint."),
+    "repo": ("fwm.cli.subcmds.repo", "repo", "Create and maintain a repository: its creator's commands."),
+    "list": ("fwm.cli.subcmds.list", "list_cmd", "List workloads, sysroots, entries, traces or checkpoints."),
+    "show": ("fwm.cli.subcmds.show", "show", "Show one workload, sysroot, entry, trace or checkpoint."),
     "spawn": ("fwm.cli.subcmds.spawn", "spawn", "Make a working copy of an entry point's sysroot."),
-    "mkgen": ("fwm.cli.subcmds.mkgen", "mkgen", "Generate a run directory that begins a simulation."),
-    "completion": ("fwm.cli.subcmds.completion", "completion", "Print the script that enables shell completion."),
+    "mkgen": ("fwm.cli.subcmds.mkgen", "mkgen", "Generate a run directory that starts a simulation."),
+    "completion": ("fwm.cli.subcmds.completion", "completion", "Print the shell completion script."),
 }
 
 
@@ -123,13 +123,27 @@ def _print_version(ctx: click.Context, param: click.Parameter, value: bool) -> N
 @click.option("--version", is_flag=True, expose_value=False, is_eager=True, callback=_print_version,
               help="Print which fwm this is, and exit.")
 @click.option("--repo-path", envvar='FWM_REPO_PATH', type=click.Path(file_okay=False),
-              help='The workload repository. Defaults to the environment variable "FWM_REPO_PATH".')
+              help="The workload repository (default: the environment variable FWM_REPO_PATH).")
 def cli(ctx, repo_path):
     """
-    fwm, the RISC-V FESVR Workload Manager: the workloads of a repository, and the runs that simulate them.
+    The RISC-V FESVR Workload Manager: find the workloads of a repository, and generate the runs that simulate them.
 
-    Exit status: 0 success, 1 unexpected error, 2 usage error or unusable repository, 3 not found, 4 failed check, 5
-    already exists (an item of the repository, or a destination such as spawn's).
+    The daily commands need read access to the repository only. `fwm repo` holds the commands of its creator. Give the
+    repository with --repo-path, or once with the environment variable FWM_REPO_PATH.
+
+    \b
+    Examples:
+      fwm list                                    the entry points
+      fwm show entry bfs-road-n64                 the details of one
+      fwm mkgen from-simpoint bfs-road-n64.3.0.25 -o run1
+      make -C run1 run                            run it
+
+    \b
+    Exit status:
+      0  success                   3  not found
+      1  unexpected error          4  failed check
+      2  usage error, or unusable repository
+      5  already exists (an item of the repository, or a destination)
     """
     ctx.ensure_object(dict)
     ctx.obj["repo_path"] = repo_path

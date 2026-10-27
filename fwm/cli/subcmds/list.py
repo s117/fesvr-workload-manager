@@ -9,11 +9,11 @@ from fwm.repo.listing import KINDS, PLURALS, list_names
 from fwm.utils.log import Logger
 
 _FILTER_HELP = {
-    "workload": "Only those related to a workload whose name matches GLOB.",
-    "sysroot": "Only those related to a sysroot whose name matches GLOB.",
-    "entry": "Only those related to an entry point whose name matches GLOB.",
-    "trace": "Only those related to a trace whose UUID matches GLOB.",
-    "checkpoint": "Only those related to a checkpoint whose name matches GLOB, or <trace UUID GLOB>:<name GLOB>.",
+    "workload": "Related to a matching workload.",
+    "sysroot": "Related to a matching sysroot.",
+    "entry": "Related to a matching entry point.",
+    "trace": "Related to a trace whose UUID matches.",
+    "checkpoint": "Related to a matching checkpoint: NAME, or TRACE_UUID:NAME.",
 }
 _COMPLETERS = {"workload": complete_workload, "sysroot": complete_sysroot, "entry": complete_entry,
                "trace": complete_trace_uuid, "checkpoint": complete_checkpoint_name}
@@ -28,22 +28,29 @@ def _filter_options(f):
 
 
 @click.command("list")
-@click.argument("kind", type=click.Choice([PLURALS[k] for k in KINDS]), default="entries", required=False)
+@click.argument("kind", type=click.Choice([PLURALS[k] for k in KINDS]), default="entries", required=False,
+                metavar="[KIND]")
 @_filter_options
-@click.option("--json", "as_json", is_flag=True, help="Print a JSON array of the names, for scripts.")
+@click.option("--json", "as_json", is_flag=True, help="Print JSON, for scripts.")
 @click.pass_context
 def list_cmd(ctx, kind, workload_globs, sysroot_globs, entry_globs, trace_globs, checkpoint_globs, as_json):
     """
-    List the names of the workloads, sysroots, entry points (the default), traces or checkpoints of the repository:
-    traces by UUID, and checkpoints as `fwm show checkpoint` takes them. `fwm show` gives the details of each.
+    List the names of the workloads, sysroots, entries (the default), traces or checkpoints of the repository.
 
-    A filter keeps those related to an entity it matches: directly, or through others. A workload or sysroot is
-    related to its entry points, an entry point to its workload, sysroot and traces, and a trace to its checkpoints.
-    E.g. `fwm list checkpoints --workload bfs` lists the checkpoints of the traces of bfs's entry points, and
-    `fwm list entries --entry 'bfs-*'` the entry points whose name starts with "bfs-".
+    KIND is workloads, sysroots, entries, traces or checkpoints. Traces are listed by UUID, and checkpoints as
+    `fwm show checkpoint` takes them. `fwm show` gives the details of each.
 
-    A GLOB is a shell-style pattern (*, ?, [...]; quote it in the shell), or an exact name. A filter given more than
-    once keeps what matches any of its GLOBs. With several filters, the result is what each of them keeps.
+    A filter keeps what is related to a matching item, directly or through others. Give a filter more than once to
+    allow any of its patterns. With several filters, only what all of them keep is listed. A GLOB is a name, or a shell
+    pattern: quote it.
+
+    \b
+    Examples:
+      fwm list                               all entry points
+      fwm list checkpoints --workload bfs    checkpoints of bfs's entry points
+      fwm list entries --entry 'bfs-*'       names starting with bfs-
+      fwm list sysroots --checkpoint c1      the sysroot c1 was made in
+      fwm list traces --json                 for scripts
     """
     open_repo(ctx)
     globs = {"workload": workload_globs, "sysroot": sysroot_globs, "entry": entry_globs, "trace": trace_globs,

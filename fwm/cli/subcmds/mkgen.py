@@ -12,8 +12,7 @@ from fwm.repo.lookup import resolve_checkpoint
 from fwm.utils.log import Logger
 
 out_dir_option = click.option("--out-dir", "-o", type=click.Path(file_okay=False), default=".", show_default=True,
-                              help="The run directory: an empty or a new directory, or one fwm generated for the same "
-                                   "kind of run.")
+                              help="The run directory: new, empty, or generated before for the same kind of run.")
 
 
 def done(makefile: str, hint: Optional[str] = None) -> None:
@@ -29,20 +28,21 @@ def done(makefile: str, hint: Optional[str] = None) -> None:
 ))
 def mkgen():
     """
-    Generate a run directory that begins a simulation: its Makefile, and run.json, which describes what the run uses
-    (sysroot, workload, entry point with its metadata, trace, checkpoint).
+    Generate a run directory that starts a simulation: a Makefile, and run.json, which says what the run uses.
 
-    Then run `make -C <dir> run`, overriding its variables on the command line, e.g.:
+    Run it with `make -C DIR run`. Every run writes final-state.json: why it ended (e.g. target_exit, or instret_limit
+    for -e), and the instruction count of each processor (HART).
 
     \b
-      make -C <dir> run SIM=/path/to/721sim SIM_FLAGS_EXTRA=-e100000000
+    Variables to set on make's command line:
+      SIM                the simulator (default: FWM_SIM_CMD, else spike)
+      SIM_FLAGS_EXTRA    spike options, e.g. -e or -s (-m and -p are set)
+      FESVR_FLAGS_EXTRA  FESVR options, e.g. +verbose
 
-    SIM defaults to spike, or to the environment variable FWM_SIM_CMD when the run directory is generated. Put spike
-    options such as -e or -s in SIM_FLAGS_EXTRA (the Makefile sets -m and -p from the entry point), and FESVR options
-    such as +verbose in FESVR_FLAGS_EXTRA.
-
-    final-state.json, which every run writes, says why it finished (e.g. target_exit, instret_limit for -e,
-    interrupted, error), and the instruction count of each HART (simulated processor) there.
+    \b
+    Examples:
+      fwm mkgen from-checkpoint bfs-road-n64.3.0.25 -o run1
+      make -C run1 run SIM=/path/to/721sim SIM_FLAGS_EXTRA=-e100000000
     """
 
 
@@ -52,10 +52,15 @@ def mkgen():
 @click.pass_context
 def from_sysroot(ctx, entry, out_dir):
     """
-    Run the entry point ENTRY from the start of its program, in a fresh copy of its sysroot.
+    Run an entry point's program from its start, in a fresh copy of its sysroot. Linux only.
 
-    Outputs final-state.json, console.stdout and console.stderr (the console is also printed), and the post-run
-    sysroot/ with the files the program wrote. It runs on Linux only.
+    The program does its real system calls. It prints its console, also saved in console.stdout and console.stderr,
+    and writes its files in the run's sysroot/.
+
+    \b
+    Examples:
+      fwm mkgen from-sysroot bfs-road-n64 -o run1
+      make -C run1 run
     """
     done(generate_from_sysroot(open_repo(ctx), entry, out_dir))
 
@@ -66,10 +71,15 @@ def from_sysroot(ctx, entry, out_dir):
 @click.pass_context
 def from_fesvr_trace(ctx, trace, out_dir):
     """
-    Replay TRACE (a trace UUID or prefix, or an entry point with one trace) from the start of its program.
+    Replay a trace from the start of its program: no sysroot needed, on any host.
 
-    A replay needs no sysroot and runs on any host; the program prints nothing and writes no file. Outputs
-    final-state.json.
+    TRACE is a trace's UUID (a unique prefix is enough), or an entry point that has one trace. A replay checks that the
+    program computes the same data. The program prints nothing and writes no file.
+
+    \b
+    Examples:
+      fwm mkgen from-fesvr-trace bfs-road-n64 -o run1
+      make -C run1 run
     """
     done(generate_from_fesvr_trace(open_repo(ctx), trace, out_dir))
 
@@ -80,11 +90,17 @@ def from_fesvr_trace(ctx, trace, out_dir):
 @click.pass_context
 def from_checkpoint(ctx, checkpoint, out_dir):
     """
-    Load CHECKPOINT (<trace>:<name>, or a unique name) and simulate from it to the end of the program, or for n
-    instructions with SIM_FLAGS_EXTRA=-e<n>.
+    Simulate from a checkpoint to the end of the program.
 
-    Outputs final-state.json. A run to the end can validate the checkpoint
-    (`fwm repo compose set-checkpoint-validation`).
+    CHECKPOINT is TRACE:NAME, or NAME when no other trace has a checkpoint of that name. To stop after n instructions,
+    add SIM_FLAGS_EXTRA=-e<n> to make. A run to the end can validate the checkpoint, as the last example does.
+
+    \b
+    Examples:
+      fwm mkgen from-checkpoint bfs-road-n64.3.0.25 -o run1
+      make -C run1 run SIM_FLAGS_EXTRA=-e100000000     100M instructions only
+      make -C run1 run                                 to the end
+      fwm repo compose set-checkpoint-validation bfs-road-n64.3.0.25 run1
     """
     r = open_repo(ctx)
     makefile = generate_from_checkpoint(r, checkpoint, out_dir)
@@ -100,11 +116,16 @@ def from_checkpoint(ctx, checkpoint, out_dir):
 @click.pass_context
 def from_simpoint(ctx, checkpoint, out_dir):
     """
-    Load CHECKPOINT (<trace>:<name>, or a unique name), a checkpoint imported with SimPoint information, and simulate
-    its SimPoint interval: the Makefile passes -e<interval> to the simulator (override it with INTERVAL=<n>).
+    Simulate the SimPoint interval of a checkpoint, for sampled simulation.
 
-    spike exits 1 when -e stops it, so make reports "Error 1": that is how this run normally ends, and
-    final-state.json then says instret_limit, with the count at the interval's end. Read the results from the
-    simulator's own statistics.
+    The checkpoint must have SimPoint information (see `fwm show checkpoint`). The run stops at the interval's end;
+    INTERVAL=<n> on make's command line changes its length. Weigh its results by the checkpoint's simpoint_weight.
+
+    spike exits 1 when it stops a run that way, so make reports "Error 1": this run ends that way normally.
+
+    \b
+    Examples:
+      fwm mkgen from-simpoint bfs-road-n64.3.0.25 -o run1
+      make -C run1 run SIM=/path/to/721sim
     """
     done(generate_from_simpoint(open_repo(ctx), checkpoint, out_dir))

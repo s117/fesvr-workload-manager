@@ -9,15 +9,16 @@ COMPLETE_VAR = "_FWM_COMPLETE"
 @click.pass_context
 def completion(ctx, shell):
     """
-    Print the script that enables the shell completion of fwm, including the names in the repository.
+    Print the shell completion script.
+
+    Completion offers fwm's commands and options, and the names in the repository of --repo-path or FWM_REPO_PATH.
+    fwm must be on PATH.
 
     \b
-    Enable it in your shell's startup file:
-      zsh  (~/.zshrc):                    eval "$(fwm completion zsh)"
-      bash (~/.bashrc):                   eval "$(fwm completion bash)"
-      fish (~/.config/fish/config.fish):  fwm completion fish | source
-
-    fwm must be on PATH, and the names are completed from --repo-path or FWM_REPO_PATH.
+    Examples, for your shell's startup file:
+      eval "$(fwm completion zsh)"          in ~/.zshrc
+      eval "$(fwm completion bash)"         in ~/.bashrc
+      fwm completion fish | source          in ~/.config/fish/config.fish
     """
     completion_class = get_completion_class(shell)
     assert completion_class is not None

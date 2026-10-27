@@ -10,16 +10,23 @@ from fwm.repo.errors import NotFoundError
 
 
 @click.command()
-@click.argument("kind", type=click.Choice(["workload", "sysroot", "entry", "trace", "checkpoint"]))
-@click.argument("id", shell_complete=complete_by_kind)
+@click.argument("kind", type=click.Choice(["workload", "sysroot", "entry", "trace", "checkpoint"]), metavar="KIND")
+@click.argument("id", metavar="NAME", shell_complete=complete_by_kind)
 @click.option("--json", "as_json", is_flag=True, help="Print JSON, for scripts.")
 @click.pass_context
 def show(ctx, kind, id, as_json):
     """
-    Show the details of a workload, sysroot, entry point, trace or checkpoint.
+    Show the details of one workload, sysroot, entry, trace or checkpoint.
 
-    A trace is given by its UUID (a unique prefix is enough), or by an entry point that has one trace. A checkpoint is
-    given by <trace>:<name>, or by its name when it is unique.
+    KIND is workload, sysroot, entry, trace or checkpoint, and NAME the item's name. A trace is named by its UUID (a
+    unique prefix is enough), or by an entry point that has one trace. A checkpoint is named TRACE:NAME, or NAME alone
+    when no other trace has a checkpoint of that name.
+
+    \b
+    Examples:
+      fwm show entry bfs-road-n64
+      fwm show trace bfs-road-n64                 the trace of an entry point
+      fwm show checkpoint bfs-road-n64.3.0.25 --json
     """
     r = open_repo(ctx)
     if kind == "workload":
