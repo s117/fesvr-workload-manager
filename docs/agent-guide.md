@@ -238,7 +238,7 @@ Follow every step, in order, for every release, even a small one. Report each st
    - Upgrade the lock file (`uv lock --upgrade && uv sync`).
    - The build backend's range in `[build-system]` must include the current uv: `uv build` must print no warning.
    - Each minimum in `[project] dependencies` must be one fwm really works with: step 8 tests them. When a feature needs a newer version, raise the minimum.
-3. **Checks in the checkout:** `uv run pytest`, `uv run mypy fwm tests` and `uv run ruff check fwm tests`. Check each exit status on its own, never through a pipe such as `| tail`, which hides it. Run the spike end-to-end test as well (§7).
+3. **Checks in the checkout:** `uv run pytest`, `uv run mypy fwm tests` and `uv run ruff check fwm tests`. Check each exit status on its own, never through a pipe such as `| tail`, which hides it. Run the spike end-to-end test as well, with §7's helloworld: it needs a workload that runs for a few seconds, since it interrupts one run after a second. With a quicker program that run has already exited, and the test fails with `KeyError: 'signal'`.
 4. **Docs.**
    - The README is the PyPI page: its text matches what the release does; it holds no site paths or private URLs; its links to the repository are absolute.
    - The `--help` texts match the behaviour (`tests/cli/test_cli.py` runs their examples).
@@ -251,7 +251,7 @@ Follow every step, in order, for every release, even a small one. Report each st
    sha256sum dist/fwm-X.Y.Z/fwm-X.Y.Z*     # the hashes to compare with later
    ```
 7. **Inspect the files.**
-   - The sdist holds `fwm/`, `LICENSE`, `README.md` and `pyproject.toml` only. Its entries are owned by uid 0 and dated 1970 (`tar tvzf`).
+   - The sdist holds `fwm/`, `LICENSE`, `README.md` and `pyproject.toml` only, plus the two files the build adds itself: `PKG-INFO` and `pyproject.toml.orig`. Its entries are owned by uid 0 and dated 1970 (`tar tvzf`).
    - The wheel holds the Makefile templates (`fwm/mkgen/templates/*.mk`) and `LICENSE`.
    - Neither holds a path, host name or user name of the machine: grep their contents.
    - Compare with the last release's sdist (download it from PyPI): only the expected files differ.
@@ -278,8 +278,12 @@ Follow every step, in order, for every release, even a small one. Report each st
 13. The user uploads to **TestPyPI**, naming the files explicitly:
     ```sh
     uv publish --publish-url https://test.pypi.org/legacy/ --check-url https://test.pypi.org/simple/ \
-        -u __token__ dist/fwm-X.Y.Z/fwm-X.Y.Z*
+        dist/fwm-X.Y.Z/fwm-X.Y.Z*
     ```
+    - **Credentials:** uv prompts for them. Answer `__token__` as the username and paste the API token as the password.
+    - **Never pass `-u __token__` alone.** For 0.1.1, uv then asked for no password, and the upload failed with `403 Invalid or non-existent authentication information`; without `-u`, it prompted for both and worked. Either let uv prompt for both, or set `UV_PUBLISH_TOKEN` without echoing it (`read -rs "UV_PUBLISH_TOKEN?Token: "; export UV_PUBLISH_TOKEN` in zsh), and `unset` it afterwards.
+    - **Tokens are per site:** a pypi.org token doesn't work on test.pypi.org, nor the reverse.
+    - `--check-url` makes a retry safe: files already uploaded are skipped.
 14. **Check TestPyPI.**
     - Its JSON (`https://test.pypi.org/pypi/fwm/X.Y.Z/json`): the version, license, dependencies, URLs, and both files' hashes equal to step 6's.
     - The page: render the uploaded description with `readme_renderer`. TestPyPI blocks scripted page views. Every anchor and link must resolve.
@@ -288,9 +292,15 @@ Follow every step, in order, for every release, even a small one. Report each st
       uvx --no-cache --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ \
           --from fwm==X.Y.Z fwm --version
       ```
-15. The user uploads to **PyPI**: the same command, without `--publish-url`, and with `--check-url https://pypi.org/simple/`. Check it as in step 14, from pypi.org.
+    - **Right after an upload,** the install may fail with `there is no version of fwm==X.Y.Z` while the JSON already lists it. The index pages (`/simple/fwm/`) are cached for up to 10 minutes (`cache-control: max-age=600`). Wait and retry: it isn't a failed upload.
+15. The user uploads to **PyPI**: the same command, without `--publish-url`, and with `--check-url https://pypi.org/simple/`.
+    - **A new project's first upload** needs a token scoped to the whole account: a token scoped to a project can only be made once the project exists. For later releases, use one scoped to `fwm`.
+    - Check it as in step 14, from pypi.org (`uvx --no-cache fwm@X.Y.Z --version`).
 
 **After the release:**
 
-16. Move fwm-bootstrap to the new version (`fwm>=X.Y.Z,<X.(Y+1)` in its `pyproject.toml`, then `uv lock`), and run its tests.
+16. Move fwm-bootstrap to the new version, and run its tests:
+    - **The dependency:** `fwm>=X.Y.Z,<X.(Y+1)` in its `pyproject.toml` (raise the range only for a new minor version), then `uv lock --upgrade-package fwm && uv sync`.
+    - **Its checks:** `uv run pytest tests/unit tests/workflow`, mypy and ruff, and its end-to-end test with the real spike (see its README).
+    - Commit there too, and ask the user to push it (to its private remote).
 17. Update this guide's PyPI paragraph (§1) if something about releasing changed.

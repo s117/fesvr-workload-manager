@@ -3,7 +3,8 @@ End-to-end test with a real spike: record a run, replay it, create checkpoints, 
 
 It runs only when these are set:
   FWM_TEST_SPIKE        the spike binary (built from riscv-isa-sim with FESVR record/replay)
-  FWM_TEST_SYSROOT      a sysroot holding a short workload and its boot ELF
+  FWM_TEST_SYSROOT      a sysroot holding a workload and its boot ELF. The workload must run for a few seconds: the
+                        test interrupts one run after a second (the agent guide's helloworld, §7, does)
   FWM_TEST_ENTRY_POINT  the entry point JSON of the workload in that sysroot
 
 Optionally, FWM_TEST_SPIKE_SRC (riscv-isa-sim's source tree) cross-checks the checkpoint digests with
