@@ -21,8 +21,16 @@ from fwm.repo.errors import FwmValidationError
 ))
 def compose():
     """
-    Change the repository's content: import sysroots, entry points, traces and checkpoints, remove them, set an entry
-    point's metadata or a checkpoint's validation. Each command needs write access to the repository.
+    Import, remove and change the repository's content. Each command needs write access to the repository.
+
+    Run them from one host at a time, e.g. a pipeline's controller: see the README, "Clusters and shared
+    repositories".
+
+    \b
+    Examples:
+      fwm repo compose add sysroot ./sysroots/road road.sg
+      fwm repo compose add entry road.sg bfs bfs-road-n64 bfs-road-n64.json
+      fwm repo compose remove trace bfs-road-n64 -r    with its checkpoints
     """
 
 
@@ -32,12 +40,21 @@ def compose():
 def add():
     """
     Import a sysroot, an entry point, a trace or a checkpoint.
+
+    Each prints what it imported. With --exist-ok, importing what the repository already has prints it and succeeds,
+    so a pipeline can simply run it again. Without it, that fails with status 5.
+
+    \b
+    Examples:
+      fwm repo compose add sysroot ./sysroots/road road.sg
+      fwm repo compose add trace bfs-road-n64 run1/trace \\
+        --final-state run1/final-state.json
     """
 
 
 _sim_version_option = click.option(
     "--sim-version", "sim_version_file", type=click.Path(exists=True, dir_okay=False),
-    help="A file with the `spike --version` output of the simulator that made it, kept for provenance.")
+    help="A file with the `spike --version` output of the spike that made them.")
 
 
 def _read_sim_version(path):
@@ -51,38 +68,44 @@ def _read_sim_version(path):
 
 _exist_ok_option = click.option(
     "--exist-ok", is_flag=True,
-    help="If the same item is already in the repository, print it and succeed instead of failing with status 5.")
+    help="If the same item is already there, print it and succeed (for reruns).")
 
 
 @add.command("sysroot", short_help="Import a directory tree as a sysroot.")
-@click.argument("directory", type=click.Path(exists=True, file_okay=False))
-@click.argument("sysroot_name")
+@click.argument("directory", metavar="DIR", type=click.Path(exists=True, file_okay=False))
+@click.argument("sysroot_name", metavar="NAME")
 @click.option("--description", "-d", help="A description of the sysroot.")
 @_exist_ok_option
 @click.pass_context
 def add_sysroot_cmd(ctx, directory, sysroot_name, description, exist_ok):
     """
-    Import DIRECTORY as the sysroot SYSROOT_NAME.
+    Import the directory tree DIR as the sysroot NAME.
 
-    The tree is copied into the repository, cataloged with its permissions, and made read-only.
+    The tree is copied into the repository, with a catalog of its files, their permissions and checksums, and made
+    read-only. Prints NAME.
+
+    \b
+    Examples:
+      fwm repo compose add sysroot ./sysroots/road road.sg
+      fwm repo compose add sysroot ./sysroots/road road.sg --exist-ok   a rerun
     """
     from fwm.repo.sysroot import add_sysroot
     click.echo(add_sysroot(open_repo(ctx, write=True), directory, sysroot_name, description, exist_ok).name)
 
 
 @add.command("entry", short_help="Add an entry point: how to launch a workload in a sysroot.")
-@click.argument("sysroot_name", shell_complete=complete_sysroot)
-@click.argument("workload_name", shell_complete=complete_workload)
-@click.argument("entry_point_name")
-@click.argument("entry_point_json", type=click.Path(exists=True, dir_okay=False))
+@click.argument("sysroot_name", metavar="SYSROOT", shell_complete=complete_sysroot)
+@click.argument("workload_name", metavar="WORKLOAD", shell_complete=complete_workload)
+@click.argument("entry_point_name", metavar="NAME")
+@click.argument("entry_point_json", metavar="JSON_FILE", type=click.Path(exists=True, dir_okay=False))
 @click.option("--description", "-d", help="A description of the entry point.")
 @_exist_ok_option
 @click.pass_context
 def add_entry_cmd(ctx, sysroot_name, workload_name, entry_point_name, entry_point_json, description, exist_ok):
     """
-    Add the entry point ENTRY_POINT_NAME: how to launch the workload WORKLOAD_NAME in the sysroot SYSROOT_NAME.
+    Add the entry point NAME: how to run the workload WORKLOAD in the sysroot SYSROOT. Prints NAME.
 
-    ENTRY_POINT_JSON holds the launch fields, e.g.:
+    JSON_FILE says how to launch it, e.g.:
 
     \b
       {"command": "bfs -f road.sg -n64", "working_directory": "/app",
@@ -90,13 +113,16 @@ def add_entry_cmd(ctx, sysroot_name, workload_name, entry_point_name, entry_poin
        "mem_mb": 2048, "nprocs": 1, "copy_spawn": true,
        "metadata": {"suite": "GAPBS", "language": ["C++"]}}
 
-    In paths, "/" is the sysroot's root and "." the working directory. "copy_spawn" (optional, default true) says how
-    `fwm spawn` gives a run the sysroot: true copies it; false links each file to the repository's read-only file,
-    which is fast, but the program can't write to those files. "metadata" is optional and free-form: any JSON object,
-    kept and shown by fwm.
+    \b
+    - In paths, "/" is the sysroot's root, and "." the working directory.
+    - copy_spawn (optional, default true): how `fwm spawn` gives a run the
+      sysroot. false links to the repository's files: fast, but read-only.
+    - metadata (optional): any JSON object, kept and shown by fwm. Change it
+      with `fwm repo compose set-metadata`; --exist-ok doesn't compare it.
 
-    With --exist-ok, an entry point that differs only in its metadata or description is the same one, and keeps its
-    own; change its metadata with `fwm repo compose set-metadata`.
+    \b
+    Examples:
+      fwm repo compose add entry road.sg bfs bfs-road-n64 bfs-road-n64.json
     """
     from fwm.repo.entry import add_entry
     click.echo(add_entry(open_repo(ctx, write=True), sysroot_name, workload_name, entry_point_name, entry_point_json,
@@ -107,19 +133,23 @@ def add_entry_cmd(ctx, sysroot_name, workload_name, entry_point_name, entry_poin
 @click.argument("entry", shell_complete=complete_entry)
 @click.argument("recording_dir", type=click.Path(exists=True, file_okay=False))
 @click.option("--final-state", type=click.Path(exists=True, dir_okay=False),
-              help="The +final-state-dump of the recording run: each HART's instruction count. Needed to validate "
-                   "the trace's checkpoints: leave it out only to import a truncated recording.")
+              help="The run's final state (final-state.json): each processor's instruction count. Without it, the "
+                   "trace's checkpoints can't be validated.")
 @click.option("--description", "-d", help="A description of the trace.")
 @_exist_ok_option
 @click.pass_context
 def add_trace_cmd(ctx, entry, recording_dir, final_state, description, exist_ok):
     """
-    Import RECORDING_DIR, a recording (+dev-traffic-record) of a run of the entry point ENTRY, as a trace, with its
-    provenance (recording_provenance.json: when, on what machine and with which spike it was recorded), which it must
-    have.
+    Import a recording of a run of the entry point ENTRY as a trace. Prints its UUID.
 
-    Prints the UUID of the trace. A recording that already is a trace of the entry point fails with status 5, or,
-    with --exist-ok and the same final state, prints that trace.
+    RECORDING_DIR is the trace/ directory of a record run (see `fwm repo bootstrap mkgen`). It holds how the
+    recording was made (when, where, with which spike), which the trace keeps. A recording that already is a trace of
+    ENTRY fails with status 5, or with --exist-ok prints that trace.
+
+    \b
+    Examples:
+      fwm repo compose add trace bfs-road-n64 run1/trace \\
+        --final-state run1/final-state.json
     """
     from fwm.repo.trace import add_trace
     click.echo(str(add_trace(open_repo(ctx, write=True), entry, recording_dir, final_state, description,
@@ -131,25 +161,24 @@ def add_trace_cmd(ctx, entry, recording_dir, final_state, description, exist_ok)
 @click.argument("desc", type=click.Path(exists=True, dir_okay=False))
 @click.argument("checkpoint_dir", type=click.Path(exists=True, file_okay=False))
 @click.option("--simpoint-info", type=click.Path(exists=True, dir_okay=False),
-              help='A JSON file of the SimPoint analysis: {"interval": 100000000, "maxK": 10, "checkpoints": '
-                   '{"<name>": {"index": 3, "weight": 0.2531}, ...}}, naming exactly the checkpoints of DESC.')
+              help="The SimPoint analysis of the checkpoints, as JSON (see the README, Quick start).")
 @click.option("--description", "-d", help="A description of the checkpoints.")
 @_sim_version_option
 @_exist_ok_option
 @click.pass_context
 def add_checkpoint_cmd(ctx, trace, desc, checkpoint_dir, simpoint_info, description, sim_version_file, exist_ok):
     """
-    Import the checkpoints that DESC, a description file, created from TRACE (a trace UUID or prefix, or an entry
-    point with one trace) in CHECKPOINT_DIR, in one transaction.
+    Import the checkpoints that a run created from TRACE, in one transaction.
+
+    DESC is the run's description of the checkpoints, and CHECKPOINT_DIR the directory they were created in. Every
+    checkpoint DESC lists must be there: spike creates none at or after the program's exit. Prints each checkpoint as
+    TRACE_UUID:NAME.
 
     \b
-    For a run directory R of `fwm repo bootstrap mkgen create-checkpoints`:
-      fwm repo compose add checkpoint <trace> R/ckpt.desc R/checkpoints
-
-    Each checkpoint DESC lists must be in CHECKPOINT_DIR, which catches one spike didn't create (it creates none at or
-    after the program's exit); other files there are ignored. The requested instruction counts are kept.
-
-    Prints each checkpoint as <trace UUID>:<name>, in the order of DESC.
+    Examples:
+      fwm repo compose add checkpoint bfs-road-n64 \\
+        run2/ckpt.desc run2/checkpoints \\
+        --simpoint-info simpoints.json --sim-version sim-version.txt
     """
     from fwm.repo.checkpoint import add_checkpoints
     ckpts = add_checkpoints(open_repo(ctx, write=True), trace, desc, checkpoint_dir, simpoint_info=simpoint_info,
@@ -160,29 +189,38 @@ def add_checkpoint_cmd(ctx, trace, desc, checkpoint_dir, simpoint_info, descript
 
 @compose.command("set-metadata", short_help="Replace an entry point's metadata.")
 @click.argument("entry", shell_complete=complete_entry)
-@click.argument("metadata_json", metavar="FILE", type=click.Path(exists=True, dir_okay=False))
+@click.argument("metadata_json", metavar="JSON_FILE", type=click.Path(exists=True, dir_okay=False))
 @click.pass_context
 def set_metadata_cmd(ctx, entry, metadata_json):
     """
-    Replace the metadata of the entry point ENTRY with FILE, a JSON object, or null to remove it. Its traces are kept.
+    Replace the metadata of the entry point ENTRY, keeping its traces. Prints ENTRY.
 
-    Prints the name of the entry point.
+    JSON_FILE holds a JSON object, or null to remove the metadata.
+
+    \b
+    Examples:
+      fwm repo compose set-metadata bfs-road-n64 metadata.json
     """
     from fwm.repo.entry import set_entry_metadata
     click.echo(set_entry_metadata(open_repo(ctx, write=True), entry, metadata_json).name)
 
 
 @compose.command("remove", short_help="Remove a sysroot, entry, trace or checkpoint.")
-@click.argument("kind", type=click.Choice(["sysroot", "entry", "trace", "checkpoint"]))
-@click.argument("id", shell_complete=complete_by_kind)
+@click.argument("kind", type=click.Choice(["sysroot", "entry", "trace", "checkpoint"]), metavar="KIND")
+@click.argument("id", metavar="NAME", shell_complete=complete_by_kind)
 @click.option("--recursive", "-r", is_flag=True, help="Also remove what depends on it.")
 @click.pass_context
 def remove_cmd(ctx, kind, id, recursive):
     """
-    Remove a sysroot, an entry point, a trace or a checkpoint.
+    Remove an item, and with --recursive, what depends on it.
 
-    A sysroot with entry points, an entry point with traces, or a trace with checkpoints is removed only with
-    --recursive.
+    KIND is sysroot, entry, trace or checkpoint, and NAME the item's name. A sysroot with entry points, an entry point
+    with traces, or a trace with checkpoints is removed only with --recursive.
+
+    \b
+    Examples:
+      fwm repo compose remove checkpoint bfs-road-n64.3.0.25
+      fwm repo compose remove entry bfs-road-n64 -r    with traces, checkpoints
     """
     from fwm.repo import remove as rm
     r = open_repo(ctx, write=True)
@@ -202,11 +240,17 @@ def remove_cmd(ctx, kind, id, recursive):
 @click.pass_context
 def set_checkpoint_validation_cmd(ctx, checkpoint, run_dir):
     """
-    Judge RUN_DIR, a run of CHECKPOINT to the end of the program (`fwm mkgen from-checkpoint`, run without -e), and
-    set the checkpoint's validation to the result: "passed" or "failed", with why.
+    Judge a run of CHECKPOINT to its end, and record "passed" or "failed" with the checkpoint.
 
-    It passes when every HART's final instruction count equals the trace's. Prints "passed" or "failed" and why;
-    fails with status 4 if the checkpoint failed.
+    RUN_DIR is a `fwm mkgen from-checkpoint` run of CHECKPOINT, run without -e. It passes when the program exited as
+    in the trace: with the same exit status, and the same instruction count on every processor. It prints "passed" or
+    "failed" and why, and fails with status 4 when the checkpoint failed.
+
+    \b
+    Examples:
+      fwm mkgen from-checkpoint bfs-road-n64.3.0.25 -o run3
+      make -C run3 run
+      fwm repo compose set-checkpoint-validation bfs-road-n64.3.0.25 run3
     """
     from fwm.repo.validation import record_validation, PASSED
     ckpt = record_validation(open_repo(ctx, write=True), checkpoint, run_dir)

@@ -518,3 +518,69 @@ def test_show_entry_traces(run, populated, tmp_path):
     out = run("show", "entry", "e")[1]
     assert f"traces:\n  -\n    uuid: {first}\n    checkpoints: e.2.0.40\n  -\n    uuid: {second}\n    checkpoints: -\n" \
         in out
+
+
+def help_examples(path):
+    """The fwm command lines in the Examples section of a command's help (backslash continuations joined, the comment
+    after them left out), as argument lists without the leading "fwm"."""
+    import re
+    import shlex
+    text = CliRunner().invoke(cli, [*path, "--help"], terminal_width=200).stdout
+    lines = text.splitlines()
+    starts = [i for i, line in enumerate(lines) if re.match(r"\s*Examples\b.*:$", line)]
+    if not starts:
+        return None
+    examples = []
+    line_iter = iter(lines[starts[0] + 1:])
+    for line in line_iter:
+        if not line.strip():
+            break
+        while line.rstrip().endswith("\\"):
+            line = line.rstrip()[:-1].rstrip() + " " + next(line_iter).strip()
+        command = re.split(r"\s{2,}", re.sub(r"^\s*(\d+\.\s+)?", "", line))[0]
+        inline = re.search(r"\$\((fwm [^)]*)\)", command)  # e.g. eval "$(fwm completion zsh)"
+        command = inline.group(1) if inline else command.split(" | ")[0]
+        if command.startswith("fwm "):
+            examples.append(shlex.split(command)[1:])
+    return examples
+
+
+def check_command_line(args):
+    """Parse a command line with fwm's own click objects, without running it: the command must exist, its options
+    too, and its arguments must be as many as it takes. Values aren't checked (example paths don't exist)."""
+    command, words = cli, list(args)
+    while True:
+        ctx = click.Context(command, info_name=command.name)
+        opts, rest, _ = command.make_parser(ctx).parse_args(words)
+        if isinstance(command, click.Group):
+            assert rest, f"{args}: no subcommand after {command.name}"
+            sub = command.get_command(ctx, rest[0])
+            assert sub is not None, f"{args}: {command.name} has no command {rest[0]!r}"
+            command, words = sub, rest[1:]
+            continue
+        assert not rest, f"{args}: extra arguments {rest}"
+        for param in command.params:
+            if isinstance(param, click.Argument) and param.required:
+                # (a missing value is a sentinel of click's, not None)
+                value = opts.get(param.name)
+                assert isinstance(value, str) or (isinstance(value, tuple) and value), \
+                    f"{args}: no {param.human_readable_name}"
+        return command
+
+
+@pytest.mark.parametrize("path", list(all_commands(cli)), ids=lambda path: " ".join(path) or "fwm")
+def test_help_examples(path):
+    """Every command's help has examples, and each is a valid command line of fwm."""
+    examples = help_examples(path)
+    assert examples, f"`fwm {' '.join(path)} --help` has no example"
+    for args in examples:
+        check_command_line(args)
+
+
+def test_check_command_line():
+    """The examples' check catches an unknown command, option, or a wrong number of arguments."""
+    check_command_line(["list", "checkpoints", "--workload", "bfs"])
+    for args in (["lst"], ["list", "--wrkload", "x"], ["show", "entry"], ["show", "entry", "a", "b"],
+                 ["repo", "compose", "add"]):
+        with pytest.raises((AssertionError, click.UsageError)):
+            check_command_line(args)

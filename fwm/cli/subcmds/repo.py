@@ -25,10 +25,16 @@ from fwm.utils.log import Logger
 ))
 def repo():
     """
-    Create and change the workload repository: the commands of its creator.
+    Create and maintain a repository: the commands of its creator.
 
-    `fwm repo bootstrap` generates the runs that record its traces and create its checkpoints, and checks their
-    outputs; `fwm repo compose` imports them.
+    `fwm repo bootstrap` generates the runs that make traces and checkpoints, and checks their outputs. `fwm repo
+    compose` imports them, and changes the content. The other commands work on the repository as a whole.
+
+    \b
+    Examples:
+      fwm repo init ~/fwm-repo                    a new, empty repository
+      fwm repo verify                             check all of it
+      fwm repo subrepo ~/small bfs-road-n64       a copy with one entry point
     """
 
 
@@ -37,25 +43,36 @@ repo.add_command(bootstrap)
 
 
 @repo.command(short_help="Create an empty workload repository.")
-@click.argument("path", type=click.Path(file_okay=False))
+@click.argument("path", metavar="DIR", type=click.Path(file_okay=False))
 def init(path):
     """
-    Create an empty workload repository at PATH.
+    Create an empty repository in DIR, a new or empty directory. Prints its path.
+
+    \b
+    Examples:
+      fwm repo init ~/fwm-repo
+      export FWM_REPO_PATH=~/fwm-repo             then use it by default
     """
     Repo.init(path).close()
     click.echo(os.path.abspath(path))
 
 
 @repo.command("verify", short_help="Check the content, and look for leftovers.")
-@click.argument("kind", type=click.Choice(["sysroot", "trace", "checkpoint"]), required=False)
-@click.argument("id", required=False, shell_complete=complete_by_kind)
+@click.argument("kind", type=click.Choice(["sysroot", "trace", "checkpoint"]), required=False, metavar="[KIND]")
+@click.argument("id", required=False, metavar="[NAME]", shell_complete=complete_by_kind)
 @click.pass_context
 def verify_cmd(ctx, kind, id):
     """
-    Verify the content of the repository against its catalogs: everything, or one sysroot, trace or checkpoint.
+    Check the repository's files against their catalogs: all of them, or one item's.
 
-    Verifying everything also reports the leftovers of interrupted commands, which `fwm repo gc` removes. Prints each
-    problem found, and fails if there is any.
+    KIND is sysroot, trace or checkpoint, and NAME the item's name. Checking all also finds the leftovers of
+    interrupted commands, which `fwm repo gc` removes. It prints each problem, and fails with status 4 if there is any.
+    It reads every file, so it takes a while on a large repository.
+
+    \b
+    Examples:
+      fwm repo verify                             everything
+      fwm repo verify sysroot road.sg             one sysroot
     """
     from fwm.repo.checkpoint import verify_checkpoint
     from fwm.repo.sysroot import verify_sysroot
@@ -99,10 +116,15 @@ def verify_cmd(ctx, kind, id):
 @click.pass_context
 def gc_cmd(ctx, dry_run):
     """
-    Remove the leftovers of interrupted commands: the staging of imports that were killed, and files that no
-    sysroot, trace or checkpoint refers to.
+    Remove the leftovers of interrupted commands.
 
-    Prints each leftover removed (or, with --dry-run, found).
+    Leftovers are the staging of imports that were killed, and files that no sysroot, trace or checkpoint refers to.
+    It prints each leftover removed, or with --dry-run, each one found.
+
+    \b
+    Examples:
+      fwm repo gc --dry-run                       see what it would remove
+      fwm repo gc
     """
     r = open_repo(ctx, write=not dry_run)
     leftovers = find_leftovers(r) if dry_run else collect_garbage(r)
@@ -112,9 +134,8 @@ def gc_cmd(ctx, dry_run):
 
 
 def _transfer_options(f):
-    f = click.option("--no-checkpoints", is_flag=True, help="Copy the traces, but none of their checkpoints.")(f)
-    f = click.option("--no-traces", is_flag=True,
-                     help="Copy only the sysroots and entry points: no trace, and so no checkpoint.")(f)
+    f = click.option("--no-checkpoints", is_flag=True, help="Copy the traces, but no checkpoints.")(f)
+    f = click.option("--no-traces", is_flag=True, help="Copy no traces, and so no checkpoints.")(f)
     return f
 
 
@@ -132,23 +153,21 @@ def _transfer(copy, repo, other, entries, everything, no_traces, no_checkpoints)
 
 
 _TRANSFER_HELP = """
-    Each entry point brings its workload and its sysroot, and its traces with their checkpoints. Their rows are copied
-    as they are: trace UUIDs, provenance, metadata, validation results.
+    \b
+    Each entry point brings its workload, sysroot, traces and checkpoints:
+    - what the receiving repository already has is kept, unchanged;
+    - the same name with other content is a conflict: nothing is copied, and
+      it fails with status 5;
+    - an interrupted copy can be run again to complete it.
 
-    What the receiving repository already has is kept: the same sysroot, entry point, recording or checkpoint is
-    present, and its rows don't change. The same name with something else is a conflict: then nothing is copied, and
-    it fails with status 5. Each entry point is committed on its own, so an interrupted copy can be run again to
-    complete it.
-
-    Prints each item as `added|present <kind> <id>`, once its entry point is committed.
+    It prints each item as "added" or "present", with its kind and name. See the README, "Merging and subsets".
     """
 
 
 @repo.command("pull", short_help="Copy entry points of another repository into this one.")
 @click.argument("source", type=click.Path(file_okay=False))  # (a missing one isn't a repository: status 2)
-@click.argument("entries", nargs=-1, shell_complete=complete_source_entry)
-@click.option("--all", "everything", is_flag=True,
-              help="Copy every entry point of SOURCE, and every sysroot that has none.")
+@click.argument("entries", nargs=-1, metavar="[ENTRY]...", shell_complete=complete_source_entry)
+@click.option("--all", "everything", is_flag=True, help="Copy everything SOURCE has.")
 @_transfer_options
 @click.pass_context
 def pull_cmd(ctx, source, entries, everything, no_traces, no_checkpoints):
@@ -158,16 +177,20 @@ def pull_cmd(ctx, source, entries, everything, no_traces, no_checkpoints):
 
 
 pull_cmd.help = """
-    Copy the ENTRIES, entry points of the repository SOURCE, into this repository (or with --all, everything SOURCE
-    has). SOURCE is only read.
-    """ + _TRANSFER_HELP
+    Copy entry points of the repository SOURCE into this one, with what they need. SOURCE is only read.
+    """ + _TRANSFER_HELP + """
+    \b
+    Examples:
+      fwm repo pull /shared/repo bfs-road-n64 pr-road
+      fwm repo pull /shared/repo --all            everything it has
+      fwm repo pull /shared/repo bfs-road-n64 --no-checkpoints
+    """
 
 
 @repo.command("push", short_help="Copy entry points of this repository into another one.")
 @click.argument("dest", type=click.Path(exists=True, file_okay=False))
-@click.argument("entries", nargs=-1, shell_complete=complete_other_entry)
-@click.option("--all", "everything", is_flag=True,
-              help="Copy every entry point of this repository, and every sysroot that has none.")
+@click.argument("entries", nargs=-1, metavar="[ENTRY]...", shell_complete=complete_other_entry)
+@click.option("--all", "everything", is_flag=True, help="Copy everything this repository has.")
 @_transfer_options
 @click.pass_context
 def push_cmd(ctx, dest, entries, everything, no_traces, no_checkpoints):
@@ -177,23 +200,33 @@ def push_cmd(ctx, dest, entries, everything, no_traces, no_checkpoints):
 
 
 push_cmd.help = """
-    Copy the ENTRIES, entry points of this repository, into the repository DEST (or with --all, everything this one
-    has). This repository is only read.
-    """ + _TRANSFER_HELP
+    Copy entry points of this repository into DEST, an existing repository, with what they need. This repository is
+    only read.
+    """ + _TRANSFER_HELP + """
+    \b
+    Examples:
+      fwm repo push ~/merged bfs-road-n64
+      fwm repo push ~/merged --all                everything this one has
+    """
 
 
 @repo.command("subrepo", short_help="Create a repository with some entry points of this one.")
 @click.argument("new_repo", type=click.Path(file_okay=False))
-@click.argument("entries", nargs=-1, required=True, shell_complete=complete_other_entry)
+@click.argument("entries", nargs=-1, required=True, metavar="ENTRY...", shell_complete=complete_other_entry)
 @_transfer_options
 @click.pass_context
 def subrepo_cmd(ctx, new_repo, entries, no_traces, no_checkpoints):
     """
-    Create the repository NEW_REPO with the ENTRIES, entry points of this repository, and their sysroots, traces and
-    checkpoints: `fwm repo init NEW_REPO`, then `fwm repo push NEW_REPO ENTRIES...`. If the copy fails, NEW_REPO is
-    removed (an empty directory it was created in is left empty). This repository is only read.
+    Create the repository NEW_REPO with some entry points of this one, and what they need.
 
-    NEW_REPO must not exist, or must be an empty directory. Prints its path.
+    It runs `fwm repo init NEW_REPO`, then `fwm repo push NEW_REPO ENTRY...`. NEW_REPO must not exist, or must be an
+    empty directory. If the copy fails, NEW_REPO is removed again. This repository is only read. Prints NEW_REPO's
+    path.
+
+    \b
+    Examples:
+      fwm repo subrepo ~/small bfs-road-n64 pr-road
+      fwm repo subrepo ~/small bfs-road-n64 --no-checkpoints
     """
     from fwm.repo.subrepo import create_subrepo
     result = create_subrepo(open_repo(ctx), new_repo, entries, traces=not no_traces, checkpoints=not no_checkpoints)
