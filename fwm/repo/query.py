@@ -1,9 +1,9 @@
 """
-Plain views of the repository content, as dicts of JSON-compatible values, for `fwm list` and `fwm show`.
+Plain views of the repository content, as dicts of JSON-compatible values, for `fwm show`.
 """
 import json
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 import peewee as pw
 
@@ -133,36 +133,3 @@ def checkpoint_view(repo: Repo, ckpt: DecoupledCheckpoint) -> View:
             "csr_count": h.csr_count,
         } for h in checkpoint_harts(ckpt)],
     }
-
-
-def list_workloads(name_filter: Optional[str] = None) -> List[View]:
-    query = Workload.select().order_by(Workload.name)
-    return [workload_view(w) for w in query if not name_filter or name_filter in w.name]
-
-
-def list_sysroots(repo: Repo, name_filter: Optional[str] = None) -> List[View]:
-    query = Sysroot.select().order_by(Sysroot.name)
-    return [sysroot_view(repo, s) for s in query if not name_filter or name_filter in s.name]
-
-
-def list_entries(name_filter: Optional[str] = None, workload: Optional[str] = None,
-                 sysroot: Optional[str] = None) -> List[View]:
-    query = NativeEntry.select().join(Workload).switch(NativeEntry).join(Sysroot).order_by(NativeEntry.name)
-    if workload is not None:
-        query = query.where(Workload.name == workload)
-    if sysroot is not None:
-        query = query.where(Sysroot.name == sysroot)
-    return [entry_view(e) for e in query if not name_filter or name_filter in e.name]
-
-
-def list_traces(repo: Repo, entry_filter: Optional[str] = None) -> List[View]:
-    query = DecoupledTrace.select().join(NativeEntry).order_by(NativeEntry.name, DecoupledTrace.creation_time)
-    return [trace_view(repo, t) for t in query if not entry_filter or entry_filter in t.native_entry.name]
-
-
-def list_checkpoints(repo: Repo, name_filter: Optional[str] = None,
-                     trace: Optional[DecoupledTrace] = None) -> List[View]:
-    query = DecoupledCheckpoint.select().order_by(DecoupledCheckpoint.name)
-    if trace is not None:
-        query = query.where(DecoupledCheckpoint.trace == trace)
-    return [checkpoint_view(repo, c) for c in query if not name_filter or name_filter in c.name]

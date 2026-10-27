@@ -198,7 +198,9 @@ def test_record_replay_checkpoint(env, tmp_path):
     fwm(env, "repo", "compose", "add", "checkpoint", trace, str(first_desc), str(r3 / "checkpoints"),
         "--simpoint-info", str(info), "--sim-version", str(version))
     fwm(env, "repo", "compose", "add", "checkpoint", trace, str(second_desc), str(r3 / "checkpoints"))
-    ckpts = {c["name"]: c for c in json.loads(fwm(env, "list", "checkpoints", "--json"))}
+    views = [json.loads(fwm(env, "show", "checkpoint", ref, "--json"))
+             for ref in json.loads(fwm(env, "list", "checkpoints", "--json"))]
+    ckpts = {c["name"]: c for c in views}
     assert (ckpts["e.0.0.40"]["simpoint_weight"], ckpts["e.0.0.40"]["simpoint_max_k"]) == (0.4012, 3)
     assert ckpts["e.1.0.60"]["simpoint_weight"] is None
     assert ckpts["e.0.0.40"]["requested_count"] == first

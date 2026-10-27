@@ -1,5 +1,5 @@
 import json
-from typing import Any, Callable, Dict, List, Sequence, Tuple, Union
+from typing import Any, Dict
 
 import click
 
@@ -8,32 +8,6 @@ from fwm.repo.query import View
 
 def echo_json(value: Any) -> None:
     click.echo(json.dumps(value, indent=2))
-
-
-# What a table column shows: a key of the view, or a function of the view
-Column = Union[str, Callable[[View], Any]]
-
-
-def echo_table(rows: List[View], columns: Sequence[Tuple[str, Column]]) -> None:
-    """
-    Print views as a table.
-
-    :param columns: (heading, what it shows) of each column.
-    """
-    def cell(value: Any) -> str:
-        if value is None:
-            return "-"
-        if isinstance(value, list):
-            return ",".join(cell(v) for v in value) if value else "-"
-        return str(value)
-
-    def value(row: View, column: Column) -> Any:
-        return column(row) if callable(column) else row[column]
-
-    table = [[heading for heading, _ in columns]] + [[cell(value(row, c)) for _, c in columns] for row in rows]
-    widths = [max(len(r[i]) for r in table) for i in range(len(columns))]
-    for r in table:
-        click.echo("  ".join(c.ljust(w) for c, w in zip(r, widths)).rstrip())
 
 
 def _build(build: Dict[str, str]) -> str:

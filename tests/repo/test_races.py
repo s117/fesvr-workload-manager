@@ -163,7 +163,7 @@ def test_concurrent_processes(repo, entry, recording, checkpoints, sysroot_src):
 
     listed = subprocess.run([sys.executable, "-m", "fwm", "--repo-path", repo.path, "list", "sysroots", "--json"],
                             check=True, capture_output=True, text=True).stdout
-    assert sorted(s["name"] for s in json.loads(listed)) == ["sr", "sr0", "sr1", "sr2", "sr3"]
+    assert json.loads(listed) == ["sr", "sr0", "sr1", "sr2", "sr3"]
     verify = subprocess.run([sys.executable, "-m", "fwm", "--repo-path", repo.path, "repo", "verify"],
                             capture_output=True, text=True)
     assert verify.returncode == 0, verify.stdout

@@ -39,24 +39,19 @@ def test_repo_path_from_env(run, tmp_path, monkeypatch):
 def test_list_and_show(run, populated):
     trace_uuid = populated
 
-    code, out, _ = run("list", "entries", "--json")
-    assert code == 0
-    entries = json.loads(out)
-    assert [(e["name"], e["workload"], e["sysroot"], e["traces"], e["num_checkpoints"]) for e in entries] == [
-        ("e", "wl", "sr", [trace_uuid], 1)]
-
-    code, out, _ = run("list", "traces", "--json")
-    traces = json.loads(out)
-    assert [(t["uuid"], t["complete"], t["exit_status"], t["harts"][0]["instret"], t["checkpoints"])
-            for t in traces] == [(trace_uuid, True, 0, 5000, ["e.2.0.40"])]
-
-    code, out, _ = run("list", "checkpoints", "--json", "--trace", "e")
-    ckpts = json.loads(out)
-    assert [(c["name"], c["trace"], c["simpoint_weight"], c["harts"][0]["csr_count"]) for c in ckpts] == [
-        ("e.2.0.40", trace_uuid, 0.4, 1000)]
+    assert run("list", "entries", "--json")[:2] == (0, '[\n  "e"\n]\n')
+    assert run("list", "traces")[:2] == (0, f"{trace_uuid}\n")
+    assert run("list", "checkpoints", "--trace", trace_uuid[:8] + "*")[:2] == (0, "e.2.0.40\n")
 
     code, out, _ = run("show", "entry", "e", "--json")
-    assert json.loads(out)["description"] == "an entry"
+    view = json.loads(out)
+    assert (view["description"], view["workload"], view["sysroot"], view["traces"], view["num_checkpoints"]) == (
+        "an entry", "wl", "sr", [trace_uuid], 1)
+    trace = json.loads(run("show", "trace", trace_uuid, "--json")[1])
+    assert (trace["complete"], trace["exit_status"], trace["harts"][0]["instret"], trace["checkpoints"]) == (
+        True, 0, 5000, ["e.2.0.40"])
+    ckpt = json.loads(run("show", "checkpoint", "e.2.0.40", "--json")[1])
+    assert (ckpt["trace"], ckpt["simpoint_weight"], ckpt["harts"][0]["csr_count"]) == (trace_uuid, 0.4, 1000)
     code, out, _ = run("show", "sysroot", "sr", "--json")
     assert json.loads(out)["entries"] == ["e"]
     code, out, _ = run("show", "workload", "wl", "--json")
@@ -67,22 +62,9 @@ def test_list_and_show(run, populated):
     assert json.loads(out)["path"].endswith(os.path.join(trace_uuid, "e.2.0.40"))
 
 
-def test_list_tables(run, populated):
-    for kind in ("workloads", "sysroots", "entries", "traces", "checkpoints"):
-        code, out, _ = run("list", kind)
-        assert code == 0
-        assert len(out.splitlines()) == 2  # heading and one row
+def test_show_readable(run, populated):
     code, out, _ = run("show", "trace", "e")
-    assert "num_commands: 2" in out
-
-
-def test_list_filters(run, populated, write_entry_point):
-    run("repo", "compose", "add", "entry", "sr", "other-wl", "other", write_entry_point())
-    _, out, _ = run("list", "entries", "--workload", "wl", "--json")
-    assert [e["name"] for e in json.loads(out)] == ["e"]
-    _, out, _ = run("list", "entries", "oth", "--json")
-    assert [e["name"] for e in json.loads(out)] == ["other"]
-    assert run("list", "traces", "--workload", "wl")[0] == 2
+    assert code == 0 and "num_commands: 2" in out
 
 
 def test_metadata(run, populated, sysroot_src, write_entry_point, tmp_path):
@@ -267,7 +249,6 @@ def test_provenance(run, populated, tmp_path):
                  "fesvr: heads/main-0-g8472993 (8472993ef664)", "command: spike -m1 +dev-traffic-record=rec",
                  "cwd: /work"):
         assert line in out
-    assert "RECORDED ON" in run("list", "traces")[1] and "recorder" in run("list", "traces")[1]
 
     # a recording made by an older spike, without one, is refused
     old = tmp_path / "old"
@@ -313,16 +294,6 @@ def test_add_checkpoints(run, populated, tmp_path):
     assert run("repo", "compose", "add", "checkpoint", populated, str(checkpoints / "e.5.0.25"), "--desc", str(desc))[0] == 2
 
 
-def test_list_json_is_show_json(run, populated):
-    for list_kind, show_kind, key in (("workloads", "workload", "name"), ("sysroots", "sysroot", "name"),
-                                      ("entries", "entry", "name"), ("traces", "trace", "uuid"),
-                                      ("checkpoints", "checkpoint", "name")):
-        listed = json.loads(run("list", list_kind, "--json")[1])
-        assert listed, list_kind
-        for view in listed:
-            assert view == json.loads(run("show", show_kind, view[key], "--json")[1])
-
-
 def test_pull_and_push(run, populated, sysroot_src, tmp_path, caplog):
     trace_uuid = populated
     repo_path = str(tmp_path / "repo")
@@ -364,7 +335,7 @@ def test_subrepo(run, populated, tmp_path, caplog):
     assert run("repo", "subrepo", sub, "e")[:2] == (0, sub + "\n")
     assert "added 1 sysroot, 1 entry point, 1 trace, 1 checkpoint" in caplog.text
     code, out, _ = run("--repo-path", sub, "list", "checkpoints", "--json", repo=False)
-    assert (code, [c["name"] for c in json.loads(out)]) == (0, ["e.2.0.40"])
+    assert (code, json.loads(out)) == (0, ["e.2.0.40"])
     assert run("repo", "subrepo", sub, "e")[0] == 5  # not empty
     assert run("repo", "subrepo", str(tmp_path / "sub2"), "nope")[0] == 3
     assert not os.path.exists(tmp_path / "sub2")

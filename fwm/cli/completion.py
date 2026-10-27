@@ -6,23 +6,18 @@ repository is opened here from the parsed --repo-path (or FWM_REPO_PATH). Comple
 usable repository, or on any error, a callback offers nothing.
 """
 import os
-import re
-from typing import Callable, Dict, Iterable, Iterator, List, Optional, Tuple, Union
+from typing import Callable, Dict, Iterable, Iterator, List, Optional, Tuple
 
 import click
 from click.shell_completion import CompletionItem
 
 from fwm.database.schema import Sysroot, Workload, NativeEntry, DecoupledTrace, DecoupledCheckpoint
+from fwm.repo.listing import natural_key
 from fwm.repo.repo import Repo
 from fwm.repo.lookup import resolve_trace
 
 Candidates = Iterable[Tuple[str, Optional[str]]]  # (value, help)
 Completer = Callable[[click.Context, click.Parameter, str], List[CompletionItem]]
-
-
-def _natural_key(value: str) -> List[Union[int, str]]:
-    """Sort key that orders the numbers in a name by value: "e.2" before "e.10"."""
-    return [int(part) if part.isdigit() else part for part in re.split(r"(\d+)", value)]
 
 
 def _expand(path: Optional[str]) -> Optional[str]:
@@ -62,7 +57,7 @@ def _completer(candidates: Callable[[click.Context, str], Candidates],
         try:
             items = {value: help_text for value, help_text in candidates(ctx, incomplete)
                      if value.startswith(incomplete)}
-            return [CompletionItem(value, help=items[value]) for value in sorted(items, key=_natural_key)]
+            return [CompletionItem(value, help=items[value]) for value in sorted(items, key=natural_key)]
         except Exception:
             return []
         finally:
@@ -170,15 +165,9 @@ def _by_kind(ctx: click.Context, incomplete: str) -> Candidates:
     return candidates(ctx, incomplete) if candidates else []
 
 
-def _list_filter(ctx: click.Context, incomplete: str) -> Candidates:
-    """The FILTER of `fwm list <kind>`: the names it matches (for traces, the names of their entry points)."""
-    kind = ctx.params.get("kind") or "entries"
-    if kind == "traces":
-        return ((name, None) for name in {t.native_entry.name for t in DecoupledTrace.select()})
-    if kind == "checkpoints":
-        return ((name, None) for name in {c.name for c in DecoupledCheckpoint.select()})
-    candidates = {"workloads": _workloads, "sysroots": _sysroots, "entries": _entries}.get(kind)
-    return candidates(ctx, incomplete) if candidates else []
+def _trace_uuids(ctx: click.Context, incomplete: str) -> Candidates:
+    """Trace UUIDs only (`fwm list --trace` matches UUIDs, not the names of entry points)."""
+    return ((str(trace.uuid), _trace_help(trace)) for trace in DecoupledTrace.select())
 
 
 complete_sysroot = _completer(_sysroots)
@@ -187,7 +176,7 @@ complete_entry = _completer(_entries)
 complete_other_entry = _completer(_other_entries)
 complete_source_entry = _completer(_other_entries, _source_path)
 complete_trace = _completer(_traces)
+complete_trace_uuid = _completer(_trace_uuids)
 complete_checkpoint = _completer(_checkpoints)
 complete_simpoint_checkpoint = _completer(_simpoint_checkpoints)
 complete_by_kind = _completer(_by_kind)
-complete_list_filter = _completer(_list_filter)

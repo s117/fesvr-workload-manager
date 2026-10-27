@@ -5,7 +5,7 @@ import pytest
 from click.shell_completion import ShellComplete
 from click.testing import CliRunner
 
-from fwm.cli.completion import _natural_key
+from fwm.repo.listing import natural_key
 from fwm.cli.fwm import cli
 from tests.cli.conftest import write_checkpoints
 from tests.fesvr_files import write_recording, Command, exit_command
@@ -30,7 +30,7 @@ def values(items):
 
 
 def naturally_sorted(items):
-    return sorted(items, key=lambda item: _natural_key(item[0]))
+    return sorted(items, key=lambda item: natural_key(item[0]))
 
 
 def other_commands(name):
@@ -93,13 +93,15 @@ def test_by_kind(complete, populated):
     assert values(complete("show", incomplete="s")) == ["sysroot"]
 
 
-def test_list_filter(complete, populated):
+def test_list_filters(complete, populated):
+    trace_uuid = populated
     assert values(complete("list")) == ["workloads", "sysroots", "entries", "traces", "checkpoints"]
-    assert values(complete("list", "entries")) == ["e"]
-    assert values(complete("list", "workloads")) == ["wl"]
-    assert values(complete("list", "sysroots")) == ["sr"]
-    assert values(complete("list", "traces")) == ["e"]  # the filter matches the entry point
-    assert values(complete("list", "checkpoints")) == ["e.2.0.40"]
+    assert values(complete("list", "entries")) == []  # no positional filter
+    assert values(complete("list", "checkpoints", "--workload")) == ["wl"]
+    assert values(complete("list", "checkpoints", "--sysroot")) == ["sr"]
+    assert values(complete("list", "workloads", "--entry")) == ["e"]
+    assert values(complete("list", "workloads", "--trace")) == [trace_uuid]  # UUIDs only: --trace matches them
+    assert values(complete("list", "traces", "--checkpoint")) == ["e.2.0.40"]
 
 
 def test_trace_entry_name_only_while_unique(complete, run, populated, tmp_path):
@@ -153,7 +155,7 @@ def test_no_usable_repo(complete, run, tmp_path, monkeypatch, capsys, setup):
 
 def test_natural_sort():
     names = ["e.10.0.10", "e.2.0.40", "e.1.0.50", "b"]
-    assert sorted(names, key=_natural_key) == ["b", "e.1.0.50", "e.2.0.40", "e.10.0.10"]
+    assert sorted(names, key=natural_key) == ["b", "e.1.0.50", "e.2.0.40", "e.10.0.10"]
 
 
 @pytest.mark.parametrize("shell, marker", [("zsh", "_FWM_COMPLETE=zsh_complete"),

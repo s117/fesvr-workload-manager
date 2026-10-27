@@ -1,60 +1,58 @@
-from typing import List, Tuple
-
 import click
 
-from fwm.cli.completion import complete_list_filter, complete_sysroot, complete_trace, complete_workload
+from fwm.cli.completion import (
+    complete_checkpoint, complete_entry, complete_sysroot, complete_trace_uuid, complete_workload
+)
 from fwm.cli.fwm import open_repo
-from fwm.cli.output import echo_json, echo_table, Column
-from fwm.repo import query
-from fwm.repo.lookup import resolve_trace
+from fwm.cli.output import echo_json
+from fwm.repo.listing import KINDS, PLURALS, list_names
+from fwm.utils.log import Logger
+
+_FILTER_HELP = {
+    "workload": "Only those related to a workload whose name matches GLOB.",
+    "sysroot": "Only those related to a sysroot whose name matches GLOB.",
+    "entry": "Only those related to an entry point whose name matches GLOB.",
+    "trace": "Only those related to a trace whose UUID matches GLOB.",
+    "checkpoint": "Only those related to a checkpoint whose name matches GLOB, or <trace UUID GLOB>:<name GLOB>.",
+}
+_COMPLETERS = {"workload": complete_workload, "sysroot": complete_sysroot, "entry": complete_entry,
+               "trace": complete_trace_uuid, "checkpoint": complete_checkpoint}
+_SINGULAR = {plural: kind for kind, plural in PLURALS.items()}
+
+
+def _filter_options(f):
+    for kind in reversed(KINDS):
+        f = click.option(f"--{kind}", f"{kind}_globs", metavar="GLOB", multiple=True,
+                         shell_complete=_COMPLETERS[kind], help=_FILTER_HELP[kind])(f)
+    return f
 
 
 @click.command("list")
-@click.argument("kind", type=click.Choice(["workloads", "sysroots", "entries", "traces", "checkpoints"]),
-                default="entries", required=False)
-@click.argument("name_filter", metavar="[FILTER]", required=False, shell_complete=complete_list_filter)
-@click.option("--workload", shell_complete=complete_workload, help="Only the entry points of this workload.")
-@click.option("--sysroot", shell_complete=complete_sysroot, help="Only the entry points in this sysroot.")
-@click.option("--trace", "trace_ref", shell_complete=complete_trace, help="Only the checkpoints of this trace.")
-@click.option("--json", "as_json", is_flag=True, help="Print JSON, for scripts.")
+@click.argument("kind", type=click.Choice([PLURALS[k] for k in KINDS]), default="entries", required=False)
+@_filter_options
+@click.option("--json", "as_json", is_flag=True, help="Print a JSON array of the names, for scripts.")
 @click.pass_context
-def list_cmd(ctx, kind, name_filter, workload, sysroot, trace_ref, as_json):
+def list_cmd(ctx, kind, workload_globs, sysroot_globs, entry_globs, trace_globs, checkpoint_globs, as_json):
     """
-    List the workloads, sysroots, entry points (the default), traces or checkpoints of the repository, whose name
-    contains FILTER (for traces, the name of their entry point).
+    List the names of the workloads, sysroots, entry points (the default), traces or checkpoints of the repository:
+    traces by UUID, and checkpoints as `fwm show checkpoint` takes them. `fwm show` gives the details of each.
+
+    A filter keeps those related to an entity it matches: directly, or through others. A workload or sysroot is
+    related to its entry points, an entry point to its workload, sysroot and traces, and a trace to its checkpoints.
+    E.g. `fwm list checkpoints --workload bfs` lists the checkpoints of the traces of bfs's entry points, and
+    `fwm list entries --entry 'bfs-*'` the entry points whose name starts with "bfs-".
+
+    A GLOB is a shell-style pattern (*, ?, [...]; quote it in the shell), or an exact name. A filter given more than
+    once keeps what matches any of its GLOBs; different filters must all hold.
     """
-    r = open_repo(ctx)
-    if (workload or sysroot) and kind != "entries":
-        raise click.UsageError("--workload and --sysroot apply to entries")
-    if trace_ref and kind != "checkpoints":
-        raise click.UsageError("--trace applies to checkpoints")
-
-    # Each column is (heading, the value it shows): a key of the view, or a function of the view. The views themselves
-    # are printed by --json, the same as `fwm show --json` prints them.
-    columns: List[Tuple[str, Column]]
-    if kind == "workloads":
-        rows = query.list_workloads(name_filter)
-        columns = [("WORKLOAD", "name"), ("ENTRIES", "entries")]
-    elif kind == "sysroots":
-        rows = query.list_sysroots(r, name_filter)
-        columns = [("SYSROOT", "name"), ("FILES", "num_files"), ("BYTES", "size_bytes"), ("ENTRIES", "entries")]
-    elif kind == "entries":
-        rows = query.list_entries(name_filter, workload, sysroot)
-        columns = [("ENTRY", "name"), ("WORKLOAD", "workload"), ("SYSROOT", "sysroot"), ("MEM_MB", "mem_mb"),
-                   ("TRACES", lambda v: len(v["traces"])), ("CHECKPOINTS", "num_checkpoints"), ("COMMAND", "command")]
-    elif kind == "traces":
-        rows = query.list_traces(r, name_filter)
-        columns = [("TRACE", "uuid"), ("ENTRY", "entry"), ("RECORDED ON", lambda v: v["provenance"]["uname"]["nodename"]),
-                   ("COMPLETE", "complete"), ("EXIT", "exit_status"),
-                   ("INSTRET", lambda v: [h["instret"] for h in v["harts"]]),
-                   ("CHECKPOINTS", lambda v: len(v["checkpoints"]))]
-    else:
-        rows = query.list_checkpoints(r, name_filter, resolve_trace(trace_ref) if trace_ref else None)
-        columns = [("CHECKPOINT", "name"), ("ENTRY", "entry"), ("TRACE", "trace"), ("WEIGHT", "simpoint_weight"),
-                   ("INTERVAL", "simpoint_interval"), ("COUNT", lambda v: [h["csr_count"] for h in v["harts"]]),
-                   ("VALIDATION", lambda v: v["validation"]["status"] if v["validation"] else None)]
-
+    open_repo(ctx)
+    globs = {"workload": workload_globs, "sysroot": sysroot_globs, "entry": entry_globs, "trace": trace_globs,
+             "checkpoint": checkpoint_globs}
+    listing = list_names(_SINGULAR[kind], globs)
+    for filter_kind, glob in listing.unmatched:
+        Logger.get_logger().warning(f"no {filter_kind} matches {glob!r}")
     if as_json:
-        echo_json(rows)
+        echo_json(listing.names)
     else:
-        echo_table(rows, columns)
+        for name in listing.names:
+            click.echo(name)
