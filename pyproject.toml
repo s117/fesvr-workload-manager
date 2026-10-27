@@ -3,7 +3,9 @@ name = "fwm"
 version = "0.0.1"
 description = "RISCV workload manager for simulating with Anycore infrastructure."
 authors = [{ name = "Jiayang Li", email = "jli95@ncsu.edu" }]
-license = { text = "Other/Proprietary License" }
+# NCSU's BSD-style license, as riscv-simenv's: BSD-3-Clause with NCSU's own clause 3, so no SPDX identifier fits
+license = "LicenseRef-NCSU"
+license-files = ["LICENSE"]
 readme = "README.md"
 keywords = ["riscv", "fesvr", "simenv", "anycore"]
 classifiers = [
