@@ -2,11 +2,13 @@
 
 Read this before changing fwm. It gathers what earlier sessions learned: what fwm is for, how it is built, the spike behaviour it depends on, the decisions behind it, and how the user likes work done. For using fwm, see [README.md](../README.md). For the contract with the pipeline that fills repositories, see [fwm-bootstrap-interface.md](fwm-bootstrap-interface.md). Keep this file current when something here changes.
 
+**This file is public** (the repository is, and PyPI links to it). Keep it free of anything specific to one machine or site: no paths of a home directory, cluster or install, no host names, no private URLs. Those go in `docs/agent-guide.local.md`, which git ignores: read it too when it exists. Below, `<riscv-isa-sim>`, `<fwm-bootstrap>` and `<toolchain>` stand for the checkout or install it gives.
+
 ## 1. What fwm is
 
-fwm (FESVR Workload Manager, package `fwm` on PyPI, command `fwm`) manages RISC-V simulation workloads for a custom spike. It replaces riscv-simenv (`~/Garage/riscv-simenv`; the agent skill `use-riscv-simenv` describes it).
+fwm (FESVR Workload Manager, package `fwm` on PyPI, command `fwm`) manages RISC-V simulation workloads for a custom spike. It replaces riscv-simenv (the agent skill `use-riscv-simenv` describes it).
 
-The custom spike lives in `~/Garage/riscv-isa-sim`, with its FESVR as the submodule `riscv-fesvr`. Its guide is `riscv-isa-sim/docs/fesvr-checkpoint-and-traffic-replay.md`. Its FESVR can:
+The custom spike is [riscv-isa-sim](https://github.com/s117/riscv-isa-sim) (checked out at `<riscv-isa-sim>`), with its FESVR as the submodule `riscv-fesvr`. Its guide is `riscv-isa-sim/docs/fesvr-checkpoint-and-traffic-replay.md`. Its FESVR can:
 - **record** a run's device traffic (every proxied system call, with the memory it read and wrote) into a folder;
 - **replay** that recording without the original environment: no system call runs again, so a replay prints nothing and writes no file;
 - **create and load checkpoints** while replaying.
@@ -19,7 +21,7 @@ sysroot --(entry point)--> record --> trace --> create checkpoints --> checkpoin
 
 **Two audiences.** Keep every new feature on the right side of this split, which the CLI's layout follows (user decision, 2026-10-26):
 - **Its users** often have read-only access. Their commands are the top level: `fwm list`, `show`, `mkgen from-sysroot | from-fesvr-trace | from-checkpoint | from-simpoint` and `spawn` (plus `completion`, for setup, which isn't offered on TAB). Every one of these must work on a repository they can't write to.
-- **The repository's creator** uses `fwm repo`. In practice this is the pipeline **fwm-bootstrap** (`/usr/local/usrapps/rotenberg/fwm-bootstrap`, its own guide in `docs/agent-guide.md`):
+- **The repository's creator** uses `fwm repo`. In practice this is the pipeline **fwm-bootstrap** (at `<fwm-bootstrap>`, its own guide in `docs/agent-guide.md`):
   - the repository as a whole: `init`, `verify`, `gc`, and copying between repositories: `pull`, `push`, `subrepo`;
   - `fwm repo compose` changes the content, and each of its commands needs write access: `add {sysroot|entry|trace|checkpoint}`, `remove`, `set-metadata`, `set-checkpoint-validation`;
   - `fwm repo bootstrap` makes traces and checkpoints, and none of its commands writes: `mkgen record-fesvr-trace`, `mkgen create-checkpoints` (run generators, like `fwm mkgen`), and `check-fesvr-trace` (no repository at all).
@@ -30,14 +32,12 @@ sysroot --(entry point)--> record --> trace --> create checkpoints --> checkpoin
 
 | Remote | Status |
 | --- | --- |
-| `ncsu` = `git@github.com:ncstate-ece/Rotenberg-Student-jli95-fesvr-workload-manager.git` | private; the one fwm-bootstrap depends on |
 | `origin` = `git@github.com:s117/fesvr-workload-manager.git` | public since 2026-10-27; the source PyPI's page links to |
+| `ncsu` | a private mirror (its URL is in the local notes) |
 
 The branch is `main`. Never push without being asked.
 
-**PyPI:** fwm is published as the package `fwm` (from 0.1.0), under NCSU's license (`LICENSE`, as riscv-simenv's). The README is its PyPI page, so it stays generic: no group paths, no private URLs, and absolute links to files of the repository (relative ones break on PyPI). A version can't be uploaded twice: bump `version` in `pyproject.toml` for each release.
-
-**On the group's machines,** fwm comes with the bootstrap pipeline: `source /usr/local/usrapps/rotenberg/fwm-bootstrap/install/<arch>/shrc` puts `fwm` on `PATH`. The group's spike is in the newest `/usr/local/usrapps/rotenberg/anycore-riscv/install-linux-<commit>/bin`.
+**PyPI:** fwm is published as the package `fwm` (from 0.1.0), under NCSU's license (`LICENSE`, as riscv-simenv's). The README is its PyPI page, so it stays generic: no site paths, no private URLs, and absolute links to files of the repository (relative ones break on PyPI). A version can't be uploaded twice: bump `version` in `pyproject.toml` for each release. Build the release into its own folder (`uv build -o dist/fwm-<version>`) and upload that folder only.
 
 ## 2. Code map
 
@@ -96,7 +96,7 @@ Stored content is made read-only, so delete a repository with `chmod -R u+w <dir
 
 Verify formats and options in `riscv-isa-sim` / `riscv-fesvr` source before designing a feature; the user expects this.
 
-**Minimum versions.** Toolchains with spike are installed at `/usr/local/usrapps/rotenberg/anycore-riscv/install-linux-<commit>/`; use the newest one (on 2026-10-20, `install-linux-df3c68d`: riscv-isa-sim c303463 / riscv-fesvr f8a1a42). The older `.../jli95/anycore-riscv/install-linux` is gone.
+**Minimum versions.** Use the newest installed toolchain with spike (`<toolchain>`; on 2026-10-20 it had riscv-isa-sim c303463 / riscv-fesvr f8a1a42).
 
 | riscv-isa-sim / riscv-fesvr | What fwm needs from it |
 | --- | --- |
@@ -198,25 +198,25 @@ uv run ruff check fwm tests      # pyproject pins ruff's former default rules (E
 **Spike end-to-end test** (`tests/integration/test_spike_e2e.py`, ~45 s): it needs a helloworld sysroot built with the new toolchain. Scratch files vanish between sessions; rebuild it with:
 
 ```sh
-R=/usr/local/usrapps/rotenberg/anycore-riscv/install-linux-df3c68d   # or the newest install-linux-*
+R=<toolchain>                    # the newest one with spike
 S=<scratch dir>; mkdir -p $S/sysroot/app $S/sysroot/boot
 $R/bin/riscv64-unknown-linux-gnu-gcc -static -Wl,-Ttext-segment,0x10000 -O2 -o $S/sysroot/app/helloworld.rv64 \
-    /usr/local/usrapps/rotenberg/fwm-bootstrap/suites/helloworld/sysroots/000.helloworld/src/helloworld.c
+    <fwm-bootstrap>/suites/helloworld/sysroots/000.helloworld/src/helloworld.c
 cp $R/riscv64-unknown-elf/bin/pk $S/sysroot/boot/pk
 echo '{"command": "helloworld.rv64", "working_directory": "/app", "envs": null, "stdin_file": null,
        "boot_elf": "/boot/pk", "mem_mb": 256, "nprocs": 1}' > $S/entry.json
 FWM_TEST_SPIKE=$R/bin/spike FWM_TEST_SYSROOT=$S/sysroot FWM_TEST_ENTRY_POINT=$S/entry.json \
-FWM_TEST_SPIKE_SRC=~/Garage/riscv-isa-sim uv run pytest tests/integration
+FWM_TEST_SPIKE_SRC=<riscv-isa-sim> uv run pytest tests/integration
 ```
 
 **Building spike** (only if the installed one is older than needed):
-- configure `~/Garage/riscv-isa-sim` with CMake (`-DCMAKE_BUILD_TYPE=RelO3 -DENABLE_DBG_TRACE=1`);
-- build `--target spike` only, since an untracked extension fails to build;
+- configure `<riscv-isa-sim>` with CMake (`-DCMAKE_BUILD_TYPE=RelO3 -DENABLE_DBG_TRACE=1`), out of tree;
+- build `--target spike` only: other targets may need more than the checkout has;
 - check `spike --version`'s commits against the checkout. The user usually installs new builds themselves.
 
 **Pitfalls:**
 - **Two environments:** a shell started in fwm-bootstrap may carry its `VIRTUAL_ENV`, so `uv` warns. Harmless.
-- **No system Python:** `/usr/bin/python3.12` is on the login node's local disk but not on every compute node, so fwm runs on uv's Python, which lives on GPFS (`~/.local/share/uv`). Startup speed has to come from importing less.
+- **No system Python on a cluster:** the login node's Python may be missing on compute nodes, so fwm runs on uv's Python, which lives on the shared filesystem. Startup speed has to come from importing less.
 - **zsh word splitting:** the user's shell is zsh, so `$var` holding several words isn't split. Use bash for such loops.
 - **Signals in tests:** wait for the whole process group to exit before reading a dump. make ends before spike finishes writing.
 - **`tests/fesvr_files.py`** writes fake files that must match the real formats. When spike changes a format, change the fakes and the readers together.

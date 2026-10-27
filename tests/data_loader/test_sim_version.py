@@ -5,9 +5,9 @@ from fwm.data_loader.sim_version import parse_sim_version, read_sim_version, Sim
 # The output of `spike --version` (riscv-isa-sim 0d7a85c)
 SPIKE_VERSION = """\
 spike build information:
-  Build hostname  - precision5820
-  Build host      - Linux 6.18.49-1-MANJARO x86_64
-  Build target    - Linux-6.18.49-1-MANJARO
+  Build hostname  - builder
+  Build host      - Linux 6.18.0 x86_64
+  Build target    - Linux-6.18.0
   C++ compiler    - GNU 16.2.1 20260810 (/usr/bin/c++)
   Build date      - 2026-10-14T17:48:26-0400
   Build type      - RelO3 -O3 -g
@@ -15,9 +15,9 @@ spike build information:
   Version         - heads/anycore-gcc_16.1.0-llvm_22.1.8-0-g0d7a85c
   Commit          - 0d7a85c80db593a638d33cb655d866b174d69bde
 FESVR (libfesvr) build information:
-  Build hostname  - precision5820
-  Build host      - Linux 6.18.49-1-MANJARO x86_64
-  Build target    - Linux-6.18.49-1-MANJARO
+  Build hostname  - builder
+  Build host      - Linux 6.18.0 x86_64
+  Build target    - Linux-6.18.0
   C++ compiler    - GNU 16.2.1 20260810 (/usr/bin/c++)
   Build date      - 2026-10-14T17:48:26-0400
   Build type      - RelO3 -O3 -g
