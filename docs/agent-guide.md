@@ -37,7 +37,7 @@ sysroot --(entry point)--> record --> trace --> create checkpoints --> checkpoin
 
 The branch is `main`. Never push without being asked.
 
-**PyPI:** fwm is published as the package `fwm` (from 0.1.0), under NCSU's license (`LICENSE`, as riscv-simenv's). The README is its PyPI page, so it stays generic: no site paths, no private URLs, and absolute links to files of the repository (relative ones break on PyPI). A version can't be uploaded twice: bump `version` in `pyproject.toml` for each release. Build the release into its own folder (`uv build -o dist/fwm-<version>`) and upload that folder only.
+**PyPI:** fwm is published as the package `fwm` (from 0.1.0), under NCSU's license (`LICENSE`, as riscv-simenv's). The README is its PyPI page, so it stays generic: no site paths, no private URLs, and absolute links to files of the repository (relative ones break on PyPI). A version can't be uploaded twice: bump `version` in `pyproject.toml` for each release. **Every release follows the checklist in §8.**
 
 ## 2. Code map
 
@@ -192,7 +192,7 @@ Verify formats and options in `riscv-isa-sim` / `riscv-fesvr` source before desi
 ## 7. Development
 
 ```sh
-uv run pytest                    # ~550 tests, ~45 s
+uv run pytest                    # ~665 tests, ~50 s
 uv run mypy fwm tests
 uv run ruff check fwm tests      # pyproject pins ruff's former default rules (E4, E7, E9, F)
 ```
@@ -219,8 +219,78 @@ FWM_TEST_SPIKE_SRC=<riscv-isa-sim> uv run pytest tests/integration
 **Pitfalls:**
 - **Two environments:** a shell started in fwm-bootstrap may carry its `VIRTUAL_ENV`, so `uv` warns. Harmless.
 - **`Path.exists()` and permissions:** on an item in a directory the user can't search, it raises `PermissionError` before Python 3.14 and returns False from 3.14. Code that inspects a tree another user may own (e.g. `repo verify` on a shared repository) uses `os.lstat` and reports the error, as `verify_catalog` does. Test permissions on the real filesystem (`tmp_path`): pyfakefs emulates them its own way, and on 3.14 its `Path.is_dir()` is wrong for a mode-000 directory.
-- **Supported Pythons:** 3.12 to 3.14. Before a release, run the suite on each, and on 3.12 with the minimum versions of the dependencies (see `pyproject.toml`).
+- **Supported Pythons:** 3.12 to 3.14, as the classifiers in `pyproject.toml` say. §8 tests each before a release.
+- **`uv run pytest` tests the checkout, never a built package:** `pytest.ini` puts the checkout on `sys.path` (`pythonpath = .`), even for a pytest run elsewhere with `-c pytest.ini`. To test a wheel, run a copy of `tests/` outside the checkout (§8, step 8).
 - **No system Python on a cluster:** the login node's Python may be missing on compute nodes, so fwm runs on uv's Python, which lives on the shared filesystem. Startup speed has to come from importing less.
 - **zsh word splitting:** the user's shell is zsh, so `$var` holding several words isn't split. Use bash for such loops.
 - **Signals in tests:** wait for the whole process group to exit before reading a dump. make ends before spike finishes writing.
 - **`tests/fesvr_files.py`** writes fake files that must match the real formats. When spike changes a format, change the fakes and the readers together.
+
+## 8. Releasing to PyPI: the checklist
+
+Follow every step, in order, for every release, even a small one. Report each step's result to the user. A step that fails stops the release until it is fixed. Below, `X.Y.Z` is the new version and `<scratch>` a scratch directory outside the checkout.
+
+**Who does what.** The agent prepares and verifies. The user signs, pushes, tags and uploads: their keys and PyPI tokens never pass through the agent. Never push or upload yourself.
+
+**Prepare (agent):**
+1. **What's in it.** List the changes since the last release (`git log vPREV..`), and confirm with the user that they belong in this release. A version can never be uploaded twice, to PyPI or to TestPyPI: if a published version needs a change, the fix is a new version.
+2. **Dependencies.**
+   - Upgrade the lock file (`uv lock --upgrade && uv sync`).
+   - The build backend's range in `[build-system]` must include the current uv: `uv build` must print no warning.
+   - Each minimum in `[project] dependencies` must be one fwm really works with: step 8 tests them. When a feature needs a newer version, raise the minimum.
+3. **Checks in the checkout:** `uv run pytest`, `uv run mypy fwm tests` and `uv run ruff check fwm tests`. Check each exit status on its own, never through a pipe such as `| tail`, which hides it. Run the spike end-to-end test as well (§7).
+4. **Docs.**
+   - The README is the PyPI page: its text matches what the release does; it holds no site paths or private URLs; its links to the repository are absolute.
+   - The `--help` texts match the behaviour (`tests/cli/test_cli.py` runs their examples).
+   - When user commands changed, so does the skill (`skills/use-fwm/SKILL.md`). Run its examples again, on a real repository.
+5. **The release commit.** Bump `version` in `pyproject.toml`, run `uv lock`, and commit `prepare release X.Y.Z` as the last commit, with a message listing what the release adds.
+6. **Build** from a clean tree (`git status` shows nothing that goes into the package):
+   ```sh
+   uv build --clear -o dist/fwm-X.Y.Z      # its own folder: never upload a bare dist/
+   uvx twine check dist/fwm-X.Y.Z/fwm-X.Y.Z*
+   sha256sum dist/fwm-X.Y.Z/fwm-X.Y.Z*     # the hashes to compare with later
+   ```
+7. **Inspect the files.**
+   - The sdist holds `fwm/`, `LICENSE`, `README.md` and `pyproject.toml` only. Its entries are owned by uid 0 and dated 1970 (`tar tvzf`).
+   - The wheel holds the Makefile templates (`fwm/mkgen/templates/*.mk`) and `LICENSE`.
+   - Neither holds a path, host name or user name of the machine: grep their contents.
+   - Compare with the last release's sdist (download it from PyPI): only the expected files differ.
+   - Building again gives byte-identical files.
+8. **Test the wheel itself,** on every supported Python, outside the checkout. In the checkout, `pytest.ini` would import the source instead (§7, pitfalls). For each of 3.12, 3.13 and 3.14 with the latest dependencies, and for 3.12 with the minimums pinned exactly (`click==…`, `peewee==…`, …):
+   ```sh
+   V=<scratch>/venv; T=<scratch>/t; mkdir -p $T && cp -r tests $T/
+   uv venv --python 3.12 $V
+   uv pip install --python $V/bin/python 'click==MIN' 'peewee==MIN' 'pydantic==MIN' 'colorama==MIN' pytest pyfakefs
+   uv pip install --python $V/bin/python --no-deps dist/fwm-X.Y.Z/fwm-X.Y.Z-py3-none-any.whl
+   (cd $T && $V/bin/python -m pytest -q -p no:cacheprovider -o pythonpath=. --rootdir=. tests)
+   ```
+   A failure on one Python is a release blocker, even when it looks like a test-library quirk: find out which it is first.
+9. **Use the wheel as a user would.**
+   - Install it with `uv tool install --no-cache` into a scratch `UV_TOOL_DIR`.
+   - On a real repository with SimPoint and plain checkpoints, check `fwm --version`, `list`, `show`, each of the four `mkgen` kinds with `make` and the real spike, and `repo verify`.
+   - Replays must end with the trace's `instret` and exit status, and `from-simpoint` runs at the checkpoint's count plus its interval.
+10. **Privacy.** Grep the tracked files and the diffs of every commit since the last release for home, cluster and install paths, host names, kernel strings, user names and private URLs (§1). They belong in `agent-guide.local.md` only.
+
+**Publish (user, with the agent checking each step):**
+
+11. The user signs the release commit (`git commit --amend --no-edit -S`), pushes `main` to both remotes, then creates and pushes a signed tag: `git tag -s vX.Y.Z -m "fwm X.Y.Z"`. Check the signatures (`git log --format='%h %G? %s'`, `git tag -v vX.Y.Z`), and that both remotes' `main` and tag point at the release commit.
+12. Rebuild from a clean checkout of the tag (`git worktree add <scratch>/w vX.Y.Z`). The hashes must equal step 6's.
+13. The user uploads to **TestPyPI**, naming the files explicitly:
+    ```sh
+    uv publish --publish-url https://test.pypi.org/legacy/ --check-url https://test.pypi.org/simple/ \
+        -u __token__ dist/fwm-X.Y.Z/fwm-X.Y.Z*
+    ```
+14. **Check TestPyPI.**
+    - Its JSON (`https://test.pypi.org/pypi/fwm/X.Y.Z/json`): the version, license, dependencies, URLs, and both files' hashes equal to step 6's.
+    - The page: render the uploaded description with `readme_renderer`. TestPyPI blocks scripted page views. Every anchor and link must resolve.
+    - A fresh install, then step 9 again on it:
+      ```sh
+      uvx --no-cache --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ \
+          --from fwm==X.Y.Z fwm --version
+      ```
+15. The user uploads to **PyPI**: the same command, without `--publish-url`, and with `--check-url https://pypi.org/simple/`. Check it as in step 14, from pypi.org.
+
+**After the release:**
+
+16. Move fwm-bootstrap to the new version (`fwm>=X.Y.Z,<X.(Y+1)` in its `pyproject.toml`, then `uv lock`), and run its tests.
+17. Update this guide's PyPI paragraph (§1) if something about releasing changed.
