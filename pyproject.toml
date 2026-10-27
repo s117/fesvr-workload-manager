@@ -1,17 +1,24 @@
 [project]
 name = "fwm"
-version = "0.0.1"
-description = "RISCV workload manager for simulating with Anycore infrastructure."
+version = "0.1.0"
+description = "RISC-V FESVR Workload Manager: traces, checkpoints and SimPoint runs for a record/replay spike."
 authors = [{ name = "Jiayang Li", email = "jli95@ncsu.edu" }]
 # NCSU's BSD-style license, as riscv-simenv's: BSD-3-Clause with NCSU's own clause 3, so no SPDX identifier fits
 license = "LicenseRef-NCSU"
 license-files = ["LICENSE"]
 readme = "README.md"
-keywords = ["riscv", "fesvr", "simenv", "anycore"]
+keywords = ["riscv", "spike", "fesvr", "simulation", "checkpoint", "simpoint", "anycore"]
 classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Science/Research",
     "Operating System :: POSIX :: Linux",
     "Operating System :: MacOS",
-    "Development Status :: 3 - Alpha",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: System :: Emulators",
 ]
 requires-python = ">=3.12"
 dependencies = [
@@ -22,6 +29,7 @@ dependencies = [
 ]
 
 [project.urls]
+Homepage = "https://github.com/s117/fesvr-workload-manager"
 Repository = "https://github.com/s117/fesvr-workload-manager.git"
 
 [project.scripts]
