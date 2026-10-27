@@ -22,7 +22,7 @@ def repo(tmp_path, sysroot_src, write_entry_point):
     sysroots    s1, s2, and s3 without entry points
     entries     a, b (w1 in s1), c (w2 in s2), d (w2 in s1, no trace)
     traces      ta (a), tb (b), tc (c)
-    checkpoints x.1, x.2 of ta; x.1, y.1 of tb (x.1 twice)
+    checkpoints x.1, x.2 of ta; x.1, y.1 of tb (x.1 twice); x.2 and y.1 have SimPoint information
     """
     r = Repo.init(str(tmp_path / "repo"))
     other_src = tmp_path / "src" / "s2"
@@ -36,8 +36,13 @@ def repo(tmp_path, sysroot_src, write_entry_point):
     add_entry(r, "s2", "w2", "c", write_entry_point())
     add_entry(r, "s1", "w2", "d", write_entry_point(command="prog.rv64 d"))
     ta, tb, tc = (str(record(r, tmp_path, e, n)) for n, e in enumerate("abc", 1))
-    import_checkpoints(r, ta, [make_checkpoint(tmp_path, 1, "x.1", 1000), make_checkpoint(tmp_path, 1, "x.2", 2000)])
-    import_checkpoints(r, tb, [make_checkpoint(tmp_path, 2, "x.1", 1000), make_checkpoint(tmp_path, 2, "y.1", 2000)])
+    def simpoint(name):
+        return {"interval": 1000, "maxK": 2, "checkpoints": {name: {"index": 1, "weight": 0.5}}}
+
+    import_checkpoints(r, ta, [make_checkpoint(tmp_path, 1, "x.1", 1000)])
+    import_checkpoints(r, ta, [make_checkpoint(tmp_path, 1, "x.2", 2000)], simpoint_info=simpoint("x.2"))
+    import_checkpoints(r, tb, [make_checkpoint(tmp_path, 2, "x.1", 1000)])
+    import_checkpoints(r, tb, [make_checkpoint(tmp_path, 2, "y.1", 2000)], simpoint_info=simpoint("y.1"))
     r.close()
     return SimpleNamespace(path=r.path, ta=ta, tb=tb, tc=tc)
 
@@ -140,3 +145,31 @@ def test_checkpoint_completion(repo):
         ("x.1", "2 checkpoints"), ("x.2", "1 checkpoint"), ("y.1", "1 checkpoint")]
     assert ShellComplete(cli, {}, "fwm", "_FWM_COMPLETE").get_completions(
         ["--repo-path", repo.path, "list", "entries", "--checkpoint"], repo.ta[:4] + ":") == []
+
+
+@pytest.mark.parametrize("args, expected", [
+    (["checkpoints", "--simpoint"], ["x.2", "y.1"]),
+    (["traces", "--simpoint"], ["{ta}", "{tb}"]),
+    (["entries", "--simpoint"], ["a", "b"]),
+    (["workloads", "--simpoint"], ["w1"]),
+    (["sysroots", "--simpoint"], ["s1"]),
+    (["entries", "--entry", "c", "--simpoint"], []),
+    # listing checkpoints, both filters apply to each checkpoint
+    (["checkpoints", "--checkpoint", "x*", "--simpoint"], ["x.2"]),
+    (["checkpoints", "--checkpoint", "x.1", "--simpoint"], []),
+    # listing others, each filter keeps its own set: a and b have an x.1, and a SimPoint checkpoint (another one)
+    (["entries", "--checkpoint", "x.1", "--simpoint"], ["a", "b"]),
+])
+def test_simpoint(repo, args, expected):
+    names = {"ta": repo.ta, "tb": repo.tb}
+    assert sorted(fwm_list(repo, *args)) == sorted(e.format(**names) for e in expected)
+
+
+def test_simpoint_is_what_from_simpoint_takes(repo, tmp_path):
+    """--simpoint lists exactly the checkpoints `fwm mkgen from-simpoint` accepts."""
+    runner = CliRunner()
+    with_simpoint = set(fwm_list(repo, "checkpoints", "--simpoint"))
+    for i, name in enumerate(fwm_list(repo, "checkpoints")):
+        result = runner.invoke(cli, ["--repo-path", repo.path, "mkgen", "from-simpoint", name,
+                                     "-o", str(tmp_path / f"run{i}")])
+        assert (result.exit_code == 0) == (name in with_simpoint), (name, result.output)

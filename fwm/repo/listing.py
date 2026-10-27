@@ -46,19 +46,22 @@ class _Chain(NamedTuple):
     entry: Optional[str]
     trace: Optional[str]  # its UUID, as `fwm show` prints it
     checkpoint: Optional[str]  # its name
+    simpoint: bool = False  # the checkpoint has SimPoint information: `fwm mkgen from-simpoint` can simulate it
 
 
 def _chains() -> List[_Chain]:
     """Every chain of related entities: one per checkpoint, trace without checkpoints, entry point without traces, and
     sysroot without entry points."""
     rows = cast(Rows, NativeEntry
-                .select(Workload.name, Sysroot.name, NativeEntry.name, DecoupledTrace.uuid, DecoupledCheckpoint.name)
+                .select(Workload.name, Sysroot.name, NativeEntry.name, DecoupledTrace.uuid, DecoupledCheckpoint.name,
+                        DecoupledCheckpoint.simpoint_interval)
                 .join(Workload).switch(NativeEntry).join(Sysroot)
                 .switch(NativeEntry).join(DecoupledTrace, pw.JOIN.LEFT_OUTER)
                 .join(DecoupledCheckpoint, pw.JOIN.LEFT_OUTER)
                 .tuples())
-    chains = [_Chain(workload, sysroot, entry, str(uuid.UUID(str(trace))) if trace is not None else None, ckpt)
-              for workload, sysroot, entry, trace, ckpt in rows]
+    chains = [_Chain(workload, sysroot, entry, str(uuid.UUID(str(trace))) if trace is not None else None, ckpt,
+                     interval is not None)
+              for workload, sysroot, entry, trace, ckpt, interval in rows]
     used = {chain.sysroot for chain in chains}
     chains += [_Chain(None, name, None, None, None) for (name,) in cast(Rows, Sysroot.select(Sysroot.name).tuples())
                if name not in used]
@@ -95,12 +98,14 @@ class Listing:
     unmatched: List[Tuple[str, str]] = field(default_factory=list)
 
 
-def list_names(kind: str, filters: Dict[str, Sequence[str]]) -> Listing:
+def list_names(kind: str, filters: Dict[str, Sequence[str]], simpoint: bool = False) -> Listing:
     """
     The names of the entities of a kind that every filter keeps: those related to an entity it matches.
 
     :param kind: The kind listed: one of KINDS.
     :param filters: The globs of each filter, by kind (one of KINDS); a filter without globs is no filter.
+    :param simpoint: One more filter: only what is related to a checkpoint with SimPoint information, the checkpoints
+                     `fwm mkgen from-simpoint` can simulate.
     :return: The names: traces by UUID, and checkpoints as `fwm show checkpoint` takes them.
     """
     assert kind in KINDS and all(k in KINDS for k in filters)
@@ -123,4 +128,6 @@ def list_names(kind: str, filters: Dict[str, Sequence[str]]) -> Listing:
     names = names_of(chains)
     for k, globs in filters.items():
         names &= names_of(chain for chain in chains if any(_matches(k, chain, glob) for glob in globs))
+    if simpoint:
+        names &= names_of(chain for chain in chains if chain.simpoint)
     return Listing(natural_order(names), unmatched)

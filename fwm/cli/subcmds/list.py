@@ -31,9 +31,12 @@ def _filter_options(f):
 @click.argument("kind", type=click.Choice([PLURALS[k] for k in KINDS]), default="entries", required=False,
                 metavar="[KIND]")
 @_filter_options
+@click.option("--simpoint", is_flag=True,
+              help="Related to a checkpoint with SimPoint information (for fwm mkgen from-simpoint).")
 @click.option("--json", "as_json", is_flag=True, help="Print JSON, for scripts.")
 @click.pass_context
-def list_cmd(ctx, kind, workload_globs, sysroot_globs, entry_globs, trace_globs, checkpoint_globs, as_json):
+def list_cmd(ctx, kind, workload_globs, sysroot_globs, entry_globs, trace_globs, checkpoint_globs, simpoint,
+             as_json):
     """
     List the names of the workloads, sysroots, entries (the default), traces or checkpoints of the repository.
 
@@ -48,6 +51,8 @@ def list_cmd(ctx, kind, workload_globs, sysroot_globs, entry_globs, trace_globs,
       traces.
     - A GLOB is a name, or a shell pattern such as 'bfs-*' (quote it).
     - Give a filter more than once to allow any of its patterns.
+    - --simpoint keeps what is related to a checkpoint with SimPoint
+      information: the checkpoints `fwm mkgen from-simpoint` can simulate.
     - With several filters, only what all of them keep is listed.
 
     KIND is workloads, sysroots, entries, traces or checkpoints. Traces are listed by UUID, and checkpoints as
@@ -73,11 +78,15 @@ def list_cmd(ctx, kind, workload_globs, sysroot_globs, entry_globs, trace_globs,
     \b
       # The sysroot a checkpoint was made in
       fwm list sysroots --checkpoint bfs-road-n64.3.0.25
+
+    \b
+      # The checkpoints of an entry point you can simulate with from-simpoint
+      fwm list checkpoints --entry bfs-road-n64 --simpoint
     """
     open_repo(ctx)
     globs = {"workload": workload_globs, "sysroot": sysroot_globs, "entry": entry_globs, "trace": trace_globs,
              "checkpoint": checkpoint_globs}
-    listing = list_names(_SINGULAR[kind], globs)
+    listing = list_names(_SINGULAR[kind], globs, simpoint)
     for filter_kind, glob in listing.unmatched:
         Logger.get_logger().warning(f"no {filter_kind} matches {glob!r}")
     if as_json:

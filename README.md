@@ -155,7 +155,7 @@ make -C d run SIM=/path/to/721sim                  # make reports "Error 1": spi
 
 | Command | Purpose |
 | --- | --- |
-| `fwm list [<kind>] [--workload\|--sysroot\|--entry\|--trace\|--checkpoint GLOB]... [--json]` | List the names of a kind: workloads, sysroots, entries (the default), traces or checkpoints, filtered by the entities they are related to (see [Listing](#listing)). |
+| `fwm list [<kind>] [--workload\|--sysroot\|--entry\|--trace\|--checkpoint GLOB]... [--simpoint] [--json]` | List the names of a kind: workloads, sysroots, entries (the default), traces or checkpoints, filtered by the entities they are related to (see [Listing](#listing)). |
 | `fwm show <kind> <name> [--json]` | Show the details of one workload, sysroot, entry, trace or checkpoint. |
 | `fwm mkgen {from-sysroot <entry> \| from-fesvr-trace <trace> \| from-checkpoint <ckpt> \| from-simpoint <ckpt>} [-o dir]` | Generate a run directory that begins a simulation. |
 | `fwm spawn [--force] [--mode auto\|copy\|link] <entry> <dest>` | Make a working copy of an entry point's sysroot: copied, or linked to the repository's files; `auto`, the default, follows its `copy_spawn` (the `from-sysroot` and record Makefiles do it). |
@@ -214,10 +214,12 @@ fwm list entries --entry 'bfs-*'                      # a filter of the listed k
 fwm list traces --sysroot s1 --sysroot s2             # a filter given twice: either
 fwm list entries --workload bfs --sysroot road.sg     # different filters: both
 fwm list checkpoints --checkpoint '8f25*:bfs*'        # a checkpoint as <trace UUID glob>:<name glob>
+fwm list checkpoints --entry bfs-road-n64 --simpoint  # those `fwm mkgen from-simpoint` can simulate
 ```
 
 - **Several filters:** each keeps its own set, and the result is their intersection. `fwm list workloads --sysroot s1 --entry c` lists the workloads related to `s1` and to `c`, even through different entry points.
 - **Patterns** are shell-style globs (`*`, `?`, `[...]`, case-sensitive; quote them in the shell); a plain name matches exactly. `--trace` matches the UUID as `fwm show` prints it.
+- **`--simpoint`** keeps what is related to a checkpoint with SimPoint information: exactly the checkpoints `fwm mkgen from-simpoint` accepts. Listing other kinds, it keeps those with at least one such checkpoint.
 - **A pattern that matches nothing of its kind** prints a warning (likely a typo); the command still succeeds, with nothing listed.
 - **A sysroot without entry points** is related to nothing else: it is listed without filters, or with a matching `--sysroot`.
 
