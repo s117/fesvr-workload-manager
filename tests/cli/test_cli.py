@@ -521,27 +521,41 @@ def test_show_entry_traces(run, populated, tmp_path):
 
 
 def help_examples(path):
-    """The fwm command lines in the Examples section of a command's help (backslash continuations joined, the comment
-    after them left out), as argument lists without the leading "fwm"."""
+    """
+    The Examples section of a command's help, as (comment, [command line as an argument list without "fwm", ...]) for
+    each example: a "# comment" line, then its commands, which a blank line ends. Backslash continuations are joined;
+    commands other than fwm's (e.g. make) are left out, and `eval "$(fwm ...)"` gives the fwm inside. Any line of the
+    section before its example's comment fails the test: every example must have one.
+    """
     import re
     import shlex
-    text = CliRunner().invoke(cli, [*path, "--help"], terminal_width=200).stdout
-    lines = text.splitlines()
-    starts = [i for i, line in enumerate(lines) if re.match(r"\s*Examples\b.*:$", line)]
+    lines = CliRunner().invoke(cli, [*path, "--help"], terminal_width=200).stdout.splitlines()
+    starts = [i for i, line in enumerate(lines) if line.strip() == "Examples:"]
     if not starts:
         return None
-    examples = []
+    header_indent = len(lines[starts[0]]) - len(lines[starts[0]].lstrip())
+    examples: list = []
+    current = None
     line_iter = iter(lines[starts[0] + 1:])
     for line in line_iter:
         if not line.strip():
-            break
-        while line.rstrip().endswith("\\"):
-            line = line.rstrip()[:-1].rstrip() + " " + next(line_iter).strip()
-        command = re.split(r"\s{2,}", re.sub(r"^\s*(\d+\.\s+)?", "", line))[0]
-        inline = re.search(r"\$\((fwm [^)]*)\)", command)  # e.g. eval "$(fwm completion zsh)"
-        command = inline.group(1) if inline else command.split(" | ")[0]
+            current = None  # a blank line ends an example
+            continue
+        if len(line) - len(line.lstrip()) <= header_indent:
+            break  # the next section
+        text = line.strip()
+        if text.startswith("#"):
+            assert current is None, f"`fwm {' '.join(path)} --help`: two comments in one example: {text!r}"
+            current = (text[1:].strip(), [])
+            examples.append(current)
+            continue
+        assert current is not None, f"`fwm {' '.join(path)} --help`: an example without a comment: {text!r}"
+        while text.endswith("\\"):
+            text = text[:-1].rstrip() + " " + next(line_iter).strip()
+        inline = re.search(r"\$\((fwm [^)]*)\)", text)  # e.g. eval "$(fwm completion zsh)"
+        command = inline.group(1) if inline else text.split(" | ")[0]
         if command.startswith("fwm "):
-            examples.append(shlex.split(command)[1:])
+            current[1].append(shlex.split(command)[1:])
     return examples
 
 
@@ -573,8 +587,10 @@ def test_help_examples(path):
     """Every command's help has examples, and each is a valid command line of fwm."""
     examples = help_examples(path)
     assert examples, f"`fwm {' '.join(path)} --help` has no example"
-    for args in examples:
-        check_command_line(args)
+    for comment, commands in examples:
+        assert comment and commands, f"`fwm {' '.join(path)} --help`: example {comment!r} has no fwm command"
+        for args in commands:
+            check_command_line(args)
 
 
 def test_check_command_line():
@@ -584,3 +600,13 @@ def test_check_command_line():
                  ["repo", "compose", "add"]):
         with pytest.raises((AssertionError, click.UsageError)):
             check_command_line(args)
+
+
+def test_help_examples_need_comments(monkeypatch):
+    """The examples' check refuses an example without its "# comment" line, or a comment without a command."""
+    spawn = cli.get_command(click.Context(cli), "spawn")
+    for text, error in (("\b\nExamples:\n  fwm spawn e d\n", "without a comment"),
+                        ("\b\nExamples:\n  # A copy\n  make x\n", "has no fwm command")):
+        monkeypatch.setattr(spawn, "help", text)
+        with pytest.raises(AssertionError, match=error):
+            test_help_examples(["spawn"])

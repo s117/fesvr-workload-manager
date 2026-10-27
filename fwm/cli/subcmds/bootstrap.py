@@ -19,26 +19,46 @@ def bootstrap():
     Generate and check the runs that make the repository's traces and checkpoints.
 
     These commands only read the repository: `fwm repo compose` imports their results. The fwm-bootstrap pipeline
-    runs them for every app of a suite.
-
-    \b
-    Examples: the steps for an entry point E, with run directories R1 to R3:
-      1. fwm repo bootstrap mkgen record-fesvr-trace E -o R1
-         make -C R1 run SIM_FLAGS_EXTRA=-s<interval>   (-s: profile BBVs)
-      2. fwm repo bootstrap check-fesvr-trace R1/trace \\
-           --final-state R1/final-state.json
-      3. fwm repo compose add trace E R1/trace \\
-           --final-state R1/final-state.json           -> the trace's UUID
-      4. fwm repo bootstrap mkgen create-checkpoints UUID DESC -o R2
-         make -C R2 run
-      5. fwm repo compose add checkpoint UUID R2/ckpt.desc R2/checkpoints \\
-           --simpoint-info S --sim-version V
-      6. fwm mkgen from-checkpoint UUID:NAME -o R3
-         make -C R3 run                     (to the end of the program)
-      7. fwm repo compose set-checkpoint-validation UUID:NAME R3
+    runs them for every app of a suite. The examples are its steps for one entry point E, with run directories R1
+    to R3.
 
     DESC lists the checkpoints to create, and S is their SimPoint information: both come from a SimPoint analysis of
     R1's basic block vectors (BBVs). V is the output of `spike --version`.
+
+    \b
+    Examples:
+      # 1. Record a run of E, with BBVs (-s) for SimPoint
+      fwm repo bootstrap mkgen record-fesvr-trace E -o R1
+      make -C R1 run SIM_FLAGS_EXTRA=-s<interval>
+
+    \b
+      # 2. Check the recording
+      fwm repo bootstrap check-fesvr-trace R1/trace \\
+        --final-state R1/final-state.json
+
+    \b
+      # 3. Import it as a trace: prints its UUID
+      fwm repo compose add trace E R1/trace \\
+        --final-state R1/final-state.json
+
+    \b
+      # 4. Create the checkpoints of DESC
+      fwm repo bootstrap mkgen create-checkpoints UUID DESC -o R2
+      make -C R2 run
+
+    \b
+      # 5. Import them
+      fwm repo compose add checkpoint UUID R2/ckpt.desc R2/checkpoints \\
+        --simpoint-info S --sim-version V
+
+    \b
+      # 6. Run each checkpoint to the end
+      fwm mkgen from-checkpoint UUID:NAME -o R3
+      make -C R3 run
+
+    \b
+      # 7. Record whether the run validates the checkpoint
+      fwm repo compose set-checkpoint-validation UUID:NAME R3
     """
 
 
@@ -52,6 +72,7 @@ def mkgen():
 
     \b
     Examples:
+      # Generate a record run, and run it
       fwm repo bootstrap mkgen record-fesvr-trace bfs-road-n64 -o run1
       make -C run1 run
     """
@@ -70,8 +91,12 @@ def record_fesvr_trace(ctx, entry, out_dir):
 
     \b
     Examples:
+      # Record a run, with BBVs for SimPoint
       fwm repo bootstrap mkgen record-fesvr-trace bfs-road-n64 -o run1
-      make -C run1 run SIM_FLAGS_EXTRA=-s100000000      with BBVs, for SimPoint
+      make -C run1 run SIM_FLAGS_EXTRA=-s100000000
+
+    \b
+      # Check the trace, then import it
       fwm repo bootstrap check-fesvr-trace run1/trace \\
         --final-state run1/final-state.json
       fwm repo compose add trace bfs-road-n64 run1/trace \\
@@ -94,10 +119,10 @@ def create_checkpoints(ctx, trace, desc, out_dir):
 
     \b
     Examples:
+      # Create the checkpoints of ckpts.txt, then import them
       fwm repo bootstrap mkgen create-checkpoints bfs-road-n64 ckpts.txt -o run2
       make -C run2 run
-      fwm repo compose add checkpoint bfs-road-n64 \\
-        run2/ckpt.desc run2/checkpoints
+      fwm repo compose add checkpoint bfs-road-n64 run2/ckpt.desc run2/checkpoints
     """
     done(generate_create_checkpoints(open_repo(ctx), trace, desc, out_dir))
 
@@ -121,6 +146,7 @@ def check_fesvr_trace(recording_dir, final_state, as_json):
 
     \b
     Examples:
+      # Check the trace of a record run, on the node that ran it
       fwm repo bootstrap check-fesvr-trace run1/trace \\
         --final-state run1/final-state.json
     """

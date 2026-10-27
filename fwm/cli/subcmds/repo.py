@@ -32,9 +32,17 @@ def repo():
 
     \b
     Examples:
-      fwm repo init ~/fwm-repo                    a new, empty repository
-      fwm repo verify                             check all of it
-      fwm repo subrepo ~/small bfs-road-n64       a copy with one entry point
+      # Create a repository, and use it by default
+      fwm repo init ~/fwm-repo
+      export FWM_REPO_PATH=~/fwm-repo
+
+    \b
+      # Check all of it
+      fwm repo verify
+
+    \b
+      # A new repository with one entry point of this one
+      fwm repo subrepo ~/small bfs-road-n64
     """
 
 
@@ -50,8 +58,9 @@ def init(path):
 
     \b
     Examples:
+      # Create a repository, and use it by default
       fwm repo init ~/fwm-repo
-      export FWM_REPO_PATH=~/fwm-repo             then use it by default
+      export FWM_REPO_PATH=~/fwm-repo
     """
     Repo.init(path).close()
     click.echo(os.path.abspath(path))
@@ -71,8 +80,12 @@ def verify_cmd(ctx, kind, id):
 
     \b
     Examples:
-      fwm repo verify                             everything
-      fwm repo verify sysroot road.sg             one sysroot
+      # Everything, and the leftovers of interrupted commands
+      fwm repo verify
+
+    \b
+      # One sysroot
+      fwm repo verify sysroot road.sg
     """
     from fwm.repo.checkpoint import verify_checkpoint
     from fwm.repo.sysroot import verify_sysroot
@@ -123,7 +136,8 @@ def gc_cmd(ctx, dry_run):
 
     \b
     Examples:
-      fwm repo gc --dry-run                       see what it would remove
+      # See what it would remove, then remove it
+      fwm repo gc --dry-run
       fwm repo gc
     """
     r = open_repo(ctx, write=not dry_run)
@@ -181,8 +195,15 @@ pull_cmd.help = """
     """ + _TRANSFER_HELP + """
     \b
     Examples:
+      # Two entry points of a shared repository
       fwm repo pull /shared/repo bfs-road-n64 pr-road
-      fwm repo pull /shared/repo --all            everything it has
+
+    \b
+      # Everything it has
+      fwm repo pull /shared/repo --all
+
+    \b
+      # An entry point and its traces, without checkpoints
       fwm repo pull /shared/repo bfs-road-n64 --no-checkpoints
     """
 
@@ -205,8 +226,12 @@ push_cmd.help = """
     """ + _TRANSFER_HELP + """
     \b
     Examples:
+      # One entry point, into an existing repository
       fwm repo push ~/merged bfs-road-n64
-      fwm repo push ~/merged --all                everything this one has
+
+    \b
+      # Everything this one has
+      fwm repo push ~/merged --all
     """
 
 
@@ -225,8 +250,12 @@ def subrepo_cmd(ctx, new_repo, entries, no_traces, no_checkpoints):
 
     \b
     Examples:
+      # A new repository with two entry points
       fwm repo subrepo ~/small bfs-road-n64 pr-road
-      fwm repo subrepo ~/small bfs-road-n64 --no-checkpoints
+
+    \b
+      # The same, without checkpoints
+      fwm repo subrepo ~/small bfs-road-n64 pr-road --no-checkpoints
     """
     from fwm.repo.subrepo import create_subrepo
     result = create_subrepo(open_repo(ctx), new_repo, entries, traces=not no_traces, checkpoints=not no_checkpoints)

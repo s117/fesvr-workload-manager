@@ -128,15 +128,23 @@ def cli(ctx, repo_path):
     """
     The RISC-V FESVR Workload Manager: find the workloads of a repository, and generate the runs that simulate them.
 
-    The daily commands need read access to the repository only. `fwm repo` holds the commands of its creator. Give the
+    Search the repository with `fwm list` and its filters, and see the details of what you find with `fwm show`. The
+    daily commands need read access to the repository only. `fwm repo` holds the commands of its creator. Give the
     repository with --repo-path, or once with the environment variable FWM_REPO_PATH.
 
     \b
     Examples:
-      fwm list                                    the entry points
-      fwm show entry bfs-road-n64                 the details of one
+      # Search the repository: the checkpoints of workload bfs
+      fwm list checkpoints --workload bfs
+
+    \b
+      # The details of an entry point
+      fwm show entry bfs-road-n64
+
+    \b
+      # Simulate one SimPoint interval of a checkpoint
       fwm mkgen from-simpoint bfs-road-n64.3.0.25 -o run1
-      make -C run1 run                            run it
+      make -C run1 run
 
     \b
     Exit status:

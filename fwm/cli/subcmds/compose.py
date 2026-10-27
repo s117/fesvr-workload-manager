@@ -28,9 +28,13 @@ def compose():
 
     \b
     Examples:
+      # Import a sysroot, and add an entry point that runs in it
       fwm repo compose add sysroot ./sysroots/road road.sg
       fwm repo compose add entry road.sg bfs bfs-road-n64 bfs-road-n64.json
-      fwm repo compose remove trace bfs-road-n64 -r    with its checkpoints
+
+    \b
+      # Remove a trace, with its checkpoints
+      fwm repo compose remove trace bfs-road-n64 -r
     """
 
 
@@ -46,9 +50,13 @@ def add():
 
     \b
     Examples:
+      # Import a sysroot
       fwm repo compose add sysroot ./sysroots/road road.sg
+
+    \b
+      # Import a trace, in a pipeline that may run it again
       fwm repo compose add trace bfs-road-n64 run1/trace \\
-        --final-state run1/final-state.json
+        --final-state run1/final-state.json --exist-ok
     """
 
 
@@ -86,8 +94,12 @@ def add_sysroot_cmd(ctx, directory, sysroot_name, description, exist_ok):
 
     \b
     Examples:
+      # Import a directory tree
       fwm repo compose add sysroot ./sysroots/road road.sg
-      fwm repo compose add sysroot ./sysroots/road road.sg --exist-ok   a rerun
+
+    \b
+      # Again, in a rerun: it succeeds if the same sysroot is there
+      fwm repo compose add sysroot ./sysroots/road road.sg --exist-ok
     """
     from fwm.repo.sysroot import add_sysroot
     click.echo(add_sysroot(open_repo(ctx, write=True), directory, sysroot_name, description, exist_ok).name)
@@ -122,6 +134,7 @@ def add_entry_cmd(ctx, sysroot_name, workload_name, entry_point_name, entry_poin
 
     \b
     Examples:
+      # Run workload bfs in sysroot road.sg, as bfs-road-n64.json says
       fwm repo compose add entry road.sg bfs bfs-road-n64 bfs-road-n64.json
     """
     from fwm.repo.entry import add_entry
@@ -148,6 +161,7 @@ def add_trace_cmd(ctx, entry, recording_dir, final_state, description, exist_ok)
 
     \b
     Examples:
+      # Import the trace of a record run
       fwm repo compose add trace bfs-road-n64 run1/trace \\
         --final-state run1/final-state.json
     """
@@ -176,6 +190,7 @@ def add_checkpoint_cmd(ctx, trace, desc, checkpoint_dir, simpoint_info, descript
 
     \b
     Examples:
+      # Import the checkpoints of a create-checkpoints run
       fwm repo compose add checkpoint bfs-road-n64 \\
         run2/ckpt.desc run2/checkpoints \\
         --simpoint-info simpoints.json --sim-version sim-version.txt
@@ -199,6 +214,7 @@ def set_metadata_cmd(ctx, entry, metadata_json):
 
     \b
     Examples:
+      # Replace the metadata of an entry point
       fwm repo compose set-metadata bfs-road-n64 metadata.json
     """
     from fwm.repo.entry import set_entry_metadata
@@ -219,8 +235,12 @@ def remove_cmd(ctx, kind, id, recursive):
 
     \b
     Examples:
+      # One checkpoint
       fwm repo compose remove checkpoint bfs-road-n64.3.0.25
-      fwm repo compose remove entry bfs-road-n64 -r    with traces, checkpoints
+
+    \b
+      # An entry point, with its traces and their checkpoints
+      fwm repo compose remove entry bfs-road-n64 -r
     """
     from fwm.repo import remove as rm
     r = open_repo(ctx, write=True)
@@ -248,6 +268,7 @@ def set_checkpoint_validation_cmd(ctx, checkpoint, run_dir):
 
     \b
     Examples:
+      # Run a checkpoint to the end, then judge the run
       fwm mkgen from-checkpoint bfs-road-n64.3.0.25 -o run3
       make -C run3 run
       fwm repo compose set-checkpoint-validation bfs-road-n64.3.0.25 run3

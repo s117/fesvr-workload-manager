@@ -24,9 +24,16 @@ def spawn(ctx, entry, dest, mode, force):
 
     \b
     Examples:
-      fwm spawn bfs-road-n64 sysroot                as its entry point says
-      fwm spawn --mode copy bfs-road-n64 sysroot    a full, writable copy
-      fwm spawn --force bfs-road-n64 sysroot        replace an earlier one
+      # As the entry point's copy_spawn says
+      fwm spawn bfs-road-n64 sysroot
+
+    \b
+      # A full copy, which the program can write to
+      fwm spawn --mode copy bfs-road-n64 sysroot
+
+    \b
+      # Replace an earlier copy
+      fwm spawn --force bfs-road-n64 sysroot
     """
     how = spawn_entry(open_repo(ctx), entry, dest, force, SpawnMode(mode))
     click.echo(f"spawned the sysroot of '{entry}' at {dest} ({how.value})", err=True)

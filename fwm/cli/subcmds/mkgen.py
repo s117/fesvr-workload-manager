@@ -41,6 +41,7 @@ def mkgen():
 
     \b
     Examples:
+      # Simulate 100M instructions from a checkpoint, with another simulator
       fwm mkgen from-checkpoint bfs-road-n64.3.0.25 -o run1
       make -C run1 run SIM=/path/to/721sim SIM_FLAGS_EXTRA=-e100000000
     """
@@ -59,6 +60,7 @@ def from_sysroot(ctx, entry, out_dir):
 
     \b
     Examples:
+      # Run the real program, which prints its console
       fwm mkgen from-sysroot bfs-road-n64 -o run1
       make -C run1 run
     """
@@ -78,6 +80,7 @@ def from_fesvr_trace(ctx, trace, out_dir):
 
     \b
     Examples:
+      # Replay the trace of an entry point
       fwm mkgen from-fesvr-trace bfs-road-n64 -o run1
       make -C run1 run
     """
@@ -97,10 +100,15 @@ def from_checkpoint(ctx, checkpoint, out_dir):
 
     \b
     Examples:
+      # The first 100M instructions after a checkpoint
       fwm mkgen from-checkpoint bfs-road-n64.3.0.25 -o run1
-      make -C run1 run SIM_FLAGS_EXTRA=-e100000000     100M instructions only
-      make -C run1 run                                 to the end
-      fwm repo compose set-checkpoint-validation bfs-road-n64.3.0.25 run1
+      make -C run1 run SIM_FLAGS_EXTRA=-e100000000
+
+    \b
+      # To the end of the program, then record whether it validates the checkpoint
+      fwm mkgen from-checkpoint bfs-road-n64.3.0.25 -o run2
+      make -C run2 run
+      fwm repo compose set-checkpoint-validation bfs-road-n64.3.0.25 run2
     """
     r = open_repo(ctx)
     makefile = generate_from_checkpoint(r, checkpoint, out_dir)
@@ -125,6 +133,7 @@ def from_simpoint(ctx, checkpoint, out_dir):
 
     \b
     Examples:
+      # Simulate the interval with another simulator
       fwm mkgen from-simpoint bfs-road-n64.3.0.25 -o run1
       make -C run1 run SIM=/path/to/721sim
     """

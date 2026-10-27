@@ -24,8 +24,15 @@ def show(ctx, kind, id, as_json):
 
     \b
     Examples:
+      # An entry point: how it runs, its traces and their checkpoints
       fwm show entry bfs-road-n64
-      fwm show trace bfs-road-n64                 the trace of an entry point
+
+    \b
+      # The trace of an entry point that has one
+      fwm show trace bfs-road-n64
+
+    \b
+      # A checkpoint, as JSON for scripts
       fwm show checkpoint bfs-road-n64.3.0.25 --json
     """
     r = open_repo(ctx)

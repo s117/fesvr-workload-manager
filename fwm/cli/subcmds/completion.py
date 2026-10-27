@@ -12,13 +12,20 @@ def completion(ctx, shell):
     Print the shell completion script.
 
     Completion offers fwm's commands and options, and the names in the repository of --repo-path or FWM_REPO_PATH.
-    fwm must be on PATH.
+    Enable it in your shell's startup file, as in the examples. fwm must be on PATH.
 
     \b
-    Examples, for your shell's startup file:
-      eval "$(fwm completion zsh)"          in ~/.zshrc
-      eval "$(fwm completion bash)"         in ~/.bashrc
-      fwm completion fish | source          in ~/.config/fish/config.fish
+    Examples:
+      # zsh: in ~/.zshrc
+      eval "$(fwm completion zsh)"
+
+    \b
+      # bash: in ~/.bashrc
+      eval "$(fwm completion bash)"
+
+    \b
+      # fish: in ~/.config/fish/config.fish
+      fwm completion fish | source
     """
     completion_class = get_completion_class(shell)
     assert completion_class is not None

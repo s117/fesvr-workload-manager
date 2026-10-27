@@ -37,20 +37,42 @@ def list_cmd(ctx, kind, workload_globs, sysroot_globs, entry_globs, trace_globs,
     """
     List the names of the workloads, sysroots, entries (the default), traces or checkpoints of the repository.
 
-    KIND is workloads, sysroots, entries, traces or checkpoints. Traces are listed by UUID, and checkpoints as
-    `fwm show checkpoint` takes them. `fwm show` gives the details of each.
+    With filters, it is the way to search the repository. Ask for one kind of item, and filter by the others: e.g.
+    the checkpoints of a workload, the entry points in a sysroot, or the sysroot a checkpoint was made in. Then
+    `fwm show KIND NAME` gives the details of each item found.
 
-    A filter keeps what is related to a matching item, directly or through others. Give a filter more than once to
-    allow any of its patterns. With several filters, only what all of them keep is listed. A GLOB is a name, or a shell
-    pattern: quote it.
+    \b
+    How the filters work:
+    - A filter keeps what is related to a matching item, directly or through
+      others: e.g. a workload's checkpoints are those of its entry points'
+      traces.
+    - A GLOB is a name, or a shell pattern such as 'bfs-*' (quote it).
+    - Give a filter more than once to allow any of its patterns.
+    - With several filters, only what all of them keep is listed.
+
+    KIND is workloads, sysroots, entries, traces or checkpoints. Traces are listed by UUID, and checkpoints as
+    `fwm show checkpoint` takes them.
 
     \b
     Examples:
-      fwm list                               all entry points
-      fwm list checkpoints --workload bfs    checkpoints of bfs's entry points
-      fwm list entries --entry 'bfs-*'       names starting with bfs-
-      fwm list sysroots --checkpoint c1      the sysroot c1 was made in
-      fwm list traces --json                 for scripts
+      # All entry points
+      fwm list
+
+    \b
+      # The checkpoints of workload bfs's entry points
+      fwm list checkpoints --workload bfs
+
+    \b
+      # The entry points whose name starts with bfs-
+      fwm list entries --entry 'bfs-*'
+
+    \b
+      # The bfs entry points in sysroot road.sg, as JSON for scripts
+      fwm list entries --workload bfs --sysroot road.sg --json
+
+    \b
+      # The sysroot a checkpoint was made in
+      fwm list sysroots --checkpoint bfs-road-n64.3.0.25
     """
     open_repo(ctx)
     globs = {"workload": workload_globs, "sysroot": sysroot_globs, "entry": entry_globs, "trace": trace_globs,
