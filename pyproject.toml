@@ -1,6 +1,6 @@
 [project]
 name = "fwm"
-version = "0.1.0"
+version = "0.1.1"
 description = "RISC-V FESVR Workload Manager: traces, checkpoints and SimPoint runs for a record/replay spike."
 authors = [{ name = "Jiayang Li", email = "jli95@ncsu.edu" }]
 # NCSU's BSD-style license, as riscv-simenv's: BSD-3-Clause with NCSU's own clause 3, so no SPDX identifier fits

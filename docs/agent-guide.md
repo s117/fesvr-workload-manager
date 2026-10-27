@@ -37,7 +37,7 @@ sysroot --(entry point)--> record --> trace --> create checkpoints --> checkpoin
 
 The branch is `main`. Never push without being asked.
 
-**PyPI:** fwm is published as the package `fwm` (from 0.1.0), under NCSU's license (`LICENSE`, as riscv-simenv's). The README is its PyPI page, so it stays generic: no site paths, no private URLs, and absolute links to files of the repository (relative ones break on PyPI). A version can't be uploaded twice: bump `version` in `pyproject.toml` for each release. **Every release follows the checklist in §8.**
+**PyPI:** fwm is published as the package `fwm` (first on PyPI: 0.1.1; 0.1.0 went to TestPyPI only), under NCSU's license (`LICENSE`, as riscv-simenv's). The README is its PyPI page, so it stays generic: no site paths, no private URLs, and absolute links to files of the repository (relative ones break on PyPI). A version can't be uploaded twice: bump `version` in `pyproject.toml` for each release. **Every release follows the checklist in §8.**
 
 ## 2. Code map
 
