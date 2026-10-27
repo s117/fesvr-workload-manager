@@ -155,8 +155,8 @@ make -C d run SIM=/path/to/721sim                  # make reports "Error 1": spi
 
 | Command | Purpose |
 | --- | --- |
-| `fwm list [workloads\|sysroots\|entries\|traces\|checkpoints] [--workload\|--sysroot\|--entry\|--trace\|--checkpoint GLOB]... [--json]` | List the names of a kind (entry points by default), filtered by the entities they are related to (see [Listing](#listing)). |
-| `fwm show {workload\|sysroot\|entry\|trace\|checkpoint} <id> [--json]` | Show the details. |
+| `fwm list [<kind>] [--workload\|--sysroot\|--entry\|--trace\|--checkpoint GLOB]... [--json]` | List the names of a kind: workloads, sysroots, entries (the default), traces or checkpoints, filtered by the entities they are related to (see [Listing](#listing)). |
+| `fwm show <kind> <name> [--json]` | Show the details of one workload, sysroot, entry, trace or checkpoint. |
 | `fwm mkgen {from-sysroot <entry> \| from-fesvr-trace <trace> \| from-checkpoint <ckpt> \| from-simpoint <ckpt>} [-o dir]` | Generate a run directory that begins a simulation. |
 | `fwm spawn [--force] [--mode auto\|copy\|link] <entry> <dest>` | Make a working copy of an entry point's sysroot: copied, or linked to the repository's files; `auto`, the default, follows its `copy_spawn` (the `from-sysroot` and record Makefiles do it). |
 
@@ -166,8 +166,8 @@ make -C d run SIM=/path/to/721sim                  # make reports "Error 1": spi
 
 | Command | Purpose |
 | --- | --- |
-| `fwm repo init <path>` | Create a repository. |
-| `fwm repo verify [{sysroot\|trace\|checkpoint} <id>]` | Check the repository content against its catalogs, and for leftovers. |
+| `fwm repo init <dir>` | Create a repository. |
+| `fwm repo verify [<kind> <name>]` | Check the repository content against its catalogs (all, or one sysroot, trace or checkpoint), and for leftovers. |
 | `fwm repo gc [--dry-run]` | Remove the leftovers of interrupted commands. |
 | `fwm repo pull <source> {<entry>... \| --all} [--no-traces] [--no-checkpoints]` | Copy entry points of another repository into this one, with their sysroots, traces and checkpoints. |
 | `fwm repo push <dest> {<entry>... \| --all} [--no-traces] [--no-checkpoints]` | Copy entry points of this repository into another one. |
@@ -178,11 +178,11 @@ make -C d run SIM=/path/to/721sim                  # make reports "Error 1": spi
 | Command | Purpose |
 | --- | --- |
 | `fwm repo compose add sysroot <dir> <name>` | Import a sysroot. |
-| `fwm repo compose add entry <sysroot> <workload> <name> <entry_point.json>` | Add an entry point. |
+| `fwm repo compose add entry <sysroot> <workload> <name> <json_file>` | Add an entry point. |
 | `fwm repo compose add trace <entry> <recording-dir> [--final-state f.json]` | Import a recording, with its provenance; prints its UUID. |
 | `fwm repo compose add checkpoint <trace> <desc> <checkpoint-dir> [--simpoint-info j] [--sim-version f]` | Import the checkpoints of a description in one transaction; prints `<uuid>:<name>` for each. |
-| `fwm repo compose remove {sysroot\|entry\|trace\|checkpoint} <id> [--recursive]` | Remove, with what depends on it when `--recursive`. |
-| `fwm repo compose set-metadata <entry> <file.json>` | Replace an entry point's metadata (`null` removes it), keeping its traces. |
+| `fwm repo compose remove <kind> <name> [--recursive]` | Remove a sysroot, entry, trace or checkpoint, with what depends on it when `--recursive`. |
+| `fwm repo compose set-metadata <entry> <json_file>` | Replace an entry point's metadata (`null` removes it), keeping its traces. |
 | `fwm repo compose set-checkpoint-validation <checkpoint> <run-dir>` | Judge a `mkgen from-checkpoint` run to the end, and set the checkpoint's validation: passed or failed. |
 
 **`fwm repo bootstrap`** makes the repository's traces and checkpoints, in the pipeline's order; its commands only read the repository:
