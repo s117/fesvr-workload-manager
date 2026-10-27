@@ -1,5 +1,5 @@
 [project]
-name = "fesvr-workload-manager"
+name = "fwm"
 version = "0.0.1"
 description = "RISCV workload manager for simulating with Anycore infrastructure."
 authors = [{ name = "Jiayang Li", email = "jli95@ncsu.edu" }]

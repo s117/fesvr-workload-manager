@@ -4,7 +4,7 @@ Read this before changing fwm. It gathers what earlier sessions learned: what fw
 
 ## 1. What fwm is
 
-fwm (FESVR Workload Manager, package `fesvr-workload-manager`, command `fwm`) manages RISC-V simulation workloads for a custom spike. It replaces riscv-simenv (`~/Garage/riscv-simenv`; the agent skill `use-riscv-simenv` describes it).
+fwm (FESVR Workload Manager, package `fwm` on PyPI, command `fwm`) manages RISC-V simulation workloads for a custom spike. It replaces riscv-simenv (`~/Garage/riscv-simenv`; the agent skill `use-riscv-simenv` describes it).
 
 The custom spike lives in `~/Garage/riscv-isa-sim`, with its FESVR as the submodule `riscv-fesvr`. Its guide is `riscv-isa-sim/docs/fesvr-checkpoint-and-traffic-replay.md`. Its FESVR can:
 - **record** a run's device traffic (every proxied system call, with the memory it read and wrote) into a folder;

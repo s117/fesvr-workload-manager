@@ -1,4 +1,4 @@
-PACKAGE = "fesvr-workload-manager"
+PACKAGE = "fwm"
 
 
 def fwm_version() -> str:
