@@ -1,8 +1,8 @@
 # fwm: the RISC-V FESVR Workload Manager
 
-fwm manages RISC-V simulation workloads for the custom spike in `riscv-isa-sim`, and replaces riscv-simenv.
+fwm manages RISC-V simulation workloads for the custom spike in [riscv-isa-sim](https://github.com/s117/riscv-isa-sim/tree/anycore-gcc_16.1.0-llvm_22.1.8), and replaces riscv-simenv.
 
-That spike's front-end server (FESVR) can **record** the device traffic of a run: every proxied system call, with the memory it read and wrote. It can then **replay** that recording without the original environment, and create and load **checkpoints** on top of a replay (see `riscv-isa-sim/docs/fesvr-checkpoint-and-traffic-replay.md`). fwm keeps the pieces of that workflow in a repository and generates the Makefiles that run them.
+That spike's front-end server (FESVR) can **record** the device traffic of a run: every proxied system call, with the memory it read and wrote. It can then **replay** that recording without the original environment, and create and load **checkpoints** on top of a replay (see [docs/fesvr-checkpoint-and-traffic-replay.md](https://github.com/s117/riscv-isa-sim/blob/anycore-gcc_16.1.0-llvm_22.1.8/docs/fesvr-checkpoint-and-traffic-replay.md) in riscv-isa-sim). fwm keeps the pieces of that workflow in a repository and generates the Makefiles that run them.
 
 **The repository's creator** builds its content with `fwm repo`: `fwm repo bootstrap` generates the runs that record traces and create checkpoints, and `fwm repo compose` imports them:
 
@@ -33,18 +33,24 @@ sysroot ──(entry point)──> record-fesvr-trace ──> trace ──> crea
 
 ## Install
 
-On the group's machines, fwm comes with the bootstrap pipeline: `source /usr/local/usrapps/rotenberg/fwm-bootstrap/install/<arch>/shrc` puts `fwm` on `PATH`. The group's spike is in the newest `/usr/local/usrapps/rotenberg/anycore-riscv/install-linux-<commit>/bin`.
-
-Elsewhere, from a checkout:
+fwm needs Python 3.12 or later. Install the `fwm` command from PyPI:
 
 ```
-git clone git@github.com:ncstate-ece/Rotenberg-Student-jli95-fesvr-workload-manager.git fwm && cd fwm
+uv tool install fwm        # or: pipx install fwm, or pip install fwm in a virtual environment
+```
+
+Or from a checkout of its source:
+
+```
+git clone https://github.com/s117/fesvr-workload-manager.git fwm && cd fwm
 uv sync                # creates .venv with fwm
 uv run fwm --help
 # or install the command: uv tool install .
 ```
 
-`fwm --version` says which fwm you have: its version, and the git commit it was installed from when installed from git (as fwm-bootstrap installs it), or the source tree and its commit for an editable install (`uv sync` here).
+To run simulations, fwm also needs the spike built from [riscv-isa-sim](https://github.com/s117/riscv-isa-sim/tree/anycore-gcc_16.1.0-llvm_22.1.8) (see [Generated Makefiles](#generated-makefiles) for the versions it requires), or a simulator compatible with it.
+
+`fwm --version` says which fwm you have: its version, and the git commit it was installed from when installed from git, or the source tree and its commit for an editable install (`uv sync` here).
 
 ## Shell completion
 
@@ -116,7 +122,7 @@ fwm repo compose add checkpoint bfs-road-n64 run2/ckpt.desc run2/checkpoints --s
     --sim-version sim-version.txt
 ```
 
-- **A SimPoint's count is the sum of the sizes of the BBV intervals before it, not index × interval:** spike's intervals are a little longer than `-s` says. fwm-bootstrap writes the description and `simpoints.json` from SimPoint's output; see [docs/fwm-bootstrap-interface.md](docs/fwm-bootstrap-interface.md), step 5.
+- **A SimPoint's count is the sum of the sizes of the BBV intervals before it, not index × interval:** spike's intervals are a little longer than `-s` says. fwm-bootstrap writes the description and `simpoints.json` from SimPoint's output; see [docs/fwm-bootstrap-interface.md](https://github.com/s117/fesvr-workload-manager/blob/main/docs/fwm-bootstrap-interface.md), step 5.
 - **Names are just names.** `<entry>.<SimPoint index>.<weight>`, as here, is a readable convention; fwm reads nothing from a name.
 - **The run directory keeps a copy of the description,** `run2/ckpt.desc`, which the import reads.
 - **Every checkpoint of the description must be in `run2/checkpoints`,** which catches one spike didn't create: it creates none at or after the program's exit, without a word. Other files there are ignored.
@@ -151,7 +157,7 @@ make -C d run SIM=/path/to/721sim                  # make reports "Error 1": spi
 
 ### An AI skill for fwm's users
 
-[skills/use-fwm/SKILL.md](skills/use-fwm/SKILL.md) teaches an AI coding agent (Claude Code) how to use a repository: search it with `fwm list`, read metadata with `fwm show` and `run.json`, run simulations, judge them by `final-state.json`, and sweep SimPoint checkpoints. Install it once, from this checkout:
+[skills/use-fwm/SKILL.md](https://github.com/s117/fesvr-workload-manager/blob/main/skills/use-fwm/SKILL.md) teaches an AI coding agent (Claude Code) how to use a repository: search it with `fwm list`, read metadata with `fwm show` and `run.json`, run simulations, judge them by `final-state.json`, and sweep SimPoint checkpoints. Install it once, from a checkout of fwm's source (see [Install](#install)):
 
 ```
 ln -s "$PWD/skills/use-fwm" ~/.claude/skills/use-fwm
@@ -269,7 +275,7 @@ fwm --repo-path /shared/repo repo push ~/merged --all   # merge everything into 
 
 Every Makefile has a single target, `run`. It first removes that run's previous outputs, so it can be run again. A run directory can be generated again for the same kind of run, but not for another kind, whose Makefile wouldn't remove the former outputs.
 
-Next to it, `run.json` describes what the run uses: the sysroot, workload, entry point (with its metadata), trace and checkpoint, as `fwm show --json` shows them when the Makefile is generated. Its `kind` says which command generated it, e.g. `from-simpoint`, or `record` for `repo bootstrap mkgen record-fesvr-trace`. A create-checkpoints run also lists the checkpoints it requests. See [docs/fwm-bootstrap-interface.md](docs/fwm-bootstrap-interface.md#runjson).
+Next to it, `run.json` describes what the run uses: the sysroot, workload, entry point (with its metadata), trace and checkpoint, as `fwm show --json` shows them when the Makefile is generated. Its `kind` says which command generated it, e.g. `from-simpoint`, or `record` for `repo bootstrap mkgen record-fesvr-trace`. A create-checkpoints run also lists the checkpoints it requests. See [docs/fwm-bootstrap-interface.md](https://github.com/s117/fesvr-workload-manager/blob/main/docs/fwm-bootstrap-interface.md#runjson).
 
 Override variables on the make command line:
 
@@ -314,6 +320,6 @@ FWM_TEST_SPIKE=/path/to/spike FWM_TEST_SYSROOT=/path/to/sysroot FWM_TEST_ENTRY_P
 FWM_TEST_SPIKE_SRC=/path/to/riscv-isa-sim uv run pytest tests/integration
 ```
 
-The bootstrap pipeline's interface to fwm is described in [docs/fwm-bootstrap-interface.md](docs/fwm-bootstrap-interface.md).
+The bootstrap pipeline's interface to fwm is described in [docs/fwm-bootstrap-interface.md](https://github.com/s117/fesvr-workload-manager/blob/main/docs/fwm-bootstrap-interface.md).
 
-Notes for coding agents (how fwm is built, the spike behaviour it relies on, decisions, conventions) are in [docs/agent-guide.md](docs/agent-guide.md).
+Notes for coding agents (how fwm is built, the spike behaviour it relies on, decisions, conventions) are in [docs/agent-guide.md](https://github.com/s117/fesvr-workload-manager/blob/main/docs/agent-guide.md).

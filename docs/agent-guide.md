@@ -30,10 +30,14 @@ sysroot --(entry point)--> record --> trace --> create checkpoints --> checkpoin
 
 | Remote | Status |
 | --- | --- |
-| `ncsu` = `git@github.com:ncstate-ece/Rotenberg-Student-jli95-fesvr-workload-manager.git` | the one fwm-bootstrap depends on |
-| `origin` = `git@github.com:s117/fesvr-workload-manager.git` | the older remote |
+| `ncsu` = `git@github.com:ncstate-ece/Rotenberg-Student-jli95-fesvr-workload-manager.git` | private; the one fwm-bootstrap depends on |
+| `origin` = `git@github.com:s117/fesvr-workload-manager.git` | public since 2026-10-27; the source PyPI's page links to |
 
 The branch is `main`. Never push without being asked.
+
+**PyPI:** fwm is published as the package `fwm` (from 0.1.0), under NCSU's license (`LICENSE`, as riscv-simenv's). The README is its PyPI page, so it stays generic: no group paths, no private URLs, and absolute links to files of the repository (relative ones break on PyPI). A version can't be uploaded twice: bump `version` in `pyproject.toml` for each release.
+
+**On the group's machines,** fwm comes with the bootstrap pipeline: `source /usr/local/usrapps/rotenberg/fwm-bootstrap/install/<arch>/shrc` puts `fwm` on `PATH`. The group's spike is in the newest `/usr/local/usrapps/rotenberg/anycore-riscv/install-linux-<commit>/bin`.
 
 ## 2. Code map
 
