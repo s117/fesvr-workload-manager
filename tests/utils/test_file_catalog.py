@@ -3,6 +3,7 @@ import hashlib
 import os
 import pathlib
 import random
+import stat
 from typing import Tuple, List, Any, Dict, Union
 
 import pytest
@@ -249,7 +250,8 @@ def test_verify_catalog_dir_mode_mismatch(setup_test_tree):
     assert test_target_path.is_dir()
 
     test_target_path.chmod(0o000)
-    assert test_target_path.is_dir()
+    # still a directory (lstat: under pyfakefs on Python 3.14, Path.is_dir() says False for a mode-000 directory)
+    assert stat.S_ISDIR(os.lstat(test_target_path).st_mode)
     file_problems, link_problems, dir_problems = verify_catalog(catalog_to_verify, root)
     assert file_problems == []
     assert link_problems == []
@@ -542,3 +544,27 @@ def test_verify_catalog_perm_mask(setup_test_tree):
     assert verify_catalog(catalog_to_verify, root, perm_mask=0o555) == ([], [], [])
     file_problems, _, _ = verify_catalog(catalog_to_verify, root)
     assert [p[0] for p in file_problems] == ["test_dir2/test_file2"]
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root ignores permissions")
+def test_verify_catalog_out_of_reach(tmp_path):
+    # on the real filesystem (pyfakefs emulates permissions its own way): an item this user can't reach is reported
+    # as such, the same on every Python, never as a crash (Path.exists() raised before 3.14) nor as missing (after)
+    root = tmp_path / "root"
+    (root / "d").mkdir(parents=True)
+    (root / "d" / "f").write_bytes(b"x")
+    (root / "g").write_bytes(b"y")
+    catalog = create_catalog("sha256", str(root))
+    (root / "d").chmod(0o000)  # not searchable: its entries can't be examined
+    (root / "g").chmod(0o000)  # not readable: its digest can't be computed
+    try:
+        file_problems, link_problems, dir_problems = verify_catalog(catalog, str(root))
+    finally:
+        (root / "d").chmod(0o755)
+    assert file_problems == [("d/f", "file can't be examined: Permission denied"),
+                             ("g", "file mode mismatch (expect=644, actual=000)")]
+    assert link_problems == []
+    assert dir_problems == [("d", "directory mode mismatch (expect=755, actual=000)")]
+    # with the mode bits masked out, the unreadable file's digest is what fails
+    file_problems, _, _ = verify_catalog(catalog, str(root), perm_mask=0)
+    assert ("g", "file can't be read: Permission denied") in file_problems

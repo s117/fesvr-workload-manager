@@ -218,6 +218,8 @@ FWM_TEST_SPIKE_SRC=<riscv-isa-sim> uv run pytest tests/integration
 
 **Pitfalls:**
 - **Two environments:** a shell started in fwm-bootstrap may carry its `VIRTUAL_ENV`, so `uv` warns. Harmless.
+- **`Path.exists()` and permissions:** on an item in a directory the user can't search, it raises `PermissionError` before Python 3.14 and returns False from 3.14. Code that inspects a tree another user may own (e.g. `repo verify` on a shared repository) uses `os.lstat` and reports the error, as `verify_catalog` does. Test permissions on the real filesystem (`tmp_path`): pyfakefs emulates them its own way, and on 3.14 its `Path.is_dir()` is wrong for a mode-000 directory.
+- **Supported Pythons:** 3.12 to 3.14. Before a release, run the suite on each, and on 3.12 with the minimum versions of the dependencies (see `pyproject.toml`).
 - **No system Python on a cluster:** the login node's Python may be missing on compute nodes, so fwm runs on uv's Python, which lives on the shared filesystem. Startup speed has to come from importing less.
 - **zsh word splitting:** the user's shell is zsh, so `$var` holding several words isn't split. Use bash for such loops.
 - **Signals in tests:** wait for the whole process group to exit before reading a dump. make ends before spike finishes writing.

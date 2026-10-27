@@ -1,5 +1,6 @@
 import os
 import pathlib
+import stat
 from datetime import datetime
 from typing import Union, Dict, Tuple, List, Optional
 
@@ -98,21 +99,36 @@ def verify_catalog(catalog: FileCatalog, tree_root: str, use_digest_cache=False,
     catalog_root = pathlib.Path(tree_root).resolve()
     digest_algo = catalog.digest_algo
 
+    def examine(path: str, kind: str) -> Tuple[Optional[os.stat_result], Optional[FailedDetail]]:
+        """
+        The lstat of an item of the tree, or (None and) why it can't be had: the item is missing, or out of reach, e.g.
+        in a directory this user can't search. (One lstat, not Path.exists(): what exists() does with a permission
+        error changed in Python 3.14, which made such an item a crash before and "missing" after.)
+        """
+        try:
+            return os.lstat(catalog_root / path), None
+        except (FileNotFoundError, NotADirectoryError):
+            return None, (path, f"{kind} missing")
+        except OSError as e:
+            return None, (path, f"{kind} can't be examined: {e.strerror}")
+
     def validate_file(file_item: FileItem) -> Optional[FailedDetail]:
-        file_path = catalog_root / file_item.path
-        if not file_path.exists():
-            return file_item.path, "file missing"
-        if file_path.is_symlink() or not file_path.is_file():
+        file_stat, problem = examine(file_item.path, "file")
+        if file_stat is None:
+            return problem
+        if not stat.S_ISREG(file_stat.st_mode):
             return file_item.path, "not a file"
 
-        file_stat = file_path.stat()
         file_mode = file_stat.st_mode & 0o777
         if not file_item.perm & perm_mask == file_mode & perm_mask:
             return file_item.path, f"file mode mismatch (expect={file_item.perm:03o}, actual={file_mode:03o})"
         if not file_item.actual_size == file_stat.st_size:
             return file_item.path, f"file size mismatch (expect={file_item.actual_size}B, actual={file_stat.st_size}B)"
         # check digest
-        file_digest = Digest.digest_file(digest_algo, str(file_path), use_digest_cache)
+        try:
+            file_digest = Digest.digest_file(digest_algo, str(catalog_root / file_item.path), use_digest_cache)
+        except OSError as e:
+            return file_item.path, f"file can't be read: {e.strerror}"
         if not file_item.digest == file_digest:
             return (file_item.path,
                     f"file {digest_algo.upper()} mismatch (expect={file_item.digest}, actual={file_digest})")
@@ -120,31 +136,29 @@ def verify_catalog(catalog: FileCatalog, tree_root: str, use_digest_cache=False,
         return None
 
     def validate_link(link_item: LinkItem) -> Optional[FailedDetail]:
-        link_path = catalog_root / link_item.path
-        if not link_path.exists(follow_symlinks=False):
-            return link_item.path, "link missing"
-        if not link_path.is_symlink():
+        link_stat, problem = examine(link_item.path, "link")
+        if link_stat is None:
+            return problem
+        if not stat.S_ISLNK(link_stat.st_mode):
             return link_item.path, "not a link"
 
-        link_stat = link_path.stat(follow_symlinks=False)
         link_mode = link_stat.st_mode & 0o777
         if not link_item.perm & perm_mask == link_mode & perm_mask:
             return link_item.path, f"link mode mismatch (expect={link_item.perm:03o}, actual={link_mode:03o})"
         # check link dest
-        link_dest = os.readlink(link_path)
+        link_dest = os.readlink(catalog_root / link_item.path)
         if not link_item.dest == link_dest:
             return link_item.path, f"link destination mismatch (expect=[{link_item.dest}], actual=[{link_dest}])"
 
         return None
 
     def validate_dir(dir_item: DirItem) -> Optional[FailedDetail]:
-        dir_path = catalog_root / dir_item.path
-        if not dir_path.exists():
-            return dir_item.path, "directory missing"
-        if dir_path.is_symlink() or not dir_path.is_dir():
+        dir_stat, problem = examine(dir_item.path, "directory")
+        if dir_stat is None:
+            return problem
+        if not stat.S_ISDIR(dir_stat.st_mode):
             return dir_item.path, "not a directory"
 
-        dir_stat = dir_path.stat()
         dir_mode = dir_stat.st_mode & 0o777
         if not dir_item.perm & perm_mask == dir_mode & perm_mask:
             return dir_item.path, f"directory mode mismatch (expect={dir_item.perm:03o}, actual={dir_mode:03o})"
