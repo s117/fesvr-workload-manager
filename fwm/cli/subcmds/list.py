@@ -1,7 +1,7 @@
 import click
 
 from fwm.cli.completion import (
-    complete_checkpoint, complete_entry, complete_sysroot, complete_trace_uuid, complete_workload
+    complete_checkpoint_name, complete_entry, complete_sysroot, complete_trace_uuid, complete_workload
 )
 from fwm.cli.fwm import open_repo
 from fwm.cli.output import echo_json
@@ -16,7 +16,7 @@ _FILTER_HELP = {
     "checkpoint": "Only those related to a checkpoint whose name matches GLOB, or <trace UUID GLOB>:<name GLOB>.",
 }
 _COMPLETERS = {"workload": complete_workload, "sysroot": complete_sysroot, "entry": complete_entry,
-               "trace": complete_trace_uuid, "checkpoint": complete_checkpoint}
+               "trace": complete_trace_uuid, "checkpoint": complete_checkpoint_name}
 _SINGULAR = {plural: kind for kind, plural in PLURALS.items()}
 
 
@@ -43,7 +43,7 @@ def list_cmd(ctx, kind, workload_globs, sysroot_globs, entry_globs, trace_globs,
     `fwm list entries --entry 'bfs-*'` the entry points whose name starts with "bfs-".
 
     A GLOB is a shell-style pattern (*, ?, [...]; quote it in the shell), or an exact name. A filter given more than
-    once keeps what matches any of its GLOBs; different filters must all hold.
+    once keeps what matches any of its GLOBs. With several filters, the result is what each of them keeps.
     """
     open_repo(ctx)
     globs = {"workload": workload_globs, "sysroot": sysroot_globs, "entry": entry_globs, "trace": trace_globs,

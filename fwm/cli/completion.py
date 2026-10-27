@@ -12,7 +12,7 @@ import click
 from click.shell_completion import CompletionItem
 
 from fwm.database.schema import Sysroot, Workload, NativeEntry, DecoupledTrace, DecoupledCheckpoint
-from fwm.repo.listing import natural_key
+from fwm.repo.listing import natural_order
 from fwm.repo.repo import Repo
 from fwm.repo.lookup import resolve_trace
 
@@ -57,7 +57,7 @@ def _completer(candidates: Callable[[click.Context, str], Candidates],
         try:
             items = {value: help_text for value, help_text in candidates(ctx, incomplete)
                      if value.startswith(incomplete)}
-            return [CompletionItem(value, help=items[value]) for value in sorted(items, key=natural_key)]
+            return [CompletionItem(value, help=items[value]) for value in natural_order(items)]
         except Exception:
             return []
         finally:
@@ -165,6 +165,14 @@ def _by_kind(ctx: click.Context, incomplete: str) -> Candidates:
     return candidates(ctx, incomplete) if candidates else []
 
 
+def _checkpoint_names(ctx: click.Context, incomplete: str) -> Candidates:
+    """Checkpoint names, each once (`fwm list --checkpoint` matches names, or <full trace UUID glob>:<name glob>)."""
+    counts: Dict[str, int] = {}
+    for ckpt in DecoupledCheckpoint.select(DecoupledCheckpoint.name):
+        counts[ckpt.name] = counts.get(ckpt.name, 0) + 1
+    return ((name, _count(n, "checkpoint")) for name, n in counts.items())
+
+
 def _trace_uuids(ctx: click.Context, incomplete: str) -> Candidates:
     """Trace UUIDs only (`fwm list --trace` matches UUIDs, not the names of entry points)."""
     return ((str(trace.uuid), _trace_help(trace)) for trace in DecoupledTrace.select())
@@ -177,6 +185,7 @@ complete_other_entry = _completer(_other_entries)
 complete_source_entry = _completer(_other_entries, _source_path)
 complete_trace = _completer(_traces)
 complete_trace_uuid = _completer(_trace_uuids)
+complete_checkpoint_name = _completer(_checkpoint_names)
 complete_checkpoint = _completer(_checkpoints)
 complete_simpoint_checkpoint = _completer(_simpoint_checkpoints)
 complete_by_kind = _completer(_by_kind)

@@ -88,6 +88,10 @@ def test_kinds(repo):
     (["entries", "--sysroot", "s2", "--sysroot", "s3"], ["c"]),
     (["entries", "--sysroot", "s1", "--workload", "w2"], ["d"]),
     (["checkpoints", "--entry", "a", "--checkpoint", "x.1"], ["{ta}:x.1"]),
+    # each filter keeps its own set: w2 is related to s1 (through d) and to c, through different entry points
+    (["workloads", "--sysroot", "s1", "--entry", "c"], ["w2"]),
+    (["sysroots", "--workload", "w1", "--entry", "c"], []),
+    (["entries", "--trace", "{ta}", "--checkpoint", "y.1"], []),
     # a sysroot without entry points is related to nothing else
     (["sysroots", "--sysroot", "s*"], ["s1", "s2", "s3"]),
     (["sysroots", "--workload", "*"], ["s1", "s2"]),
@@ -108,10 +112,11 @@ def test_names_are_what_show_takes(repo):
 
 def test_natural_order(repo, write_entry_point):
     r = Repo.open(repo.path)
-    for name in ("e10", "e9", "e2"):
+    for name in ("e10", "e9", "e2", "e01", "e1"):
         add_entry(r, "s2", "w2", name, write_entry_point(command=f"prog.rv64 {name}"))
     r.close()
-    assert fwm_list(repo, "entries", "--entry", "e*") == ["e2", "e9", "e10"]
+    # names equal by number ("e01", "e1") come in plain order, the same every time
+    assert fwm_list(repo, "entries", "--entry", "e*") == ["e01", "e1", "e2", "e9", "e10"]
 
 
 def test_unmatched_filter(repo, caplog):
@@ -124,3 +129,14 @@ def test_unmatched_filter(repo, caplog):
 def test_no_positional_filter(repo):
     result = CliRunner().invoke(cli, ["--repo-path", repo.path, "list", "entries", "a"])
     assert result.exit_code == 2
+
+
+def test_checkpoint_completion(repo):
+    """--checkpoint completes names, each once: what it matches (the <trace>:<name> of `show` needs a full UUID)."""
+    from click.shell_completion import ShellComplete
+    items = ShellComplete(cli, {}, "fwm", "_FWM_COMPLETE").get_completions(
+        ["--repo-path", repo.path, "list", "entries", "--checkpoint"], "")
+    assert [(item.value, item.help) for item in items] == [
+        ("x.1", "2 checkpoints"), ("x.2", "1 checkpoint"), ("y.1", "1 checkpoint")]
+    assert ShellComplete(cli, {}, "fwm", "_FWM_COMPLETE").get_completions(
+        ["--repo-path", repo.path, "list", "entries", "--checkpoint"], repo.ta[:4] + ":") == []

@@ -216,6 +216,7 @@ fwm list entries --workload bfs --sysroot road.sg     # different filters: both
 fwm list checkpoints --checkpoint '8f25*:bfs*'        # a checkpoint as <trace UUID glob>:<name glob>
 ```
 
+- **Several filters:** each keeps its own set, and the result is their intersection. `fwm list workloads --sysroot s1 --entry c` lists the workloads related to `s1` and to `c`, even through different entry points.
 - **Patterns** are shell-style globs (`*`, `?`, `[...]`, case-sensitive; quote them in the shell); a plain name matches exactly. `--trace` matches the UUID as `fwm show` prints it.
 - **A pattern that matches nothing of its kind** prints a warning (likely a typo); the command still succeeds, with nothing listed.
 - **A sysroot without entry points** is related to nothing else: it is listed without filters, or with a matching `--sysroot`.

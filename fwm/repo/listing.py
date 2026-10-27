@@ -4,8 +4,9 @@
 Entities are related along the chains workload / sysroot - entry point - trace - checkpoint: an entry point runs a
 workload in a sysroot, a trace records a run of an entry point, and a checkpoint is made from a trace. A filter names
 entities of a kind by shell-style globs, and keeps the listed entities related to one of them, directly or through
-others; a filter of the listed kind selects by name. The globs of one filter are alternatives; different filters must
-all hold.
+others; a filter of the listed kind selects by name. The globs of one filter are alternatives. Each filter keeps its
+own set, and the result is the intersection of those sets: e.g. the workloads related to sysroot s1 and to entry
+point c, which may be through different entry points.
 
 Keep this module's imports light: `fwm list` loads it (see agent guide §3).
 """
@@ -31,6 +32,11 @@ Rows = Iterable[Tuple[Any, ...]]  # what a query's .tuples() yields (the peewee 
 def natural_key(value: str) -> List[Union[int, str]]:
     """Sort key that orders the numbers in a name by value: "e.2" before "e.10"."""
     return [int(part) if part.isdigit() else part for part in re.split(r"(\d+)", value)]
+
+
+def natural_order(values: Iterable[str]) -> List[str]:
+    """Values in natural order; those natural_key makes equal (e.g. "e1" and "e01") in plain order, never at random."""
+    return sorted(values, key=lambda value: (natural_key(value), value))
 
 
 class _Chain(NamedTuple):
@@ -91,7 +97,7 @@ class Listing:
 
 def list_names(kind: str, filters: Dict[str, Sequence[str]]) -> Listing:
     """
-    The names of the entities of a kind related to an entity that each filter matches.
+    The names of the entities of a kind that every filter keeps: those related to an entity it matches.
 
     :param kind: The kind listed: one of KINDS.
     :param filters: The globs of each filter, by kind (one of KINDS); a filter without globs is no filter.
@@ -102,14 +108,19 @@ def list_names(kind: str, filters: Dict[str, Sequence[str]]) -> Listing:
     chains = _chains()
     unmatched = [(k, glob) for k, globs in filters.items() for glob in globs
                  if not any(_matches(k, chain, glob) for chain in chains)]
-    kept = [chain for chain in chains
-            if all(any(_matches(k, chain, glob) for glob in globs) for k, globs in filters.items())]
+    refs = _checkpoint_refs() if kind == "checkpoint" else {}
 
-    names: Set[str]
-    if kind == "checkpoint":
-        refs = _checkpoint_refs()
-        names = {refs[(chain.trace, chain.checkpoint)] for chain in kept
-                 if chain.trace is not None and chain.checkpoint is not None}
-    else:
-        names = {value for value in (getattr(chain, kind) for chain in kept) if value is not None}
-    return Listing(sorted(names, key=natural_key), unmatched)
+    def listed(chain: _Chain) -> Optional[str]:
+        """The name of the chain's entity of the listed kind, if it has one."""
+        if kind == "checkpoint":
+            return refs[(chain.trace, chain.checkpoint)] if chain.trace and chain.checkpoint else None
+        return getattr(chain, kind)
+
+    def names_of(selected: Iterable[_Chain]) -> Set[str]:
+        return {name for name in map(listed, selected) if name is not None}
+
+    # each filter keeps the listed entities of the chains it matches; the result is what every filter keeps
+    names = names_of(chains)
+    for k, globs in filters.items():
+        names &= names_of(chain for chain in chains if any(_matches(k, chain, glob) for glob in globs))
+    return Listing(natural_order(names), unmatched)
