@@ -127,7 +127,8 @@ The sections are the objects of `fwm show --json` (see JSON below), without thei
 | `fwm repo pull`, `repo push` | one line per item, once its entry point is committed (an item several entry points share, like their sysroot, only once): `added\|present sysroot <name>`, `… entry <name>`, `… trace <UUID>` (a trace kept under another UUID: `present trace <its UUID> (<the copied UUID>)`), `… checkpoint <trace UUID>:<name>` |
 | `fwm repo subrepo` | the new repository's path |
 | `fwm mkgen ...`, `fwm repo bootstrap mkgen ...` | the Makefile path |
-| `fwm list ... --json`, `fwm show ... --json` | JSON, below |
+| `fwm list ... --json` | a JSON array of names: traces by UUID, checkpoints as `fwm show checkpoint` takes them (`<name>`, or `<trace UUID>:<name>` when other checkpoints have that name) |
+| `fwm show ... --json` | JSON, below |
 
 Exit status:
 
@@ -142,7 +143,7 @@ Exit status:
 
 ### JSON
 
-`fwm show <kind> <id> --json` prints one object; `fwm list <kinds> --json` prints a list of the same objects. Times are ISO 8601 with a timezone, and absent values are `null`.
+`fwm show <kind> <id> --json` prints one object; to read many, list their names with `fwm list <kinds> --json` and show each. Times are ISO 8601 with a timezone, and absent values are `null`.
 
 - **workload:** `name`, `creation_time`, `entries` (names). A workload has no description: describe it in its entry points' `metadata`.
 - **sysroot:** `name`, `description`, `creation_time`, `path`, `num_files`, `num_links`, `num_dirs`, `size_bytes`, `entries`.

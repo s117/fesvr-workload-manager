@@ -155,7 +155,7 @@ make -C d run SIM=/path/to/721sim                  # make reports "Error 1": spi
 
 | Command | Purpose |
 | --- | --- |
-| `fwm list [workloads\|sysroots\|entries\|traces\|checkpoints] [filter] [--workload w] [--sysroot s] [--trace t] [--json]` | List (entry points by default), those whose name contains the filter. |
+| `fwm list [workloads\|sysroots\|entries\|traces\|checkpoints] [--workload\|--sysroot\|--entry\|--trace\|--checkpoint GLOB]... [--json]` | List the names of a kind (entry points by default), filtered by the entities they are related to (see [Listing](#listing)). |
 | `fwm show {workload\|sysroot\|entry\|trace\|checkpoint} <id> [--json]` | Show the details. |
 | `fwm mkgen {from-sysroot <entry> \| from-fesvr-trace <trace> \| from-checkpoint <ckpt> \| from-simpoint <ckpt>} [-o dir]` | Generate a run directory that begins a simulation. |
 | `fwm spawn [--force] [--mode auto\|copy\|link] <entry> <dest>` | Make a working copy of an entry point's sysroot: copied, or linked to the repository's files; `auto`, the default, follows its `copy_spawn` (the `from-sysroot` and record Makefiles do it). |
@@ -192,6 +192,33 @@ make -C d run SIM=/path/to/721sim                  # make reports "Error 1": spi
 | `fwm repo bootstrap mkgen record-fesvr-trace <entry> [-o dir]` | Generate a run directory that records a run of an entry point: its FESVR trace. |
 | `fwm repo bootstrap check-fesvr-trace <recording-dir> [--final-state f.json] [--json]` | Check a recording as `repo compose add trace` would, without a repository: complete, well formed, agreeing with its final state. |
 | `fwm repo bootstrap mkgen create-checkpoints <trace> <desc> [-o dir]` | Generate a run directory that creates the checkpoints of a description. |
+
+## Listing
+
+`fwm list <kind>` prints the names of the workloads, sysroots, entries (the default), traces or checkpoints, one per line, or with `--json` as a JSON array. `fwm show <kind> <name>` gives the details of each. Traces are listed by UUID, and checkpoints as `fwm show checkpoint` takes them (below).
+
+Its filters `--workload`, `--sysroot`, `--entry`, `--trace` and `--checkpoint` keep what is related to an entity they match, directly or through others:
+
+| Kind | Is related to |
+| --- | --- |
+| workload | its entry points, their sysroots, traces and checkpoints |
+| sysroot | its entry points, their workloads, traces and checkpoints |
+| entry point | its workload, sysroot, traces and their checkpoints |
+| trace | its entry point (and that one's workload and sysroot), and its checkpoints |
+| checkpoint | its trace, and that trace's entry point, workload and sysroot |
+
+```
+fwm list checkpoints --workload bfs                   # the checkpoints of bfs's entry points
+fwm list sysroots --checkpoint 'bfs-road*'            # the sysroots where those checkpoints were made
+fwm list entries --entry 'bfs-*'                      # a filter of the listed kind selects by name
+fwm list traces --sysroot s1 --sysroot s2             # a filter given twice: either
+fwm list entries --workload bfs --sysroot road.sg     # different filters: both
+fwm list checkpoints --checkpoint '8f25*:bfs*'        # a checkpoint as <trace UUID glob>:<name glob>
+```
+
+- **Patterns** are shell-style globs (`*`, `?`, `[...]`, case-sensitive; quote them in the shell); a plain name matches exactly. `--trace` matches the UUID as `fwm show` prints it.
+- **A pattern that matches nothing of its kind** prints a warning (likely a typo); the command still succeeds, with nothing listed.
+- **A sysroot without entry points** is related to nothing else: it is listed without filters, or with a matching `--sysroot`.
 
 How to name things:
 - **A trace** is its UUID (a unique prefix is enough), or the name of an entry point that has one trace.

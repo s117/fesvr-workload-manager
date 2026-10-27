@@ -44,7 +44,7 @@ The branch is `main`. Never push without being asked.
 | `fwm/cli/completion.py`, `output.py` | Shell completion (opens the repository read-only); table, JSON and summary output |
 | `fwm/data_loader/` | Readers and pydantic models of spike's files: `recording.py`, `provenance.py`, `final_state.py`, `checkpoint.py` (+ digest), `ckpt_desc.py`, `simpoint_info.py`, `sim_version.py` (`spike --version`), `entry_point.py`, `file_catalog.py` |
 | `fwm/database/` | peewee models (`schema.py`), `db.py` (`open_db`, `SCHEMA_VERSION`, journal, busy timeout), `catalog_store.py`, `custom_field.py` (`TimestampTzField`) |
-| `fwm/repo/` | The operations: `repo.py` (`Repo`, staging, `importing()`, `removal()`), `sysroot.py`, `entry.py`, `trace.py`, `checkpoint.py`, `validation.py`, `spawn.py`, `remove.py`, `gc.py`, `transfer.py` (copying entry points between repositories: `pull`, `push`), `subrepo.py`, `query.py` (the JSON views), `lookup.py` (finding a sysroot, entry point, trace or checkpoint by name), `errors.py` |
+| `fwm/repo/` | The operations: `repo.py` (`Repo`, staging, `importing()`, `removal()`), `sysroot.py`, `entry.py`, `trace.py`, `checkpoint.py`, `validation.py`, `spawn.py`, `remove.py`, `gc.py`, `transfer.py` (copying entry points between repositories: `pull`, `push`), `subrepo.py`, `query.py` (the JSON views of `show`), `listing.py` (`list`: names, filtered by related entities), `lookup.py` (finding a sysroot, entry point, trace or checkpoint by name), `errors.py` |
 | `fwm/mkgen/` | `makefile.py` (generators, quoting, `read_run_info`), `run_json.py`, `templates/*.mk` (`header.mk` + one per run kind) |
 | `fwm/utils/` | file catalogs and their verification, digests, `fs.py` (copy with reflinks, read-only trees, `remove_tree`), target-path normalisation like FESVR's |
 | `tests/` | `fesvr_files.py` writes fake recordings, checkpoints, provenance and final states; `conftest.py` has the fixtures; `integration/test_spike_e2e.py` runs a real spike |
@@ -64,7 +64,7 @@ Stored content is made read-only, so delete a repository with `chmod -R u+w <dir
   - stdout carries results, stderr messages;
   - exit codes are 0 ok, 1 unexpected, 2 usage or unusable repository, 3 not found, 4 failed check, 5 already exists (an item of the repository, or a destination: `spawn`, `repo init`, `subrepo`);
   - every `repo compose add` takes `--exist-ok`, and identical re-imports succeed with the same identifier;
-  - `list --json` and `show --json` print the same views (`fwm/repo/query.py`).
+  - `list` prints names, as `show` takes them (`fwm/repo/listing.py`); `show --json` prints the views (`fwm/repo/query.py`).
 - **Crash safety:**
   - imports copy into `.staging/` (each with a flock'd `.lock`), then rename into place inside the DB transaction (`Repo.importing()`), and move back if the commit fails;
   - removals commit first, then delete files (`Repo.removal()`);
@@ -76,7 +76,7 @@ Stored content is made read-only, so delete a repository with `chmod -R u+w <dir
   - commands that write should run on one host.
 - **Fast read-only commands:** on GPFS every imported module costs file lookups, a few ms each and sometimes 100 ms on a busy login node, so importing everything made `fwm list` take seconds:
   - `list`, `show`, `mkgen` and shell completion must not import pydantic. `list` and `show` must not import colorama or `importlib.metadata` either. `tests/cli/test_imports.py` checks this;
-  - keep heavy imports out of the modules they load: `fwm/cli/` (completing a subcommand imports its module, so `repo.py` imports the readers, catalogs and copying inside its commands), `lookup.py`, `query.py`, `repo.py`, `fwm/database/` (except `catalog_store.py`, which loads pydantic: read a catalog only in the commands that need one), `fwm/utils/fs.py`, `log.py`, `version.py`. Where one of these needs a heavy module, import it inside the function, with a comment;
+  - keep heavy imports out of the modules they load: `fwm/cli/` (completing a subcommand imports its module, so `repo.py` imports the readers, catalogs and copying inside its commands), `lookup.py`, `query.py`, `listing.py`, `repo.py`, `fwm/database/` (except `catalog_store.py`, which loads pydantic: read a catalog only in the commands that need one), `fwm/utils/fs.py`, `log.py`, `version.py`. Where one of these needs a heavy module, import it inside the function, with a comment;
   - a new subcommand goes in `_SUBCOMMANDS` in `fwm/cli/fwm.py`, with its one-line short help, not `cli.add_command()`. `fwm --help` and completing a subcommand name read the help from there, so they import no subcommand.
 - **Schema changes need the user's approval first** (since 2026-10-26). Two real repositories were built with fwm `162c105` (schema version 8), and a schema change would make them unusable: fwm refuses a database of another `SCHEMA_VERSION`. So:
   - don't change `fwm/database/schema.py` or `SCHEMA_VERSION` (`fwm/database/db.py`) without asking, and look for a way that keeps the schema first;
