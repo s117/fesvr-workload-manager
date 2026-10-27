@@ -149,6 +149,16 @@ make -C d run SIM=/path/to/721sim                  # make reports "Error 1": spi
 - **`from-fesvr-trace`, `from-checkpoint` and `from-simpoint`** replay the trace: the program prints nothing and writes no file.
 - **`from-simpoint`** stops after the checkpoint's SimPoint interval (`-e$(INTERVAL)`, overridable with `INTERVAL=<n>`); weigh its results by the checkpoint's `simpoint_weight`.
 
+### An AI skill for fwm's users
+
+[skills/use-fwm/SKILL.md](skills/use-fwm/SKILL.md) teaches an AI coding agent (Claude Code) how to use a repository: search it with `fwm list`, read metadata with `fwm show` and `run.json`, run simulations, judge them by `final-state.json`, and sweep SimPoint checkpoints. Install it once, from this checkout:
+
+```
+ln -s "$PWD/skills/use-fwm" ~/.claude/skills/use-fwm
+```
+
+The link follows the checkout, so the skill stays in step with the fwm you pull.
+
 ## Commands
 
 **Daily**, for every user of a repository (they work without write permission):
