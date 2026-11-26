@@ -98,6 +98,33 @@ def test_force_over_a_linked_tree(repo, entries, tmp_path):
     assert verify_sysroot(repo, repo_sysroot(repo)) == []
 
 
+@pytest.mark.parametrize("copy_spawn", [True, False])
+def test_lost_empty_directories(repo, sysroot_src, write_entry_point, tmp_path, copy_spawn):
+    """
+    Some clusters' scratch file systems remove empty directories, even in read-only ones: a spawn still makes them,
+    with the catalog's permissions, since the catalog says all there is to them.
+    """
+    (sysroot_src / "app" / "empty" / "deeper").mkdir(parents=True)
+    os.chmod(sysroot_src / "app" / "empty" / "deeper", 0o700)
+    add_sysroot(repo, str(sysroot_src), "sr")
+    add_entry(repo, "sr", "wl", "e", write_entry_point(copy_spawn=copy_spawn))
+    # as such a cleanup leaves them: gone, and their parents still read-only, as the repository makes them
+    empty = stored(repo, "app", "empty")
+    app_mode = mode(stored(repo, "app"))
+    os.chmod(empty, 0o755)
+    os.rmdir(os.path.join(empty, "deeper"))
+    os.chmod(stored(repo, "app"), 0o755)
+    os.rmdir(empty)
+    os.chmod(stored(repo, "app"), app_mode)
+    assert app_mode & 0o222 == 0
+
+    dest = tmp_path / "sysroot"
+    spawn(repo, "e", str(dest))
+    assert os.listdir(dest / "app" / "empty") == ["deeper"]
+    assert mode(dest / "app" / "empty" / "deeper") == 0o700
+    assert mode(dest / "app") == mode(sysroot_src / "app")
+
+
 @pytest.mark.parametrize("entry", ["copied", "linked"])
 def test_damaged_sysroot(repo, entries, tmp_path, entry):
     """A copy is checked file by file; a linked spawn only checks the tree (`fwm repo verify` checks the content)."""

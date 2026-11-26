@@ -25,7 +25,7 @@ from fwm.repo.lookup import get_entry
 from fwm.repo.errors import AlreadyExistsError, FwmValidationError
 from fwm.repo.repo import Repo
 from fwm.utils.file_catalog import verify_catalog, FailedDetail
-from fwm.utils.fs import copy_tree, remove_tree
+from fwm.utils.fs import copy_tree, make_movable, remove_tree
 
 
 class SpawnMode(str, enum.Enum):
@@ -50,6 +50,13 @@ def _set_dir_perms(catalog: FileCatalog, dest: str) -> None:
 
 def _copy(src: str, catalog: FileCatalog, dest: str) -> List[FailedDetail]:
     copy_tree(src, dest)
+    # the empty directories of the catalog that the repository lost, as a scratch file system's cleanup removes them:
+    # the catalog says all there is to them. Their parents may be read-only copies: _set_dir_perms() sets them below.
+    for d in sorted(catalog.dirs, key=lambda d: d.path.count("/")):
+        path = os.path.join(dest, d.path)
+        if not os.path.lexists(path):
+            make_movable(os.path.dirname(path))
+            os.mkdir(path)
     for file in catalog.files:
         os.chmod(os.path.join(dest, file.path), file.perm)
     _set_dir_perms(catalog, dest)
