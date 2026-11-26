@@ -51,6 +51,38 @@ def test_open_not_a_repo(tmp_path):
         Repo.open(str(tmp_path))
 
 
+def test_open_without_staging(tmp_path, sysroot_src):
+    """
+    Some clusters' scratch file systems remove empty directories, such as the staging area, which is empty except
+    during an import. Reading doesn't need it, and opening to write makes it again.
+    """
+    path = str(tmp_path / "r")
+    Repo.init(path).close()
+    staging = os.path.join(path, ".staging")
+    os.rmdir(staging)
+    Repo.open(path, readonly=True).close()
+    assert not os.path.exists(staging)
+    repo = Repo.open(path)
+    assert os.path.isdir(staging)
+    add_sysroot(repo, str(sysroot_src), "s")
+    assert os.listdir(staging) == []
+    repo.close()
+
+
+def test_open_without_staging_read_only(tmp_path):
+    """Opening to write a repository that has lost its staging area, without write access, says it is read-only."""
+    path = str(tmp_path / "r")
+    Repo.init(path).close()
+    os.rmdir(os.path.join(path, ".staging"))
+    os.chmod(path, 0o555)
+    try:
+        with pytest.raises(RepoUnusableError, match="read-only for you"):
+            Repo.open(path)
+        Repo.open(path, readonly=True).close()
+    finally:
+        os.chmod(path, 0o755)
+
+
 def test_open_unbound(tmp_path):
     """A second repository opened unbound leaves the models with the first one, until bound()."""
     first = Repo.init(str(tmp_path / "a"))

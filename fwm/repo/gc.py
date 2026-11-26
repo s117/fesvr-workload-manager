@@ -57,7 +57,11 @@ def _owner_is_dead(lock: str) -> bool:
 def _staging_leftovers(repo: Repo, min_age: float) -> Iterator[Leftover]:
     staging = os.path.join(repo.path, STAGING_DIR)
     entries: Dict[str, List[str]] = {}
-    for name in os.listdir(staging):
+    try:
+        names = os.listdir(staging)
+    except FileNotFoundError:
+        return  # removed while empty, e.g. by a scratch file system's cleanup (Repo.open() makes it again to write)
+    for name in names:
         stem = name[:-len(STAGING_LOCK_SUFFIX)] if name.endswith(STAGING_LOCK_SUFFIX) else name.split(".", 1)[0]
         entries.setdefault(stem, []).append(name)
     for stem, names in sorted(entries.items()):

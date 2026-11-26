@@ -100,15 +100,26 @@ class Repo:
         :param readonly: Only read it: this works without write permission, but nothing can be changed.
         :param bind: Bind the models to its database (see open_db()).
         """
-        expected = (REPO_DB_FILE, SYSROOTS_DIR, TRACES_DIR, CHECKPOINTS_DIR, STAGING_DIR)
+        # The staging area is not looked for: it is only scratch space, empty except during an import, and some
+        # clusters' scratch file systems remove empty directories
+        expected = (REPO_DB_FILE, SYSROOTS_DIR, TRACES_DIR, CHECKPOINTS_DIR)
         missing = [p for p in expected if not os.path.exists(os.path.join(path, p))]
         if missing:
             raise RepoUnusableError(f"{path} is not an fwm repository: it has no {', '.join(missing)}")
         if not readonly:
             # SQLite writes its rollback journal next to the database, and imports go through the staging area
-            for p in ("", REPO_DB_FILE, STAGING_DIR):
+            for p in ("", REPO_DB_FILE):
                 if not os.access(os.path.join(path, p), os.W_OK):
                     raise RepoUnusableError(f"the repository {path} is read-only for you: it can't be changed")
+            staging = os.path.join(path, STAGING_DIR)
+            try:
+                os.mkdir(staging)
+            except FileExistsError:
+                pass
+            except OSError as e:
+                raise RepoUnusableError(f"cannot create the staging area {staging}: {e.strerror}")
+            if not os.access(staging, os.W_OK):
+                raise RepoUnusableError(f"the repository {path} is read-only for you: it can't be changed")
         try:
             return cls(path, open_db(os.path.join(path, REPO_DB_FILE), readonly=readonly, bind=bind))
         except SchemaVersionError as e:

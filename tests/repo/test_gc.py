@@ -99,6 +99,14 @@ def test_read_only_repo(repo, sysroot_src, tmp_path):
     assert result.stdout.count("leftover ") == 2
 
 
+def test_verify_without_staging(repo):
+    """A staging area removed while empty (e.g. by a scratch file system's cleanup) is no problem for verify."""
+    os.rmdir(os.path.join(repo.path, STAGING_DIR))
+    assert find_leftovers(repo, min_age=0) == []
+    result = CliRunner().invoke(cli, ["--repo-path", repo.path, "repo", "verify"])
+    assert result.exit_code == 0, result.output
+
+
 def test_trace_without_checkpoints(repo, sysroot_src, write_entry_point, tmp_path):
     """Removing a trace's last checkpoint leaves its empty checkpoint directory, which is no leftover."""
     add_sysroot(repo, str(sysroot_src), "sr")

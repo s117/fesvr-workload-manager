@@ -58,7 +58,10 @@ The branch is `main`. Never push without being asked.
 - `sysroots/<name>/`;
 - `traces/<uuid>/` (the recording, including `boot.elf` and `recording_provenance.json`);
 - `checkpoints/<trace uuid>/<name>`;
-- `.staging/`.
+- `.staging/`: scratch space, empty except during an import. `Repo.open()` doesn't require it, and recreates it when
+  opening to write. Why: a cluster scratch file system removed every empty directory of real repositories, even in
+  read-only directories, and every command then refused them as "not an fwm repository", although no file was lost.
+  The empty directories of a sysroot go too: `repo verify` then reports them missing, but spawning makes them.
 
 Stored content is made read-only, so delete a repository with `chmod -R u+w <dir> && rm -rf <dir>`.
 
